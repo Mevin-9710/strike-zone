@@ -9,11 +9,12 @@ import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons
 import { ENEMY_TYPES, Enemy, loadEnemyAssets, calibrateGun } from './game/enemies.js';
 import * as SkeletonUtils from './lib/addons/utils/SkeletonUtils.js';
 import { RELEASE_AT } from './fx/abilities.js';
-import { sfx, unlockAudio } from './game/audio.js';
+import { sfx, unlockAudio, music } from './game/audio.js';
 import { toonify, outline } from './game/toon.js';
 import { TouchControls, isTouchDevice, TOUCH_CSS } from './game/touch.js';
 import { buildDistrict } from './world/procgen.js';
 import * as META from './game/meta.js';
+import * as FX from './game/feel.js';
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.has('test'), DEBUG = Q.has('debug') || TEST;
@@ -125,7 +126,7 @@ const touch = IS_TOUCH ? new TouchControls(document.body, settings) : null;
 
 // ---------- renderer ----------
 const canvas = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality === 'high', powerPreference: 'high-performance' });   // MSAA only on High
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.quality === 'high', powerPreference: 'high-performance', preserveDrawingBuffer: TEST });   // MSAA only on High
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -371,14 +372,21 @@ function fire() {
   if (best) {
     const head = best.h.part === 'head';
     const mult = head ? (best.h.mult || w.head) : best.h.mult;
-    const killed = best.e.damage(w.dmg * mult * META.dmgMult(cur()), player.pos.clone());
+    const amount = w.dmg * mult * META.dmgMult(cur());
+    const killed = best.e.damage(amount, player.pos.clone(), best.h.part);
+    { const sp = toScreen(end); if (sp.on) FX.damageNumber(sp.x, sp.y, Math.round(amount), { head, kill: killed }); FX.hitPunch(head ? 1 : 0.5); }
+    if (killed) { const n = FX.streakTick(performance.now()); FX.killBanner(head ? 'HEADSHOT' : 'ELIMINATED', { head, streak: n }); FX.xpPop(META.XP.kill + (head ? META.XP.head : 0), head ? 'HEADSHOT' : 'KILL'); }
     stats.hits++; if (head) stats.heads++;
     hitMarker(killed, head); sfx.hit(head); addImpact(end, dir.clone().negate(), true);
-    if (killed) { stats.kills++; matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
+    if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
+    FEEL.combo++; FEEL.comboT = 1.2;
+    if (killed) { stats.kills++; matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
   if (s.mag === 0 && s.reserve > 0) setTimeout(() => { if (running && cur() === w && st().mag === 0) startReload(); }, 250);
 }
+const _scr = new THREE.Vector3();
+function toScreen(p) { _scr.copy(p).project(camera); return { x: (_scr.x * 0.5 + 0.5) * innerWidth, y: (-_scr.y * 0.5 + 0.5) * innerHeight, on: _scr.z < 1 && Math.abs(_scr.x) <= 1 && Math.abs(_scr.y) <= 1, behind: _scr.z >= 1 }; }
 function muzzleWorld() { return camera.localToWorld(V(0.14, -0.12, -0.55).lerp(V(0, -0.05, -0.5), W.ads)); }
 
 // ---------- tracers / impacts ----------
@@ -421,6 +429,7 @@ function damagePlayer(dmg, from) {
   if (!player.alive || matchOver || invT > 0) return;
   let x = dmg; if (player.shield > 0) { const a = Math.min(player.shield, x); player.shield -= a; x -= a; }
   player.hp -= x; hurtK = Math.min(1, hurtK + 0.35 + dmg / 60); sfx.hurt();
+  if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
   if (player.hp <= 0) { player.hp = 0; player.alive = false; lose('You were eliminated.'); }
 }
@@ -499,7 +508,7 @@ function updateObjective(dt) {
         if (usingE && !b) { objective.plantProg += dt; objective.active = 0; if (Math.floor(objective.plantProg * 3) !== Math.floor((objective.plantProg - dt) * 3)) sfx.beep(false); }
         else { objective.plantProg = Math.max(0, objective.plantProg - dt * 2); prompt = b ? `CLEAR ${b} HOSTILE${b > 1 ? 'S' : ''} FIRST` : 'HOLD E · PLANT CHARGE'; }
         if (objective.plantProg >= CFG.plant) {
-          objective.planted = true; sfx.done(); radioOnce('planted'); matchXP.objective += META.XP.objective;
+          objective.planted = true; sfx.done(); FX.announce('CHARGE PLANTED', 'objective'); FX.xpPop(META.XP.objective, 'OBJECTIVE'); radioOnce('planted'); matchXP.objective += META.XP.objective;
           const fixer = enemies.filter(e => e.alive && !e.T.static && !e.T.flying).sort((a, b) => a.pos.distanceTo(p) - b.pos.distanceTo(p))[0];
           if (fixer) fixer.task = { kind: 'defuse', clip: 'defuse', pos: p.clone().add(V(0, 0, 1.0)), t: 0 };
           const c = A.props.counter_charge.clone(true); c.position.copy(p).add(V(0, 0, 0.6)); toonify(c); outline(c, { thick: 0.015 }); scene.add(c); objective.charge = c;
@@ -528,7 +537,7 @@ function updateObjective(dt) {
         if (usingE && !b) { objective.prog[i] += dt; objective.active = i; if (Math.floor(objective.prog[i] * 2) !== Math.floor((objective.prog[i] - dt) * 2)) sfx.beep(true); }
         else prompt = b ? `CLEAR ${b} HOSTILE${b > 1 ? 'S' : ''} FIRST` : `HOLD E · ${verb}`;
         if (objective.prog[i] >= dur) {
-          objective.done[i] = true; sfx.done(); devices[i].lamp.material.color.set(0x3bff6a); devices[i].glow.color.set(0x3bff6a); matchXP.objective += META.XP.objective;
+          objective.done[i] = true; sfx.done(); FX.announce(mission.objective === 'retrieve' ? 'DRIVE SECURED' : 'DEVICE DEFUSED', 'objective'); FX.xpPop(META.XP.objective, 'OBJECTIVE'); devices[i].lamp.material.color.set(0x3bff6a); devices[i].glow.color.set(0x3bff6a); matchXP.objective += META.XP.objective;
           if (mission.objective === 'retrieve') devices[i].g.children.slice(0, 2).forEach(o => o.visible = false);
           const left = objective.done.filter(d => !d).length;
           if (left) { if (mission.radio.device) radio(...mission.radio.device[0]); else radio('OKONKWO', `Device down. ${left} to go.`); }
@@ -570,7 +579,7 @@ function updateInteract(dt, prompt) {
     if (it.got) continue;
     it.g.rotation.y += dt * 2; it.g.children[0].position.y = 0.6 + Math.sin(elapsed * 3) * 0.08;
     if (player.pos.distanceTo(it.pos) < 1.4) {
-      it.got = true; it.g.visible = false; sfx.pickup(); matchXP.intel += META.XP.intel;
+      it.got = true; it.g.visible = false; sfx.pickup(); FX.xpPop(META.XP.intel, 'INTEL'); matchXP.intel += META.XP.intel;
       if (!META.profile.intel.includes(it.id)) { META.profile.intel.push(it.id); META.saveProfile(); }
       const left = intel.filter(x => !x.got).length;
       feed(`INTEL RECOVERED · ${META.profile.intel.length} TOTAL${left ? ` · ${left} HERE` : ''}`, true);
@@ -611,7 +620,12 @@ function updatePlayer(dt) {
   const k = Math.min(1, dt * (player.onGround ? 14 : 2.5));
   player.vel.x += (wx * speed * mag - player.vel.x) * k; player.vel.z += (wz * speed * mag - player.vel.z) * k;
   if (player.dashT > 0) { player.dashT -= dt; player.vel.x = player.dash.x; player.vel.z = player.dash.z; }
-  if (keys.Space && player.onGround && objective.active < 0) { player.vel.y = CFG.jump; player.onGround = false; }
+  FEEL.slideCD -= dt;
+  if ((keys.KeyC || keys.ControlLeft) && FEEL.slideT <= 0 && FEEL.slideCD <= 0 && player.onGround && Math.hypot(player.vel.x, player.vel.z) > CFG.run * 0.8) {
+    FEEL.slideT = 0.55; FEEL.slideCD = 0.9; const v = Math.hypot(player.vel.x, player.vel.z); player.dash.set(player.vel.x / v * CFG.run * 1.55, 0, player.vel.z / v * CFG.run * 1.55); sfx.step();
+  }
+  if (FEEL.slideT > 0) { FEEL.slideT -= dt; const k = Math.max(0, FEEL.slideT / 0.55); player.vel.x = player.dash.x * (0.45 + 0.55 * k); player.vel.z = player.dash.z * (0.45 + 0.55 * k); }
+  if (keys.Space && player.onGround && objective.active < 0) { player.vel.y = CFG.jump; player.onGround = false; if (FEEL.slideT > 0) { FEEL.slideT = 0; player.vel.x *= 1.15; player.vel.z *= 1.15; } }
   world.move(player, dt, { step: 0.45, gravity: 22 });
   if (player.pos.y < -30) { player.pos.copy(map.spawns.default); player.vel.set(0, 0, 0); }
   player.moving = Math.hypot(player.vel.x, player.vel.z) > 0.5;
@@ -632,7 +646,8 @@ function updateWeapon(dt) {
   } else W.firedSemi = false;
   const adsT = mouse.r && W.reloadT <= 0 && W.drawT <= 0 && objective.active < 0 ? 1 : 0;
   W.ads += (adsT - W.ads) * Math.min(1, dt * 12);
-  const targetFov = 75 + (w.zoom - 75) * (w.scope ? (W.ads > 0.9 ? 1 : W.ads * 0.2) : W.ads);
+  const spd = Math.hypot(player.vel.x, player.vel.z); FEEL.fovKick += ((FEEL.slideT > 0 ? 9 : spd > CFG.run * 0.9 ? 4 : 0) * (1 - W.ads) - FEEL.fovKick) * Math.min(1, dt * 6);
+  const targetFov = 75 + FEEL.fovKick + (w.zoom - 75) * (w.scope ? (W.ads > 0.9 ? 1 : W.ads * 0.2) : W.ads);
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 18); camera.updateProjectionMatrix(); }
   const ev = vm.update(dt, { moving: player.moving, speed: Math.hypot(player.vel.x, player.vel.z), lookDX: lookD.x, lookDY: lookD.y, adsTarget: adsT, sprint: false, onGround: player.onGround, scope: w.scope && W.ads > 0.9 });
   lookD.x = lookD.y = 0;
@@ -688,8 +703,15 @@ function pollInput(dt) {
 let aimSlow = 1;
 
 // ---------- frame update ----------
+// ---- game feel state (research items: hit-stop, camera punch, slide, sprint FOV, death impulse, adaptive music)
+const FEEL = { hitStop: 0, punchP: 0, punchY: 0, slideT: 0, slideCD: 0, fovKick: 0, combo: 0, comboT: 0 };
 function update(dt) {
   if (!running) return;
+  if (FEEL.hitStop > 0) { FEEL.hitStop -= dt; dt *= 0.12; }               // lethal headshot: world slows for a beat
+  FEEL.punchP *= Math.max(0, 1 - dt * 16); FEEL.punchY *= Math.max(0, 1 - dt * 16);
+  FEEL.comboT -= dt; if (FEEL.comboT <= 0) FEEL.combo = 0;
+  { const fighting = enemies.some(e => e.alive && e.state === 'combat'); music.setIntensity(fighting ? 1 : clock < 30 ? 0.7 : 0.25); }
+  for (const e of enemies) if (!e.alive && e._dv && e.deadT < 0.45) { e.pos.addScaledVector(e._dv, dt * (1 - e.deadT / 0.45)); }   // death knockback
   elapsed += dt; clock -= dt; repathBudget = 2;
   if (clock <= 30 && clock + dt > 30) radioOnce('low');
   if (clock <= 0) { clock = 0; lose(mission.failTimer); return; }
@@ -720,10 +742,19 @@ function update(dt) {
   dmgDirs = dmgDirs.filter(d => (d.t -= dt) > 0);
   if (radioT > 0) { radioT -= dt; if (radioT <= 0) nextRadio(); }
   updateHud(prompt);
+  FX.lowHealth(player.alive ? clamp(1 - player.hp / 45, 0, 1) : 0);
+  { // arrow to the nearest live objective (or extraction)
+    let tgt = null, bd = Infinity, label = 'OBJ';
+    if (objective.extract) { tgt = map.extract; label = 'EXTRACT'; }
+    else map.points.forEach((p, i) => { if (objective.done[i] || (mission.objective === 'plant_hold' && objective.planted && i)) return; const d = p.distanceTo(player.pos); if (d < bd) { bd = d; tgt = p; } });
+    if (tgt) { _arrowP.copy(tgt).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; } FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(tgt.distanceTo(player.pos))); }
+  }
+  FX.update(dt);
 }
+const _arrowP = new THREE.Vector3();
 function updateCamera() {
-  camera.position.set(player.pos.x, player.pos.y + CFG.eye, player.pos.z);
-  camera.rotation.set(player.pitch + (shakeK ? rand(-1, 1) * shakeK * 0.03 : 0), player.yaw + (shakeK ? rand(-1, 1) * shakeK * 0.03 : 0), 0, 'YXZ');
+  camera.position.set(player.pos.x, player.pos.y + CFG.eye - (FEEL.slideT > 0 ? 0.55 : 0), player.pos.z);
+  camera.rotation.set(player.pitch + FEEL.punchP + (shakeK ? rand(-1, 1) * shakeK * 0.03 : 0), player.yaw + FEEL.punchY + (shakeK ? rand(-1, 1) * shakeK * 0.03 : 0), FEEL.slideT > 0 ? 0.04 : 0, 'YXZ');
   if (sun) { sun.position.copy(player.pos).add(sun.userData.off); sun.target.position.copy(player.pos); }
 }
 const _pv = new THREE.Matrix4(), _fr = new THREE.Frustum(), _sp = new THREE.Sphere(new THREE.Vector3(), 1.6);
@@ -734,7 +765,7 @@ function render() {
   if (scene) {
     camera.updateMatrixWorld(); _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_pv);
     const far2 = camera.far * camera.far;
-    for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position); e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && _fr.intersectsSphere(_sp);
+    for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position), lod = qLevel === 0 ? 3025 : 4900; e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && (d2 < lod || e.revealT > 0 || e.state === 'combat') && _fr.intersectsSphere(_sp);
       if (e.root.visible) { if (e._hand === undefined) e._hand = e.root.getObjectByName('handR') || null; if (e._hand) e._hand.visible = d2 < 900; } }   // guns are a few pixels past 30 m
     if (preview) preview.root.visible = true;
     renderer.render(scene, camera);
@@ -844,12 +875,12 @@ function startMission(idx = selected, opts = {}) {
   buildMission(idx, o); xpDoubled = false;
   for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
-  radioOnce('start');
+  radioOnce('start'); music.start(); FX.announce('MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
   sdk(s => s.game.gameplayStart());
 }
-function endMatch() { touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
+function endMatch() { music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
 function lose(reason) { if (matchOver) return; endMatch(); showEnd('MISSION FAILED', `${reason}\n\n${missionIdx >= 8 ? 'Yuna' : 'Okonkwo'}: Regroup and try again.`, null, { death: !player.alive }); }
 function win() {
   if (matchOver) return; endMatch();
@@ -1153,22 +1184,22 @@ function idleAnim(dt) { for (const e of enemies) { e.tickAnim(dt); e.sync(); } p
 let last = performance.now(), manual = false, frames = 0, fpsT = 0, fps = 0;
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05); last = now;
-  if (!manual) {
-    const t0 = performance.now(); if (!running) idleAnim(dt); update(dt); const t1 = performance.now(); render(); const t2 = performance.now();
-    if (TEST) { (window.__frames ??= []).push([+(t1 - t0).toFixed(1), +(t2 - t1).toFixed(1), +(now - (frame.last ?? now)).toFixed(0)]); if (window.__frames.length > 600) window.__frames.shift(); }
-    frame.last = now;
-  }
   // FPS every half second; dynamic resolution first (cheap, smooth), then drop a quality level if still slow
   frames++; fpsT += Math.min((now - (frame.prev ?? now)) / 1000, 1); frame.prev = now;
   if (fpsT >= 0.5) {
     fps = frames / fpsT; frames = 0; fpsT = 0;
-    if (running && settings.quality === 'auto') {
+    if (running && !manual && settings.quality === 'auto') {
       const target = IS_TOUCH ? 45 : 58;
       if (fps < target - 3) {
         if (dynScale > 0.55) { dynScale = Math.max(0.5, dynScale - (fps < target * 0.6 ? 0.15 : 0.07)); applyQuality(); }
         else if (++lowFpsT >= 4 && qLevel > 0) { qLevel--; lowFpsT = 0; dynScale = 0.8; applyQuality(); }
-      } else { lowFpsT = 0; if (fps > target + 1 && dynScale < 1 && (frame.up = (frame.up || 0) + 1) >= 6) { frame.up = 0; dynScale = Math.min(1, dynScale + 0.05); applyQuality(); } }
+      } else { lowFpsT = 0; if (fps > target + 1 && (frame.up = (frame.up || 0) + 1) >= 3) { frame.up = 0; if (dynScale < 1) { dynScale = Math.min(1, dynScale + (fps > target * 1.3 ? 0.15 : 0.07)); applyQuality(); } else if (fps > target * 1.35 && qLevel < 1) { qLevel++; dynScale = 0.85; applyQuality(); } } }
     }
+  }
+  if (!manual) {
+    const t0 = performance.now(); if (!running) idleAnim(dt); update(dt); const t1 = performance.now(); render(); const t2 = performance.now();
+    if (TEST) { (window.__frames ??= []).push([+(t1 - t0).toFixed(1), +(t2 - t1).toFixed(1), +(now - (frame.last ?? now)).toFixed(0)]); if (window.__frames.length > 600) window.__frames.shift(); }
+    frame.last = now;
   }
   requestAnimationFrame(frame);
 }
@@ -1206,6 +1237,7 @@ window.__game = {
   sdk(s => s.game.loadingStop?.());
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
+  FX.initFeel($('hud'));
   const un = META.unlocked(progress);
   if (!DEBUG) { if (!un.weapons.has(loadout.primary)) loadout.primary = 'ar7_lance'; if (!un.weapons.has(loadout.sidearm)) loadout.sidearm = 'vex_p9'; if (!un.operatives.has(loadout.operative)) loadout.operative = 'rhea'; }
   buildMission(Math.min(progress, MISSIONS.length - 1));             // a live backdrop behind the lobby
