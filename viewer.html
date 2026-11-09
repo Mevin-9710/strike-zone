@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Strike Zone: character viewer</title>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#1d222b;color:#e8ecf2;font-family:"Trebuchet MS",Arial,sans-serif}
+    canvas{display:block}
+    #ui{position:fixed;left:0;right:0;bottom:0;padding:12px;display:flex;flex-direction:column;gap:6px;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.55))}
+    .row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+    button{font:inherit;font-size:14px;padding:7px 14px;border:0;border-radius:4px;background:#2c3446;color:#e8ecf2;cursor:pointer}
+    button.on{background:#ff4655}
+    #title{position:fixed;top:14px;left:0;right:0;text-align:center;font-size:20px;letter-spacing:2px}
+    #status{position:fixed;top:44px;left:0;right:0;text-align:center;font-size:13px;opacity:.7}
+  </style>
+  <script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
+</head>
+<body>
+  <div id="title">STRIKE ZONE · CHARACTERS</div>
+  <div id="status">loading…</div>
+  <div id="blind" style="position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none"></div>
+  <div id="ui"><div class="row" id="weapons"></div><div class="row" id="chars"></div><div id="clips" style="display:flex;flex-direction:column;gap:6px"></div></div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { GLTFLoader } from './lib/addons/loaders/GLTFLoader.js';
+    import { OrbitControls } from './lib/addons/controls/OrbitControls.js';
+    import { AbilityFX, RELEASE_AT } from './fx/abilities.js';
+
+    const CHARS = [
+      ['rhea', 'Rhea'], ['kade', 'Kade'], ['yuna', 'Yuna'], ['tomas', 'Tomas'], ['amara', 'Amara'],
+      ['enemy_guard', 'Guard'], ['enemy_heavy', 'Heavy'], ['enemy_sniper', 'Sniper'],
+      ['enemy_commander', 'Commander'], ['enemy_drone', 'Drone'], ['enemy_turret', 'Turret'],
+    ];
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.prepend(renderer.domElement);
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1d222b);
+    const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.05, 100);
+    camera.position.set(2.6, 1.7, 3.6);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0.95, 0); controls.update();
+    scene.add(new THREE.HemisphereLight(0xdfeeff, 0x3a3a44, 1.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 2); sun.position.set(3, 6, 4); sun.castShadow = true; scene.add(sun);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(4, 48), new THREE.MeshLambertMaterial({ color: 0x3a4150 }));
+    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+    addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+    let blind = 0;
+    const fx = new AbilityFX(scene, { onFlash: k => { blind = Math.max(blind, k); } });
+    let pending = null, manual = false;
+    const loader = new GLTFLoader();
+    const cache = {}, wcache = {};
+    let current = null, mixer = null, action = null, curStem = null, curAnims = [];
+    let weaponId = null, weaponMeta = [], weaponObj = null;
+    const LABELS = { ab_smoke: 'Smoke', ab_flash: 'Flash', ab_decoy: 'Decoy', ab_sensor: 'Sensor', ab_shield: 'Shield',
+                     ab_dash: 'Dash', ab_lockdown: 'Lockdown', ab_drone: 'Drone', plant: 'Plant', defuse: 'Defuse' };
+    const ONE_SHOT = name => name === 'plant' || name.startsWith('ab_');
+    const ARMED_OK = name => /^(idle|walk|run|shoot|death)/.test(name);   // weapon visible in these
+    const PROP_FOR = { plant: 'counter_charge', defuse: 'covenant_device' };
+    let baseClip = 'idle';
+    const props = {};
+    for (const id of ['counter_charge', 'covenant_device']) {
+      loader.loadAsync(`models/props/${id}.glb`).then(g => { props[id] = g.scene; g.scene.visible = false;
+        g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); scene.add(g.scene); });
+    }
+
+    function weaponKind() {
+      const m = weaponMeta.find(w => w.id === weaponId);
+      return !m ? null : (m.class === 'pistol' || m.class === 'revolver') ? 'pistol' : 'rifle';
+    }
+    // Map a base clip (idle/walk/run/shoot) to its armed variant for the equipped weapon.
+    function resolve(name) {
+      const k = weaponObj ? weaponKind() : null;
+      let n = name;
+      if (k && ['idle', 'walk', 'run'].includes(name)) n = `${name}_${k}`;
+      if (k === 'pistol' && name === 'shoot') n = 'shoot_pistol';
+      return curAnims.find(a => a.name === n) || curAnims.find(a => a.name === name);
+    }
+
+    // Grip calibration: pose the character in the weapon's aim clip, then store the
+    // hand-space offset that puts the weapon at the grip, level and facing forward.
+    function calibrate(clipName) {
+      mixer.stopAllAction(); action = null;
+      const clip = curAnims.find(a => a.name === clipName);
+      const a = mixer.clipAction(clip); a.reset().play(); mixer.update(0);
+      current.updateMatrixWorld(true);
+      const hand = current.getObjectByName('handR'), fore = current.getObjectByName('forearmR');
+      const hp = new THREE.Vector3().setFromMatrixPosition(hand.matrixWorld);
+      const fp = new THREE.Vector3().setFromMatrixPosition(fore.matrixWorld);
+      const grip = hp.clone().addScaledVector(hp.clone().sub(fp).normalize(), 0.05);
+      const q = new THREE.Quaternion(); current.getWorldQuaternion(q);
+      const desired = new THREE.Matrix4().compose(grip, q, new THREE.Vector3(1, 1, 1));
+      a.stop();
+      return { hand, offset: hand.matrixWorld.clone().invert().multiply(desired) };
+    }
+    async function equip(id) {
+      weaponId = id;
+      document.querySelectorAll('#weapons button').forEach(b => b.classList.toggle('on', (b.dataset.k || null) === id));
+      if (weaponObj) { weaponObj.parent?.remove(weaponObj); weaponObj = null; }
+      if (id && current && !curStem.includes('drone') && !curStem.includes('turret')) {
+        if (!wcache[id]) wcache[id] = loader.loadAsync(`models/weapons/${id}.glb`);
+        const w = (await wcache[id]).scene.clone();
+        const meta = weaponMeta.find(m => m.id === id);
+        const { hand, offset } = calibrate(meta.clip);
+        w.matrixAutoUpdate = false; w.matrix.copy(offset);
+        w.traverse(o => { if (o.isMesh) o.castShadow = true; });
+        hand.add(w); weaponObj = w;
+        window.__viewer.equipped = { id, stem: curStem, clip: meta.clip };
+      }
+      play(baseClip);
+    }
+    window.__viewer = { loaded: {}, errors: [] };
+
+    function load(stem) {
+      if (!cache[stem]) cache[stem] = loader.loadAsync(`models/rigged/${stem}.glb`);
+      return cache[stem];
+    }
+    function addRow(parent, title, names) {
+      if (!names.length) return;
+      const row = document.createElement('div'); row.className = 'row';
+      const t = document.createElement('span'); t.textContent = title; t.style.cssText = 'opacity:.6;font-size:12px;align-self:center;margin-right:4px';
+      row.append(t);
+      for (const n of names) {
+        const b = document.createElement('button'); b.textContent = LABELS[n] || n; b.dataset.k = n;
+        b.onclick = () => play(n); row.append(b);
+      }
+      parent.append(row);
+    }
+    async function show(stem) {
+      document.querySelectorAll('#chars button').forEach(b => b.classList.toggle('on', b.dataset.k === stem));
+      const gltf = await load(stem);
+      if (current) scene.remove(current);
+      if (weaponObj) { weaponObj.parent?.remove(weaponObj); weaponObj = null; }
+      current = gltf.scene;
+      current.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+      scene.add(current);
+      mixer = new THREE.AnimationMixer(current); action = null; curStem = stem; curAnims = gltf.animations;
+      mixer.addEventListener('finished', e => { if (ONE_SHOT(e.action.getClip().name)) play('idle'); });
+      const names = gltf.animations.map(a => a.name);
+      const clips = document.getElementById('clips'); clips.innerHTML = '';
+      const base = ['idle', 'hover', 'walk', 'run', 'shoot', 'fire', 'death'].filter(n => names.includes(n));
+      addRow(clips, 'Move', base);
+      addRow(clips, 'Objective', ['plant', 'defuse'].filter(n => names.includes(n)));
+      addRow(clips, 'Abilities', names.filter(n => n.startsWith('ab_')));
+      baseClip = names.includes('idle') ? 'idle' : names[0];
+      await equip(weaponId);
+      controls.target.set(0, stem === 'enemy_turret' ? 0.5 : 0.95, 0); controls.update();
+      document.getElementById('status').textContent = `${gltf.animations.length} clips · drag to orbit · scroll to zoom`;
+    }
+    function play(name) {
+      baseClip = ONE_SHOT(name) || name === 'death' ? baseClip : name;
+      const clip = resolve(name);
+      document.querySelectorAll('#clips button').forEach(b => b.classList.toggle('on', b.dataset.k === name));
+      if (weaponObj) weaponObj.visible = ARMED_OK(clip.name);
+      for (const [c, id] of Object.entries(PROP_FOR)) {
+        const p = props[id]; if (!p) continue;
+        p.visible = clip.name === c;
+        const h = current.getObjectByName('head') ? new THREE.Box3().setFromObject(current).max.y / 1.86 : 1;
+        p.position.set(0, 0, 0.48 * h);
+      }
+      const next = mixer.clipAction(clip);
+      next.reset();
+      if (clip.name === 'death' || ONE_SHOT(clip.name)) { next.setLoop(THREE.LoopOnce, 1); next.clampWhenFinished = true; }
+      else next.setLoop(THREE.LoopRepeat, Infinity);
+      if (action && action !== next) action.crossFadeTo(next, 0.2, false);
+      next.play(); action = next;
+      window.__viewer.playing = clip.name;
+      pending = RELEASE_AT[clip.name] !== undefined ? { name: clip.name, t: RELEASE_AT[clip.name], act: next } : null;
+      if (pending && current.position.lengthSq() === 0 && camera.position.distanceTo(controls.target) < 7) {
+        camera.position.set(9.5, 5.2, 9.5); controls.target.set(0, 0.6, 3.2); controls.update();   // pull back to see the effect
+      }
+    }
+    fetch('models/weapons/weapons.json').then(r => r.json()).then(list => {
+      weaponMeta = list;
+      const row = document.getElementById('weapons');
+      const none = document.createElement('button'); none.textContent = 'Unarmed'; none.dataset.k = ''; none.onclick = () => equip(null); row.append(none);
+      for (const m of list) {
+        const b = document.createElement('button'); b.textContent = m.name; b.dataset.k = m.id; b.title = m.class;
+        b.onclick = () => equip(m.id); row.append(b);
+      }
+      window.__viewer.weapons = list.map(m => m.id);
+    });
+    window.__viewer.equip = equip; window.__viewer.show = (k) => show(k); window.__viewer.play = (n) => play(n);
+    window.__viewer.setCam = (x, y, z) => { camera.position.set(x, y, z); controls.update(); };
+    window.__viewer.seek = (t) => { if (action) { action.paused = true; action.time = t; mixer.update(0); } };
+    const chars = document.getElementById('chars');
+    for (const [k, n] of CHARS) {
+      const b = document.createElement('button'); b.textContent = n; b.dataset.k = k; b.onclick = () => show(k); chars.append(b);
+    }
+    // preload everything and record results for automated checks
+    Promise.all(CHARS.map(([k]) => load(k).then(g => {
+      window.__viewer.loaded[k] = g.animations.map(a => `${a.name}:${a.duration.toFixed(2)}`);
+    }).catch(e => window.__viewer.errors.push(`${k}: ${e.message}`))))
+      .then(() => { window.__viewer.done = true; });
+    show('rhea');
+    function fireAbility(name) {
+      current.updateMatrixWorld(true);
+      const hand = new THREE.Vector3().setFromMatrixPosition(current.getObjectByName('handR').matrixWorld);
+      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(current.quaternion).setY(0).normalize();
+      fx.spawn(name.slice(3), { hand, forward, root: current, template: current, clips: curAnims });
+    }
+    function tick(dt) {
+      if (mixer) mixer.update(dt);
+      if (pending && pending.act.time >= pending.t) { const n = pending.name; pending = null; fireAbility(n); }
+      fx.update(dt);
+      blind = Math.max(0, blind - dt * 2.6); document.getElementById('blind').style.opacity = (blind * blind * 0.75).toFixed(3);
+      renderer.render(scene, camera);
+    }
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => { const dt = clock.getDelta(); if (!manual) tick(Math.min(dt, 0.05)); });
+    // deterministic stepping for automated captures
+    window.__viewer.step = (seconds, fps = 30) => { manual = true; for (let i = 0; i < Math.round(seconds * fps); i++) tick(1 / fps); };
+    window.__viewer.auto = () => { manual = false; clock.getDelta(); };
+    window.__viewer.fxCount = () => fx.items.length;
+  </script>
+</body>
+</html>

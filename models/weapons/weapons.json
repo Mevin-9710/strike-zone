@@ -1,0 +1,82 @@
+[
+  {
+    "id": "vex_p9",
+    "name": "Vex P9",
+    "class": "pistol",
+    "clip": "shoot_pistol",
+    "length_m": 0.205,
+    "tris": 764
+  },
+  {
+    "id": "harrow_45",
+    "name": "Harrow .45",
+    "class": "pistol",
+    "clip": "shoot_pistol",
+    "length_m": 0.269,
+    "tris": 980
+  },
+  {
+    "id": "bulldog_r6",
+    "name": "Bulldog R6",
+    "class": "revolver",
+    "clip": "shoot_pistol",
+    "length_m": 0.279,
+    "tris": 1028
+  },
+  {
+    "id": "ar7_lance",
+    "name": "AR-7 Lance",
+    "class": "assault",
+    "clip": "shoot",
+    "length_m": 0.858,
+    "tris": 1432
+  },
+  {
+    "id": "kestrel_bp",
+    "name": "Kestrel",
+    "class": "assault",
+    "clip": "shoot",
+    "length_m": 0.676,
+    "tris": 1008
+  },
+  {
+    "id": "warden_br",
+    "name": "Warden",
+    "class": "assault",
+    "clip": "shoot",
+    "length_m": 1.006,
+    "tris": 1288
+  },
+  {
+    "id": "grinder_lmg",
+    "name": "Grinder",
+    "class": "machine gun",
+    "clip": "shoot",
+    "length_m": 1.063,
+    "tris": 1404
+  },
+  {
+    "id": "hailstorm_mg",
+    "name": "Hailstorm",
+    "class": "machine gun",
+    "clip": "shoot",
+    "length_m": 0.936,
+    "tris": 1232
+  },
+  {
+    "id": "longshot_bolt",
+    "name": "Longshot",
+    "class": "sniper",
+    "clip": "shoot",
+    "length_m": 1.142,
+    "tris": 1564
+  },
+  {
+    "id": "javelin_amr",
+    "name": "Javelin",
+    "class": "sniper",
+    "clip": "shoot",
+    "length_m": 1.447,
+    "tris": 1404
+  }
+]

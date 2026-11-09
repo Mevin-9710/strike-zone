@@ -1,0 +1,53 @@
+PASS  boots into the 3D lobby
+PASS  lobby shows level + coins
+PASS  operative preview animates in the lobby
+PASS  campaign lists 12 missions  [n=12]
+PASS  new profile: only mission 1 open  [locked=11]
+PASS  story-locked weapons are disabled
+PASS  story-locked operatives are disabled
+PASS  briefing BACK returns to lobby
+PASS  no errors on boot
+PASS  M1 First Signal wins  [DEVICE DEFUSED]
+PASS  M2 Low Tide wins  [SERVER CRACKED]
+PASS  M3 Dead Air wins  [GRID SECURED]
+PASS  M4 Static Bloom wins  [TOWER CLEAN]
+PASS  M5 Cold Storage wins  [LEDGER BURNED]
+PASS  M6 Paper Trail wins  [DRIVES SECURED]
+PASS  M7 Glass Choir wins  [HQ SECURED]
+PASS  M8 Undertow wins  [FRAGMENTS RECOVERED]
+PASS  M9 Ash Market wins  [DEPOT DESTROYED]
+PASS  M10 Signal Fire wins  [RELAYS DOWN]
+PASS  M11 Iron Psalm wins  [CORES STOLEN]
+PASS  M12 Last Light wins  [LAST LIGHT]
+PASS  campaign progress reaches 12  [p=12]
+PASS  wins level up and the pass pays coins  [lv=20 coins=3900]
+PASS  final mission ends the season
+PASS  no errors across all 12 missions
+PASS  timer fail shows MISSION FAILED
+PASS  death shows the REVIVE ad button
+PASS  revive restores the player with brief invulnerability  [{"running":true,"hp":100,"again":100}]
+PASS  revive is once per mission
+PASS  double-XP ad repeats the mission XP  [{"gain":1150,"doubled":1150}]
+PASS  a win grants an upgrade point and shows the upgrade panel  [{"shown":true,"pts":1,"after":{"pts":0,"rank":1,"mult":1.08},"reserve":150,"base":120}]
+PASS  +DAMAGE raises the weapon damage multiplier
+PASS  +AMMO raises reserve ammo next mission  [150 vs 120]
+PASS  vault objective is sealed until a breach  [{"before":false,"done":true,"after":true,"hit":false}]
+PASS  hold E places a breach charge that blows the wall  [{"before":false,"done":true,"after":true,"hit":false}]
+PASS  shooting an explosive barrel blows it up and kills nearby enemies  [{"barrel":false,"enemy":false}]
+PASS  walking over intel collects and saves it  [{"got":true,"saved":1,"xp":100}]
+PASS  no errors in world mechanics
+PASS  buying a charm spends coins and equips it  [{"coins":850,"charm":"charm_star"}]
+PASS  buying a spray equips it
+PASS  pass shows 40 tiers with 4 claimed
+PASS  profile lists intel files
+PASS  equipped charm hangs on the viewmodel gun (both weapons)  [{"charm":true,"charm2":true,"placed":1}]
+PASS  T sprays the equipped spray on a wall  [{"charm":true,"charm2":true,"placed":1}]
+PASS  no errors in shop/pass/profile/charm/spray
+PASS  HUD + touch buttons on screen at 907x510  [{"obj":true,"hp":true,"ammo":true,"mm":true,"tfire":true,"tjump":true,"tab0":true,"tpause":true,"tspray":true}]
+PASS  HUD + touch buttons on screen at 1024x768  [{"obj":true,"hp":true,"ammo":true,"mm":true,"tfire":true,"tjump":true,"tab0":true,"tpause":true,"tspray":true}]
+PASS  HUD + touch buttons on screen at 1920x1080  [{"obj":true,"hp":true,"ammo":true,"mm":true,"tfire":true,"tjump":true,"tab0":true,"tpause":true,"tspray":true}]
+PASS  district renders in under 350 draw calls (incl. shadow pass)  [{"frame":15,"calls":238,"triangles":158150,"points":0,"lines":0,"geometries":214,"textures":175,"q":1,"fps":0}]
+PASS  district under 600k triangles per frame  [tris=158150]
+
+50/50 passed
+EXIT 0

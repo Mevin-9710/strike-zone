@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Strike Zone: Season 1</title>
+  <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js" async onerror="window.__noSDK=true"></script>
+  <script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
+  <style>
+    /* ===== HUD style D "Comic bold": yellow panels, heavy ink outlines, skewed, Impact ===== */
+    :root{--y:#ffd23b;--ink:#111;--red:#ff3b47;--cyan:#5fe6ff;--u:clamp(9px,1.45vh,15px)}
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Impact,"Haettenschweiler","Arial Narrow Bold","Franklin Gothic Heavy",sans-serif;user-select:none;color:var(--ink)}
+    canvas#gl{display:block;position:fixed;inset:0}
+    .ov{position:fixed;pointer-events:none}
+    .pnl{background:var(--y);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);transform:skewX(-8deg)}
+    .pnl>*{transform:skewX(8deg)}
+    .ink{background:var(--ink);color:#fff}
+    #hud{position:fixed;inset:0;pointer-events:none;display:none}
+    #hud.on{display:block}
+    /* crosshair */
+    #cross{left:50%;top:50%;width:0;height:0}
+    #cross i{position:absolute;background:#fff;outline:2px solid var(--ink)}
+    #cross i:nth-child(1),#cross i:nth-child(2){width:3px;height:calc(var(--u)*0.8);left:-1.5px}
+    #cross i:nth-child(3),#cross i:nth-child(4){height:3px;width:calc(var(--u)*0.8);top:-1.5px}
+    #cross b{position:absolute;width:3px;height:3px;left:-1.5px;top:-1.5px;background:var(--y);outline:1px solid var(--ink)}
+    #hitm{left:50%;top:50%;width:0;height:0;opacity:0}
+    #hitm i{position:absolute;width:3px;height:calc(var(--u)*0.9);background:#fff;outline:2px solid var(--ink);left:-1.5px;top:calc(var(--u)*-0.45)}
+    #hitm.kill i{background:var(--red)}
+    #hitm.head i{background:var(--y)}
+    /* objective */
+    #objp{left:50%;top:calc(var(--u)*0.9);transform:translateX(-50%) skewX(-8deg);padding:calc(var(--u)*0.25) calc(var(--u)*1.2);text-align:center;min-width:calc(var(--u)*16)}
+    #obj{font-size:calc(var(--u)*1.25);letter-spacing:1px;white-space:nowrap}
+    #timer{font-size:calc(var(--u)*2.2);line-height:1}
+    #timer.low{color:var(--red);-webkit-text-stroke:1px var(--ink)}
+    #prog{font-family:"Trebuchet MS",Arial,sans-serif;font-weight:bold;font-size:calc(var(--u)*0.85)}
+    /* minimap */
+    #mmp{left:calc(var(--u)*0.9);top:calc(var(--u)*0.9);padding:calc(var(--u)*0.25)}
+    #mm{display:block;width:calc(var(--u)*11);height:calc(var(--u)*11);background:#1a1d24;border:2px solid var(--ink)}
+    #mmlabel{font-size:calc(var(--u)*0.8);text-align:center}
+    /* kill feed */
+    #feed{right:calc(var(--u)*0.9);top:calc(var(--u)*0.9);display:flex;flex-direction:column;align-items:flex-end;gap:calc(var(--u)*0.35)}
+    #feed div{font-size:calc(var(--u)*0.95);padding:2px calc(var(--u)*0.6)}
+    #feed div.hs{background:var(--red);color:#fff}
+    /* vitals */
+    #vit{left:calc(var(--u)*0.9);bottom:calc(var(--u)*0.9);padding:calc(var(--u)*0.3) calc(var(--u)*0.8);min-width:calc(var(--u)*12)}
+    #vit .row1{display:flex;align-items:baseline;gap:calc(var(--u)*0.5)}
+    #hp{font-size:calc(var(--u)*2.6);line-height:1}
+    #hpl{font-size:calc(var(--u)*0.9)}
+    .bar{height:calc(var(--u)*0.65);background:#333;border:2px solid var(--ink);margin-top:3px;position:relative;overflow:hidden}
+    .bar i{position:absolute;left:0;top:0;bottom:0;background:#3ddc84;width:100%}
+    #shb i{background:var(--cyan)}
+    #shb{display:none}
+    /* weapon */
+    #wep{right:calc(var(--u)*0.9);bottom:calc(var(--u)*0.9);padding:calc(var(--u)*0.3) calc(var(--u)*0.8);text-align:right;min-width:calc(var(--u)*13)}
+    #wicon{height:calc(var(--u)*2.4);display:block;margin-left:auto;filter:drop-shadow(2px 2px 0 var(--ink))}
+    #wname{font-size:calc(var(--u)*1)}
+    #ammo{font-size:calc(var(--u)*2.4);line-height:1}
+    #ammo small{font-size:calc(var(--u)*1.1)}
+    #ammo.low{color:var(--red)}
+    #rbar{display:none}
+    #rbar i{background:var(--ink)}
+    /* abilities */
+    #abil{left:50%;bottom:calc(var(--u)*0.9);transform:translateX(-50%);display:flex;gap:calc(var(--u)*0.8)}
+    .slot{width:calc(var(--u)*3.6);height:calc(var(--u)*3.6);position:relative;display:flex;align-items:center;justify-content:center;flex-direction:column}
+    .slot .k{position:absolute;left:3px;top:1px;font-size:calc(var(--u)*0.9)}
+    .slot .n{font-size:calc(var(--u)*0.8);margin-top:calc(var(--u)*1.2)}
+    .slot .cd{position:absolute;inset:0;background:conic-gradient(rgba(17,17,17,.82) var(--p,0%),transparent 0);display:flex;align-items:center;justify-content:center;color:#fff;font-size:calc(var(--u)*1.5)}
+    .slot .ic{position:absolute;top:calc(var(--u)*0.5);font-size:calc(var(--u)*1.4)}
+    /* radio */
+    #radio{left:50%;bottom:calc(var(--u)*6);transform:translateX(-50%);max-width:min(70vw,calc(var(--u)*46));display:none}
+    #radio.on{display:flex}
+    #radio .who{background:var(--y);border:3px solid var(--ink);padding:2px calc(var(--u)*0.6);font-size:calc(var(--u)*1);transform:skewX(-8deg);white-space:nowrap;align-self:flex-start}
+    #radio .txt{background:rgba(17,17,17,.88);color:#fff;font-family:"Trebuchet MS",Arial,sans-serif;font-weight:bold;font-size:calc(var(--u)*1.05);padding:calc(var(--u)*0.4) calc(var(--u)*0.8);border:3px solid var(--ink);margin-left:-3px}
+    /* interaction ring */
+    #ringw{left:50%;top:58%;transform:translate(-50%,0);text-align:center;display:none}
+    #ringw.on{display:block}
+    #ring{width:calc(var(--u)*4.4);height:calc(var(--u)*4.4)}
+    #ringl{font-size:calc(var(--u)*1);padding:1px calc(var(--u)*0.6);margin-top:4px;display:inline-block}
+    #prompt{left:50%;top:64%;transform:translateX(-50%);font-size:calc(var(--u)*1);padding:2px calc(var(--u)*0.7);display:none}
+    #prompt.on{display:block}
+    /* feedback overlays */
+    #dmgdir{left:50%;top:50%;width:0;height:0}
+    #dmgdir i{position:absolute;left:calc(var(--u)*-2.5);top:calc(var(--u)*-9);width:calc(var(--u)*5);height:calc(var(--u)*1.1);background:var(--red);border:2px solid var(--ink);transform-origin:50% calc(var(--u)*9);clip-path:polygon(0 100%,50% 0,100% 100%,80% 100%,50% 40%,20% 100%)}
+    #hurt{inset:0;background:radial-gradient(circle,transparent 50%,rgba(255,40,40,.65) 100%);opacity:0}
+    #whiteout{inset:0;background:#fff;opacity:0}
+    #scope{inset:0;display:none;background:radial-gradient(circle at 50% 50%,transparent 0,transparent calc(min(42vh,42vw)),#111 calc(min(42vh,42vw) + 2px))}
+    #scope.on{display:block}
+    #scope::before,#scope::after{content:"";position:absolute;background:#111}
+    #scope::before{left:50%;top:8%;bottom:8%;width:2px;margin-left:-1px}
+    #scope::after{top:50%;left:20%;right:20%;height:2px;margin-top:-1px}
+    #spot{left:50%;top:calc(var(--u)*6.4);transform:translateX(-50%) skewX(-8deg);font-size:calc(var(--u)*0.95);padding:1px calc(var(--u)*0.7);display:none;background:var(--red);color:#fff;border:3px solid var(--ink)}
+    #spot.on{display:block}
+    #laser{inset:0;opacity:0;background:radial-gradient(circle,transparent 60%,rgba(255,0,0,.35) 100%)}
+    /* ===== menus ===== */
+    .panel{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(20,24,34,.82);pointer-events:auto;overflow:auto;padding:12px;box-sizing:border-box}
+    .panel.show{display:flex}
+    .card{background:var(--y);border:4px solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:calc(var(--u)*1.2) calc(var(--u)*1.6);max-width:min(1100px,96vw);max-height:94vh;overflow:auto;box-sizing:border-box}
+    .card h1,.card h2{margin:0 0 6px;letter-spacing:1px}
+    .card h1{font-size:calc(var(--u)*2.6)} .card h2{font-size:calc(var(--u)*2)}
+    .card h3{margin:calc(var(--u)*0.6) 0 4px;font-size:calc(var(--u)*1.1)}
+    .card p{font-family:"Trebuchet MS",Arial,sans-serif;font-weight:bold;font-size:calc(var(--u)*1.05);line-height:1.4;white-space:pre-line;margin:6px 0}
+    button{font-family:inherit;font-size:calc(var(--u)*1.15);padding:calc(var(--u)*0.45) calc(var(--u)*1.1);border:3px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer;box-shadow:3px 3px 0 var(--ink);transform:skewX(-8deg);margin:3px}
+    button:hover{background:#fff6cc}
+    button.on{background:var(--ink);color:var(--y)}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    button.go{background:var(--red);color:#fff;font-size:calc(var(--u)*1.6);padding:calc(var(--u)*0.5) calc(var(--u)*2)}
+    .row{display:flex;flex-wrap:wrap;gap:2px;align-items:center}
+    .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:calc(var(--u)*1.6)}
+    @media (max-aspect-ratio:1/1){.cols{grid-template-columns:1fr}}
+    .wcard{display:inline-flex;flex-direction:column;align-items:center;min-width:calc(var(--u)*7.4)}
+    .wcard img{height:calc(var(--u)*2);pointer-events:none}
+    .wcard span{font-size:calc(var(--u)*0.9)}
+    #wstats{font-family:"Trebuchet MS",Arial,sans-serif;font-weight:bold;font-size:calc(var(--u)*0.85);display:grid;grid-template-columns:auto 1fr;gap:2px 8px;margin-top:4px}
+    #wstats b{display:block;height:calc(var(--u)*0.6);background:var(--ink);margin-top:calc(var(--u)*0.2)}
+    .help{font-family:"Trebuchet MS",Arial,sans-serif;font-size:calc(var(--u)*0.85)!important;opacity:.8}
+    #brief{justify-content:flex-end;background:linear-gradient(90deg,transparent 0,transparent 30%,rgba(20,24,34,.75) 55%)}
+    #brief .card{max-width:min(800px,66vw);margin-right:1vw}
+    @media (max-aspect-ratio:4/3){#brief .card{max-width:96vw}}
+    #loading .card{text-align:center}
+    /* ===== lobby / shop / pass / profile ===== */
+    #lobby{background:linear-gradient(90deg,transparent 0,transparent 45%,rgba(20,24,34,.55) 75%);justify-content:flex-end;align-items:stretch}
+    #lobbyTop{position:fixed;left:calc(var(--u)*1.2);top:calc(var(--u)*1);display:flex;gap:calc(var(--u)*.8);align-items:center}
+    #lobbyTop .logo{font-size:calc(var(--u)*3);color:var(--y);-webkit-text-stroke:2px var(--ink);text-shadow:4px 4px 0 var(--ink);transform:skewX(-8deg)}
+    .chip{background:var(--y);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:4px 10px;font-size:calc(var(--u)*1.1);transform:skewX(-8deg)}
+    #lvlbar{display:inline-block;width:calc(var(--u)*8);height:10px;border:2px solid var(--ink);background:#fff;vertical-align:middle;margin-left:6px}#lvlbar i{display:block;height:100%;background:var(--red)}
+    #lobbyNav{display:flex;flex-direction:column;justify-content:center;gap:calc(var(--u)*.5);margin-right:3vw;min-width:min(340px,40vw)}
+    #lobbyNav button{font-size:calc(var(--u)*1.8);text-align:left}
+    #lobbyNav button.go{font-size:calc(var(--u)*2.6)}
+    #lobbyOp{position:fixed;left:calc(var(--u)*1.2);bottom:calc(var(--u)*1)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(calc(var(--u)*9),1fr));gap:8px;margin:8px 0}
+    .item{background:#fff;border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:6px;text-align:center;font-size:calc(var(--u)*.95)}
+    .item img{width:70%;display:block;margin:0 auto 4px}.item .sw{width:calc(var(--u)*3);height:calc(var(--u)*3);border-radius:50%;border:3px solid var(--ink);margin:4px auto}
+    .item.own{background:#eaffef}.item.eq{outline:4px solid var(--red)}
+    .item button{font-size:calc(var(--u)*.9);padding:2px 8px}
+    #passTrack{display:flex;gap:6px;overflow-x:auto;padding:6px 2px 12px}
+    .tier{min-width:calc(var(--u)*5.5);background:#fff;border:3px solid var(--ink);text-align:center;padding:6px 2px;font-size:calc(var(--u)*.9)}
+    .tier.got{background:var(--ink);color:var(--y)}.tier.big{border-color:var(--red)}
+    #endXP{font-size:calc(var(--u)*1.2)}
+    .file{background:#fff;border:3px solid var(--ink);padding:6px 10px;margin:6px 0;font-family:"Trebuchet MS",Arial,sans-serif;font-weight:bold}
+    .file.lock{opacity:.45}
+    #missions button{min-width:calc(var(--u)*11);text-align:left}
+
+    #lbar{height:14px;border:3px solid var(--ink);background:#fff;margin-top:8px}
+    #lbar i{display:block;height:100%;width:0;background:var(--red)}
+  </style>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <div id="hud">
+    <div id="whiteout" class="ov"></div>
+    <div id="hurt" class="ov"></div>
+    <div id="laser" class="ov"></div>
+    <div id="scope" class="ov"></div>
+    <div id="cross" class="ov"><i></i><i></i><i></i><i></i><b></b></div>
+    <div id="hitm" class="ov"><i style="transform:rotate(45deg) translateY(-140%)"></i><i style="transform:rotate(135deg) translateY(-140%)"></i><i style="transform:rotate(225deg) translateY(-140%)"></i><i style="transform:rotate(315deg) translateY(-140%)"></i></div>
+    <div id="dmgdir" class="ov"></div>
+    <div id="objp" class="ov pnl"><div><div id="obj">OBJECTIVE</div><div id="timer">0:00</div><div id="prog"></div></div></div>
+    <div id="spot" class="ov">SPOTTED</div>
+    <div id="mmp" class="ov pnl"><div><canvas id="mm" width="220" height="220"></canvas><div id="mmlabel">HALVANE</div></div></div>
+    <div id="feed" class="ov"></div>
+    <div id="vit" class="ov pnl"><div><div class="row1"><span id="hp">100</span><span id="hpl">HEALTH</span></div><div class="bar" id="hpb"><i></i></div><div class="bar" id="shb"><i></i></div></div></div>
+    <div id="wep" class="ov pnl"><div><img id="wicon" alt=""><div id="wname">AR-7 LANCE</div><div id="ammo">30 <small>/ 120</small></div><div class="bar" id="rbar"><i></i></div></div></div>
+    <div id="abil" class="ov"></div>
+    <div id="radio" class="ov"><span class="who"><span id="rwho">OKONKWO</span></span><span class="txt" id="rtxt"></span></div>
+    <div id="ringw" class="ov"><svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="rgba(17,17,17,.55)" stroke="#111" stroke-width="16"/><circle id="ringp" cx="50" cy="50" r="40" fill="none" stroke="#ffd23b" stroke-width="9" stroke-dasharray="251.3" stroke-dashoffset="251.3" transform="rotate(-90 50 50)"/><text id="ringt" x="50" y="58" text-anchor="middle" font-size="24" fill="#fff" font-family="Impact">0%</text></svg><div><span id="ringl" class="pnl"><span>DEFUSING</span></span></div></div>
+    <div id="prompt" class="ov pnl"><span id="promptt">HOLD E</span></div>
+  </div>
+
+  <div id="loading" class="panel show"><div class="card"><h1>STRIKE ZONE</h1><p id="ltext">Loading Halvane…</p><div id="lbar"><i></i></div></div></div>
+
+
+  <div id="lobby" class="panel">
+    <div id="lobbyTop"><span class="logo">STRIKE ZONE</span><span class="chip" id="lvl">LV 1<span id="lvlbar"><i></i></span></span><span class="chip" id="coins">◎ 0</span></div>
+    <div id="lobbyNav">
+      <button id="lPlay" class="go">▶ PLAY</button>
+      <button id="lLoadout">LOADOUT</button>
+      <button id="lShop">SHOP</button>
+      <button id="lPass">BATTLE PASS</button>
+      <button id="lProfile">PROFILE · INTEL</button>
+      <button id="lSettings">⚙ SETTINGS</button>
+    </div>
+    <div id="lobbyOp" class="chip"></div>
+  </div>
+  <div id="shop" class="panel"><div class="card" style="min-width:min(900px,94vw)"><div class="row" style="justify-content:space-between"><h2>SHOP</h2><span class="chip" id="shopCoins"></span></div>
+    <h3>WEAPON CHARMS</h3><div class="grid" id="charms"></div><h3>SPRAYS · PRESS T IN MISSION</h3><div class="grid" id="sprays"></div>
+    <p class="help">Coins come from the Battle Pass. New weapons and operatives unlock through the campaign.</p><button class="back go">BACK</button></div></div>
+  <div id="pass" class="panel"><div class="card" style="min-width:min(900px,94vw)"><h2>BATTLE PASS · SEASON 1</h2><p id="passInfo"></p><div id="passTrack"></div><button class="back go">BACK</button></div></div>
+  <div id="profile" class="panel"><div class="card" style="min-width:min(800px,94vw)"><h2>PROFILE</h2><p id="profStats"></p><h3>STORY UNLOCKS</h3><p id="profUnlocks"></p><h3>INTEL FILES</h3><div id="files"></div><button class="back go">BACK</button></div></div>
+  <div id="brief" class="panel">
+    <div class="card">
+      <h1>CAMPAIGN · SEASON 1</h1>
+      <div class="cols">
+        <div>
+          <h3>MISSION</h3>
+          <div class="row" id="missions"></div>
+          <p id="brief-text"></p>
+          <div id="routeBox"><h3>ROUTE</h3><div class="row" id="routes"></div></div>
+          <h3>ABILITIES · PICK TWO</h3>
+          <div class="row" id="abilities"></div>
+        </div>
+        <div>
+          <h3>PRIMARY</h3>
+          <div class="row" id="primaries"></div>
+          <h3>SIDEARM</h3>
+          <div class="row" id="sidearms"></div>
+          <div id="wstats"></div>
+        </div>
+      </div>
+      <div class="row" style="justify-content:space-between;margin-top:calc(var(--u)*0.8)">
+        <p class="help">WASD move · SHIFT walk · SPACE jump · LMB fire · RMB aim · R reload · 1/2 or wheel switch · E hold to defuse/plant · Q/F abilities · ESC pause</p>
+        <span><button id="briefBack">◀ LOBBY</button><button id="start" class="go">DEPLOY</button></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause" class="panel"><div class="card" style="text-align:center"><h2>PAUSED</h2><button id="resume" class="go">RESUME</button><br><button id="pauseMenu">QUIT TO LOBBY</button></div></div>
+
+  <div id="end" class="panel"><div class="card" style="max-width:min(720px,94vw)">
+    <h1 id="endTitle"></h1><p id="endText"></p><p id="endStats" class="help"></p><p id="endXP"></p><div id="upBox" style="display:none"><h3 id="upTitle"></h3><div class="row"><button id="upDmg">+ DAMAGE</button><button id="upAmmo">+ AMMO</button></div></div>
+    <div class="row"><button id="next" class="go">NEXT MISSION</button><button id="again">REPLAY</button><button id="menuBtn">LOBBY</button></div><div class="row"><button id="adXP">▶ WATCH AD · DOUBLE XP</button><button id="adRevive" class="go">▶ WATCH AD · REVIVE</button></div>
+  </div></div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>

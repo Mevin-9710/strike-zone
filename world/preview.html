@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Map preview</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}canvas{display:block}</style>
+<script type="importmap">{ "imports": { "three": "../lib/three.module.js" } }</script></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { World } from './collision.js';
+import { buildM1, buildM2, buildM3, LIGHTING } from './maps.js';
+const q = new URLSearchParams(location.search);
+const which = q.get('m') || '1';
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(innerWidth, innerHeight); renderer.shadowMap.enabled = true; document.body.append(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 600);
+const world = new World();
+const map = { 1: buildM1, 2: buildM2, 3: buildM3 }[which](world, scene);
+const L = LIGHTING[map.time];
+scene.background = new THREE.Color(L.sky); scene.fog = new THREE.Fog(...L.fog);
+scene.add(new THREE.HemisphereLight(...L.hemi));
+const sun = new THREE.DirectionalLight(...L.sun); sun.position.set(...L.sunPos); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -60, right: 60, top: 60, bottom: -60, near: 1, far: 300 });
+scene.add(sun);
+const t0 = performance.now();
+const nav = world.buildNav(map.bounds);
+const navMs = performance.now() - t0;
+const bad = [];
+const chk = (name, p) => { const o = world.overlaps(p, 0.45, 1.8, 0.05); const g = world.groundHeight(p.x, p.z, 0.3, p.y + 0.1, 0.2); if (o || Math.abs(g - p.y) > 0.15) bad.push(`${name} at ${p.x},${p.y},${p.z} overlap=${!!o} ground=${g.toFixed?.(2)}`); };
+for (const [k2, p] of Object.entries(map.spawns)) chk('spawn ' + k2, p);
+map.guards.forEach((p, i) => chk('guard ' + i, p));
+map.points.forEach((p, i) => chk('point ' + i, p));
+const links = nav.nodes.reduce((a, n) => a + n.links.length, 0) / 2;
+// reachability from spawn to every objective
+const sp = map.spawns.default || Object.values(map.spawns)[0];
+const reach = map.points.map(p => !!world.findPath(sp, p));
+const guardsReach = map.guards.map(p => !!world.findPath(sp, p));
+window.__map = { solids: world.solids.length, navNodes: nav.nodes.length, navLinks: links, navMs: Math.round(navMs), bad, reach, guardsReach };
+const views = { aerial: [[0, 95, 75], [0, 0, -5]], ground: [[sp.x, sp.y + 1.7, sp.z], [map.points[0].x, map.points[0].y + 1, map.points[0].z]], high: [[-60, 40, 60], [0, 0, -10]] };
+const v = views[q.get('v') || 'aerial'];
+camera.position.set(...v[0]); camera.lookAt(...v[1]);
+if (q.get('v') === 'ground') { camera.fov = 75; camera.updateProjectionMatrix(); }
+let t = 0;
+renderer.setAnimationLoop(() => { t += 0.016; map.kit.update(0.016, t); renderer.render(scene, camera); });
+window.__world = world; window.__V = (x,y,z) => new THREE.Vector3(x,y,z); window.__ready = true;
+</script></body></html>
