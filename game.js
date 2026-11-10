@@ -1,8 +1,11 @@
 // Strike Zone: Season 1. Full game: maps + collision, rigged enemies with AI, first-person weapons,
 // abilities that drive gameplay, objectives, story radio, style D HUD. See DEV-LOG.md.
+import { createFlow } from './game/menu-flow.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './lib/addons/loaders/GLTFLoader.js';
 import { World } from './world/collision.js';
+import { loadKenney, dressMap } from './world/kenney.js';
+import { loadArch } from './world/kenney-arch.js';
 import { buildM1, buildM2, buildM3, LIGHTING } from './world/maps.js';
 import { AbilityFX } from './fx/abilities.js';
 import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons.js';
@@ -15,8 +18,11 @@ import { TouchControls, isTouchDevice, TOUCH_CSS } from './game/touch.js';
 import { buildDistrict } from './world/procgen.js';
 import * as META from './game/meta.js';
 import * as FX from './game/feel.js';
-import { createTutorial } from './game/tutorial.js';
-const TUT = { moved: false, looked: false, fired: false, reloaded: false, ability: false, interacting: false };
+import { createTutorial, tutorialDone } from './game/tutorial.js';
+import { Mentor } from './game/mentor.js';
+import { weaponInfo } from './game/weapons.js';
+import { radio as RADIO } from './game/radio.js';
+const TUT = { dt: 0, look: 0, moved: false, walked: false, jumped: false, slid: false, fired: false, aiming: false, reloaded: false, swapped: false, ab0: false, ab1: false, kills: 0, interacting: false };
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.has('test'), DEBUG = Q.has('debug') || TEST;
@@ -160,6 +166,8 @@ async function loadAll() {
   const tick = () => { done++; $('lbar').firstElementChild.style.width = `${Math.round(done / total * 100)}%`; };
   await Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); tick(); }));
   await Promise.all(['covenant_device', 'counter_charge'].map(async id => { const g = await loader.loadAsync(`models/props/${id}.glb`); g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); A.props[id] = g.scene; tick(); }));
+  await loadArch(loader);   // Kenney architecture (world/kenney-arch.js)
+  await loadKenney(loader);   // Kenney map props (world/kenney.js); falls back to procedural boxes if missing
   A.ops = {}; const rhea = await loadOperative(loadout.operative in OPERATIVES ? loadout.operative : 'rhea'); A.rhea = rhea; tick();
   A.enemies = await loadEnemyAssets(loader, A.weapons); done += 6; tick();
   for (const id of ids) A.icons[id] = renderIcon(A.weapons[id]);
@@ -191,7 +199,7 @@ const W = { slots: [], cur: 0, state: {}, cd: 0, reloadT: 0, trigger: false, fir
 let picks = [], abilityCD = [0, 0], keys = {}, mouse = { l: false, r: false }, lookD = { x: 0, y: 0 };
 let objective = { prog: [], done: [], planted: false, plantProg: 0, holdProg: 0, active: -1 };
 let stats = { kills: 0, shots: 0, hits: 0, heads: 0 };
-let flashK = 0, hurtK = 0, hitmT = 0, laserK = 0, dmgDirs = [], radioQ = [], radioT = 0, said = {}, repathBudget = 2, stepT = 0;
+let flashK = 0, hurtK = 0, hitmT = 0, laserK = 0, dmgDirs = [], said = {}, repathBudget = 2, stepT = 0;
 const proxy = new THREE.Object3D();                 // stands in for the player's body for dash/shield fx
 let tracers = [], impacts = [], lasers = new Map();
 let breaches = [], barrels = [], intel = [], extractMark = null, matchXP = {}, revived = false, invT = 0, shakeK = 0, sprays = [], sprayCD = 0, xpDoubled = false;
@@ -205,7 +213,7 @@ const G = {                                         // services handed to enemie
   nearestDecoy(p, r) { let best = null, bd = r; for (const d of zones.decoy) { const q = d.obj.position.clone().add(V(0, 1.2, 0)); const dd = q.distanceTo(p); if (dd < bd) { bd = dd; best = q; } } return best; },
   inLockdown: p => zones.lock.some(z => z.pos.distanceTo(p) < z.radius && Math.abs(z.pos.y - p.y) < 3),
   allowRepath: () => repathBudget-- > 0,
-  onSpotted(e) { radioOnce('contact'); for (const o of enemies) if (o !== e && o.alive && o.pos.distanceTo(e.pos) < 18) o.alert(player.pos, 0.8); },
+  onSpotted(e) { radioOnce('contact'); storyEv(e.type); for (const o of enemies) if (o !== e && o.alive && o.pos.distanceTo(e.pos) < 18) o.alert(player.pos, 0.8); },
   sniperLaser, enemyFired, enemyAbility,
   nearDevice: p => mission?.objective === 'defuse' && map.points.some((q, i) => !objective.done[i] && q.distanceTo(p) < 4),
   onEnemyTask(e, t) {
@@ -248,6 +256,9 @@ function buildMission(idx, opts = {}) {
     map.points = pts;
     map.intel = map.intelPool.filter(p => p.distanceTo(sp) > 15 && world.reachable(sp, p, 1.2)).slice(0, map.wantIntel);
   }
+  { const th = mission.proc?.theme || { m1: 'downtown', m2: 'harbor', m3: 'industrial' }[mission.id] || 'street';   // decorative Kenney scatter (no colliders / minimap)
+    let h = 7; for (const ch of mission.id) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    map.dressCount = dressMap(world, map.kit.root, map, { seed: mission.proc?.seed || h, theme: th }); window.__dress = dressMap.stats; }
   scene.add(camera);
   // route / roster
   const r = mission.routes ? mission.routes[opts.route || 'stealth'] : { count: mission.count || 8, timer: mission.timer, spawn: 'default' };
@@ -310,14 +321,15 @@ function buildMission(idx, opts = {}) {
   W.slots = [opts.primary || loadout.primary, opts.sidearm || loadout.sidearm];
   W.state = {}; for (const id of W.slots) W.state[id] = { mag: WEAPONS[id].mag, reserve: META.reserveFor(id, WEAPONS[id].reserve) };
   W.cur = 0; W.cd = 0; W.reloadT = 0; W.bloom = 0; equip(0, true);
-  picks = (opts.abilities || chosenAbilities()).slice(0, 2); abilityCD = [0, 0];
+  picks = (opts.abilities?.length === 2 ? opts.abilities : chosenAbilities()).slice(0, 2); abilityCD = [0, 0];
   stats = { kills: 0, shots: 0, hits: 0, heads: 0 };
-  flashK = hurtK = laserK = 0; dmgDirs = []; radioQ = []; radioT = 0; said = {};
+  flashK = hurtK = laserK = 0; dmgDirs = []; said = {}; RADIO.reset();
   // toon pass: rim-lit, inked enemies and props; banded shading on the whole city
   for (const e of enemies) { toonify(e.root, { rim: 0xff6a5a }); outline(e.root, { thick: 0.022 }); }
   for (const d of devices) { toonify(d.g); outline(d.g, { thick: 0.015 }); }
   toonify(scene);
   buildMinimap(); buildAbilityHud();
+  map.kit.root.updateMatrixWorld(true); map.kit.root.traverse(o => { if (!o.userData.dyn) o.matrixAutoUpdate = false; });   // static city: skip per-frame matrix composes
   // shader warm-up: one of every runtime effect + every ability fx, compiled now instead of mid-fight
   const keep = new Set(scene.children);
   const warm = new THREE.Group(); warm.position.set(player.pos.x, player.pos.y - 400, player.pos.z); scene.add(warm);
@@ -383,7 +395,7 @@ function fire() {
     hitMarker(killed, head); sfx.hit(head); addImpact(end, dir.clone().negate(), true);
     if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
     FEEL.combo++; FEEL.comboT = 1.2;
-    if (killed) { stats.kills++; matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
+    if (killed) { stats.kills++; killTick(); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
   if (s.mag === 0 && s.reserve > 0) setTimeout(() => { if (running && cur() === w && st().mag === 0) startReload(); }, 250);
@@ -434,6 +446,7 @@ function damagePlayer(dmg, from) {
   player.hp -= x; hurtK = Math.min(1, hurtK + 0.35 + dmg / 60); sfx.hurt();
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
+  if (player.hp > 0 && player.hp < 35) storyEv('hurt');
   if (player.hp <= 0) { player.hp = 0; player.alive = false; lose('You were eliminated.'); }
 }
 
@@ -596,7 +609,7 @@ function explode(p, r, dmg, label) {
   for (let i = 0; i < 7; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: starTex(), color: i % 2 ? 0xffa040 : 0xffe080, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.position.copy(p).add(V(rand(-1, 1), rand(-0.5, 1.2), rand(-1, 1))); sp.scale.setScalar(rand(2, 3.6)); sp.userData.t = 0.35; sp.userData.spark = true; scene.add(sp); impacts.push(sp); }
   for (const e of enemies) {
     if (!e.alive) continue; const d = e.pos.clone().add(V(0, 1, 0)).distanceTo(p);
-    if (d < r) { const killed = e.damage(dmg * (1 - d / r * 0.6), p.clone()); if (killed) { stats.kills++; matchXP.kills += META.XP.kill; feed(`VOSS ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()} · ${label}`, false); } }
+    if (d < r) { const killed = e.damage(dmg * (1 - d / r * 0.6), p.clone()); if (killed) { stats.kills++; killTick(); matchXP.kills += META.XP.kill; feed(`VOSS ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()} · ${label}`, false); } }
     if (d < 30) e.alert(p, 1);
   }
   const pd = player.pos.clone().add(V(0, 1, 0)).distanceTo(p);
@@ -715,7 +728,8 @@ function update(dt) {
   FEEL.comboT -= dt; if (FEEL.comboT <= 0) FEEL.combo = 0;
   { const fighting = enemies.some(e => e.alive && e.state === 'combat'); music.setIntensity(fighting ? 1 : clock < 30 ? 0.7 : 0.25); }
   for (const e of enemies) if (!e.alive && e._dv && e.deadT < 0.45) { e.pos.addScaledVector(e._dv, dt * (1 - e.deadT / 0.45)); }   // death knockback
-  elapsed += dt; clock -= dt; repathBudget = 2;
+  const tutHold = !!tutorial?.hold;                                     // tutorial drills: freeze the timer + hostiles
+  elapsed += dt; if (!tutHold) clock -= dt; repathBudget = 2;
   if (clock <= 30 && clock + dt > 30) radioOnce('low');
   if (clock <= 0) { clock = 0; lose(mission.failTimer); return; }
   pollInput(dt);
@@ -727,6 +741,7 @@ function update(dt) {
   swingCharm(dt);
   lodTick = (lodTick + 1) % 3;
   for (const e of enemies) {
+    if (tutHold) { e.tickAnim(dt); e.sync(); continue; }
     const far = e.alive && e.state === 'patrol' && e.pos.distanceToSquared(player.pos) > 1600;
     if (!far) { if (e._lodAcc) { e.update(e._lodAcc, G); e._lodAcc = 0; } e.update(dt, G); continue; }
     e._lodAcc = (e._lodAcc || 0) + dt; if ((e.id % 3) === lodTick) { e.update(Math.min(e._lodAcc, 0.15), G); e._lodAcc = 0; }
@@ -743,7 +758,7 @@ function update(dt) {
   impacts = impacts.filter(o => { o.userData.t -= dt; if (o.userData.spark) o.scale.multiplyScalar(1 + dt * 4); if (o.userData.t <= 0) { scene.remove(o); return false; } return true; });
   flashK = Math.max(0, flashK - dt * 0.45); hurtK = Math.max(0, hurtK - dt * 1.6); hitmT = Math.max(0, hitmT - dt); laserK = Math.max(0, laserK - dt * 3);
   dmgDirs = dmgDirs.filter(d => (d.t -= dt) > 0);
-  if (radioT > 0) { radioT -= dt; if (radioT <= 0) nextRadio(); }
+  RADIO.update(dt);
   updateHud(prompt);
   FX.lowHealth(player.alive ? clamp(1 - player.hp / 45, 0, 1) : 0);
   { // arrow to the nearest live objective (or extraction)
@@ -752,14 +767,90 @@ function update(dt) {
     else map.points.forEach((p, i) => { if (objective.done[i] || (mission.objective === 'plant_hold' && objective.planted && i)) return; const d = p.distanceTo(player.pos); if (d < bd) { bd = d; tgt = p; } });
     if (tgt) { _arrowP.copy(tgt).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; } FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(tgt.distanceTo(player.pos))); }
   }
-  if (tutorial?.active) {
-    TUT.moved ||= player.moving; TUT.looked ||= Math.abs(lookD.x) + Math.abs(lookD.y) > 2; TUT.fired ||= mouse.l || !!touch?.fire;
-    TUT.reloaded ||= W.reloadT > 0; TUT.ability ||= abilityCD.some(c => c > 0); TUT.interacting ||= objective.active >= 0;
-    tutorial.update(TUT);
-  }
+  if (mentor) { mentor.update(dt, MCTX); mfx?.update(dt); }
+  if (tutorial?.active) tutorialTick(dt);
   FX.update(dt);
 }
-let tutorial = null;
+
+// ---------- guided tutorial (mission 1) + mentor bot (Amara, the last operative unlock) ----------
+let tutorial = null, mentor = null, mfx = null, mentorGltf = null, tutToken = 0;
+const tutPrev = { yaw: 0, pitch: 0, shots: 0, cur: 0, cd0: 0, cd1: 0, kills0: 0 };
+const _tv = new THREE.Vector3(), _tv2 = new THREE.Vector3();
+const MCTX = {
+  get player() { return player; }, get world() { return world; }, get enemies() { return enemies; },
+  losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
+  onShot(from, to, e, killed, hit) {
+    addTracer(from, to, 0x8fffc0); sfx.shot('rifle', { dist: from.distanceTo(player.pos), pan: 0 });
+    if (hit) e.alert(mentor.pos, 1);
+    if (killed) feed(`AMARA ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()}`, false);
+  },
+  onAbility(m, kind) {
+    if (!mfx || !mentorGltf) return;
+    mfx.spawn(kind, { hand: m.muzzle(V()), forward: m.forward(V()), root: m.root, template: mentorGltf.scene, clips: mentorGltf.animations, move: false });
+  },
+};
+// mentor ability effects: visuals + smoke/flash on hostiles only (never blinds or shields the player)
+function mentorEvent(kind, d) {
+  if (kind === 'smoke') zones.smoke.push({ pos: d.pos, radius: d.radius, t: d.life });
+  else if (kind === 'flash') { sfx.flash(); for (const e of enemies) if (e.alive && e.eye.distanceTo(d.pos) < d.radius && world.lineClear(e.eye, d.pos)) e.blindT = Math.max(e.blindT, 3.2); }
+  else if (kind === 'decoy') zones.decoy.push({ obj: d.obj, t: d.life });
+  else if (kind === 'sensor') zones.sensor.push({ pos: d.pos, radius: d.radius, t: d.life });
+  else if (kind === 'drone') zones.drone.push({ obj: d.obj, radius: d.radius, t: d.life });
+}
+function spawnMentor(g) {
+  mentorGltf = g; A.gunCal ??= {}; A.gunCal['amara:r'] ??= calibrateGun(g, 'shoot');
+  const fwd = V(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+  const p = player.pos.clone().addScaledVector(fwd, 2.4).addScaledVector(V(-fwd.z, 0, fwd.x), 1.2);
+  if (!world.reachable(player.pos, p, 1.5)) p.copy(player.pos).addScaledVector(fwd, -1.5);
+  mentor = new Mentor({ gltf: g, gun: A.weapons.ar7_lance, gunOffset: A.gunCal['amara:r'], gunInfo: weaponInfo(A.weapons.ar7_lance), pos: p, yaw: player.yaw + Math.PI });
+  toonify(mentor.root, { rim: 0x8fffc0 }); outline(mentor.root, { thick: 0.02 }); scene.add(mentor.root);
+  mfx = new AbilityFX(scene, {
+    ground: (x, z, y) => { const h = world.groundHeight(x, z, 0.05, y + 0.2, 0.6); return Number.isFinite(h) ? h : 0; },
+    collide: (a, b) => { const d = b.clone().sub(a), l = d.length(); if (l < 1e-4) return null; const h = world.raycast(a, d.divideScalar(l), l); return h ? { point: h.point, normal: h.normal } : null; },
+    onFlash: () => {}, onEvent: mentorEvent,
+  });
+}
+function dropMentor() { mentor?.root.parent?.remove(mentor.root); mentor = null; mfx = null; }
+function startTutorial(force) {
+  const token = ++tutToken;
+  tutorial?.abort();
+  tutorial = createTutorial({ isTouch: !!touch, hooks: TUT_HOOKS, onDone: ({ skipped }) => { if (skipped) dropMentor(); else if (mentor) mentor.fight = true; } });
+  if (!tutorial.start({ force })) return false;
+  RADIO.clear(); RADIO.once(mission.id + ':start', []);                     // Amara's intro replaces the opening radio
+  loadOperative('amara').then(g => { if (token === tutToken && running && missionIdx === 0 && tutorial?.active) spawnMentor(g); }).catch(e => errors.push('mentor: ' + e));
+  Object.assign(tutPrev, { yaw: player.yaw, pitch: player.pitch, shots: stats.shots, cur: W.cur, cd0: 0, cd1: 0, kills0: 0 });
+  return true;
+}
+const TUT_HOOKS = {
+  say(who, text) { RADIO.clear(); RADIO.say(who, text); },
+  abilityName: slot => ABILITIES[picks[slot]]?.name || '', abilityKind: slot => picks[slot],
+  demo(slot) {
+    if (!mentor || !picks[slot]) return;
+    _tv.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));                  // throw where the player is looking
+    mentor.yaw = Math.atan2(_tv.x, _tv.z); mentor.demo(picks[slot]);
+  },
+  onStep(id) {
+    if (id === 'reload') { const s = st(); if (s.mag >= cs().mag) { const n = Math.min(s.mag - 1, 6); s.mag -= n; s.reserve += n; } }
+    if (id === 'ab0') abilityCD[0] = 0; if (id === 'ab1') abilityCD[1] = 0;
+    if (id === 'fight') {
+      tutPrev.kills0 = deadCount(); if (mentor) mentor.fight = true;
+      const near = enemies.filter(e => e.alive && !e.T.static).sort((a, b) => a.pos.distanceToSquared(player.pos) - b.pos.distanceToSquared(player.pos)).slice(0, 2);
+      for (const e of near) { e.alert(player.pos, 1.5); e.goTo?.(player.pos, G); }
+    }
+  },
+};
+function deadCount() { let n = 0; for (const e of enemies) if (!e.alive) n++; return n; }
+function tutorialTick(dt) {
+  const T = TUT, sp = Math.hypot(player.vel.x, player.vel.z);
+  T.dt = dt; T.look = Math.abs(player.yaw - tutPrev.yaw) + Math.abs(player.pitch - tutPrev.pitch); tutPrev.yaw = player.yaw; tutPrev.pitch = player.pitch;
+  T.moved = player.moving; T.walked = player.moving && sp < CFG.walk + 0.6; T.jumped = !player.onGround && player.vel.y > 1;
+  T.slid = FEEL.slideT > 0; T.fired = stats.shots > tutPrev.shots; tutPrev.shots = stats.shots;
+  T.aiming = W.ads > 0.8; T.reloaded = W.reloadT > 0; T.swapped = W.cur !== tutPrev.cur; tutPrev.cur = W.cur;
+  T.ab0 = abilityCD[0] > tutPrev.cd0 + 0.5; T.ab1 = abilityCD[1] > tutPrev.cd1 + 0.5; tutPrev.cd0 = abilityCD[0]; tutPrev.cd1 = abilityCD[1];
+  T.kills = deadCount() - tutPrev.kills0; T.interacting = objective.active >= 0;
+  tutorial.update(dt, T);
+}
+window.__replayTutorial = () => { unlockAudio(); startMission(0, { tutorial: true }); };
 const _arrowP = new THREE.Vector3();
 function updateCamera() {
   camera.position.set(player.pos.x, player.pos.y + CFG.eye - (FEEL.slideT > 0 ? 0.55 : 0), player.pos.z);
@@ -786,57 +877,69 @@ function render() {
 function buildAbilityHud() {
   $('abil').innerHTML = picks.map((p, i) => `<div class="slot pnl" id="ab${i}"><span class="k">${i ? 'F' : 'Q'}</span><span class="ic">${ABILITIES[p].icon}</span><span class="n">${ABILITIES[p].name.toUpperCase()}</span><div class="cd"></div></div>`).join('');
 }
+// DOM write cache: only touch the DOM when a value actually changed (no per-frame style/layout churn)
+const sT = (el, v) => { if (el._t !== v) { el._t = v; el.textContent = v; } };
+const sS = (el, p, v) => { const c = el._s || (el._s = {}); if (c[p] !== v) { c[p] = v; el.style[p] = v; } };
+const sC = (el, cl, on) => { on = !!on; if (el._c !== on || el._cn !== cl) { el._c = on; el._cn = cl; el.classList.toggle(cl, on); } };
+let HUD = null, _hudAb = null, _gapK = -1, _dmgKey = '';
+function hudRefs() {
+  const g = id => document.getElementById(id);
+  return HUD = { obj: g('obj'), prog: g('prog'), timer: g('timer'), hp: g('hp'), hpf: g('hpb').firstElementChild, shb: g('shb'), shf: g('shb').firstElementChild, ammo: g('ammo'), rbar: g('rbar'), rbf: g('rbar').firstElementChild,
+    cross: g('cross'), ci: [...g('cross').children], scope: g('scope'), hitm: g('hitm'), ringw: g('ringw'), ringp: g('ringp'), ringt: g('ringt'), ringl: g('ringl').firstElementChild,
+    prompt: g('prompt'), promptt: g('promptt'), spot: g('spot'), whiteout: g('whiteout'), hurt: g('hurt'), laser: g('laser'), dmgdir: g('dmgdir'), mm: g('mm') };
+}
 function updateHud(prompt) {
-  const w = cs(), s = st();
+  const w = cs(), s = st(), H = HUD || hudRefs();
   // objective + timer
-  let title, prog;
+  let title, prog, alive = 0, spotted = 0;
+  for (const e of enemies) if (e.alive) { alive++; if (e.state === 'combat' && e.targetKind === 'player') spotted++; }
   if (mission.objective === 'plant_hold') { title = objective.planted ? 'HOLD THE AREA' : 'PLANT THE CHARGE'; prog = objective.planted ? `Charge ${Math.round(objective.holdProg / CFG.hold * 100)}%` : mission.id === 'm2' ? 'Red server · flooded vault' : 'Target marked on minimap'; }
   else if (objective.extract) { title = 'GET TO EXTRACTION'; prog = 'Green beacon · your start point'; }
-  else { const n = map.points.length, d = objective.done.filter(Boolean).length, v = mission.objective === 'retrieve' ? 'RETRIEVE DRIVES' : 'DEFUSE DEVICES'; title = n > 1 ? `${v} ${d}/${n}` : mission.objective === 'retrieve' ? 'RETRIEVE THE DRIVE' : 'DEFUSE THE DEVICE'; prog = `Hostiles left: ${enemies.filter(e => e.alive).length}`; }
-  if (intel.length) prog += ` · Intel ${intel.filter(i => i.got).length}/${intel.length}`;
-  $('obj').textContent = title; $('prog').textContent = prog;
-  $('timer').textContent = fmt(clock); $('timer').classList.toggle('low', clock < 30);
+  else { const n = map.points.length; let d = 0; for (const x of objective.done) if (x) d++; const v = mission.objective === 'retrieve' ? 'RETRIEVE DRIVES' : 'DEFUSE DEVICES'; title = n > 1 ? `${v} ${d}/${n}` : mission.objective === 'retrieve' ? 'RETRIEVE THE DRIVE' : 'DEFUSE THE DEVICE'; prog = `Hostiles left: ${alive}`; }
+  if (intel.length) { let g = 0; for (const i of intel) if (i.got) g++; prog += ` · Intel ${g}/${intel.length}`; }
+  sT(H.obj, title); sT(H.prog, prog);
+  sT(H.timer, fmt(clock)); sC(H.timer, 'low', clock < 30);
   // vitals
-  $('hp').textContent = Math.ceil(player.hp); $('hpb').firstElementChild.style.width = `${player.hp}%`;
-  $('hpb').firstElementChild.style.background = player.hp < 35 ? '#ff3b47' : '#3ddc84';
-  $('shb').style.display = player.shield > 0 ? 'block' : 'none'; $('shb').firstElementChild.style.width = `${player.shield / 60 * 100}%`;
+  sT(H.hp, String(Math.ceil(player.hp))); sS(H.hpf, 'width', `${player.hp}%`);
+  sS(H.hpf, 'background', player.hp < 35 ? '#ff3b47' : '#3ddc84');
+  sS(H.shb, 'display', player.shield > 0 ? 'block' : 'none'); sS(H.shf, 'width', `${player.shield / 60 * 100}%`);
   // ammo
-  $('ammo').innerHTML = W.reloadT > 0 ? 'RELOAD' : `${s.mag} <small>/ ${s.reserve}</small>`;
-  $('ammo').classList.toggle('low', s.mag <= Math.ceil(w.mag * 0.2));
-  $('rbar').style.display = W.reloadT > 0 ? 'block' : 'none'; if (W.reloadT > 0) $('rbar').firstElementChild.style.width = `${(1 - W.reloadT / w.reload) * 100}%`;
+  const ak = W.reloadT > 0 ? 'R' : `${s.mag}/${s.reserve}`;
+  if (H.ammo._k !== ak) { H.ammo._k = ak; H.ammo.innerHTML = W.reloadT > 0 ? 'RELOAD' : `${s.mag} <small>/ ${s.reserve}</small>`; }
+  sC(H.ammo, 'low', s.mag <= Math.ceil(w.mag * 0.2));
+  sS(H.rbar, 'display', W.reloadT > 0 ? 'block' : 'none'); if (W.reloadT > 0) sS(H.rbf, 'width', `${(1 - W.reloadT / w.reload) * 100}%`);
   // abilities
-  picks.forEach((p, i) => { const el = $('ab' + i); if (!el) return; const cdv = abilityCD[i], c = el.querySelector('.cd'); c.style.setProperty('--p', `${cdv / ABILITIES[p].cd * 100}%`); c.textContent = cdv > 0 ? Math.ceil(cdv) : ''; });
-  // crosshair: gap follows the real spread cone
-  const gap = 5 + currentSpread() / (camera.fov * Math.PI / 180) * innerHeight;
-  const ci = $('cross').children;
-  ci[0].style.top = `${-gap - ci[0].offsetHeight}px`; ci[1].style.top = `${gap}px`; ci[2].style.left = `${-gap - ci[2].offsetWidth}px`; ci[3].style.left = `${gap}px`;
-  $('cross').style.display = w.scope && W.ads > 0.9 ? 'none' : ''; $('scope').classList.toggle('on', !!w.scope && W.ads > 0.9);
-  $('hitm').style.opacity = hitmT > 0 ? Math.min(1, hitmT * 5) : 0;
+  if (!_hudAb || _hudAb.n !== picks.length || !_hudAb.cd[0]?.isConnected) _hudAb = { n: picks.length, cd: picks.map((p, i) => document.getElementById('ab' + i)?.querySelector('.cd')) };
+  picks.forEach((p, i) => { const c = _hudAb.cd[i]; if (!c) return; const cdv = abilityCD[i]; const pv = `${cdv / ABILITIES[p].cd * 100}%`; if (c._p !== pv) { c._p = pv; c.style.setProperty('--p', pv); } sT(c, cdv > 0 ? String(Math.ceil(cdv)) : ''); });
+  // crosshair: gap follows the real spread cone (tick sizes cached - reading offsetHeight forces layout)
+  const gk = Math.round((5 + currentSpread() / (camera.fov * Math.PI / 180) * innerHeight) * 4) / 4;
+  if (gk !== _gapK) {
+    const ci = H.ci; if (!H.ch || !H.ch[0]) H.ch = [ci[0].offsetHeight, 0, ci[2].offsetWidth, 0];
+    if (H.ch[0]) { _gapK = gk; ci[0].style.top = `${-gk - H.ch[0]}px`; ci[1].style.top = `${gk}px`; ci[2].style.left = `${-gk - H.ch[2]}px`; ci[3].style.left = `${gk}px`; }
+  }
+  const scoped = !!w.scope && W.ads > 0.9;
+  sS(H.cross, 'display', scoped ? 'none' : ''); sC(H.scope, 'on', scoped);
+  sS(H.hitm, 'opacity', hitmT > 0 ? String(Math.min(1, hitmT * 5)) : '0');
   // interaction ring
   let ringK = -1, ringL = '';
   if (objective.active >= 0) { ringK = mission.objective === 'plant_hold' ? objective.plantProg / CFG.plant : objective.prog[objective.active] / (mission.objective === 'retrieve' ? CFG.retrieve : CFG.defuse); ringL = mission.objective === 'plant_hold' ? 'PLANTING' : mission.objective === 'retrieve' ? 'RETRIEVING' : 'DEFUSING'; }
   else if (breachRing >= 0) { ringK = breachRing; ringL = 'BREACHING'; }
-  $('ringw').classList.toggle('on', ringK >= 0);
-  if (ringK >= 0) { $('ringp').setAttribute('stroke-dashoffset', 251.3 * (1 - clamp(ringK, 0, 1))); $('ringt').textContent = `${Math.round(clamp(ringK, 0, 1) * 100)}%`; $('ringl').firstElementChild.textContent = ringL; }
-  $('prompt').classList.toggle('on', !!prompt && ringK < 0); $('promptt').textContent = touch ? prompt.replace('HOLD E · ', 'HOLD ') : prompt;
+  sC(H.ringw, 'on', ringK >= 0);
+  if (ringK >= 0) { const rk = clamp(ringK, 0, 1), off = 251.3 * (1 - rk); if (H.ringp._o !== off) { H.ringp._o = off; H.ringp.setAttribute('stroke-dashoffset', off); } sT(H.ringt, `${Math.round(rk * 100)}%`); sT(H.ringl, ringL); }
+  sC(H.prompt, 'on', !!prompt && ringK < 0); sT(H.promptt, touch ? prompt.replace('HOLD E · ', 'HOLD ') : prompt);
   if (touch) touch.setUse(/HOLD E/.test(prompt) || ringK >= 0 ? (/BREACH/.test(prompt) || ringL === 'BREACHING' ? 'BREACH' : mission.objective === 'plant_hold' ? 'PLANT' : mission.objective === 'retrieve' ? 'GRAB' : 'DEFUSE') : null);
-  const spotted = enemies.filter(e => e.alive && e.state === 'combat' && e.targetKind === 'player').length;
-  $('spot').classList.toggle('on', spotted > 0); $('spot').textContent = `SPOTTED BY ${spotted}`;
+  sC(H.spot, 'on', spotted > 0); sT(H.spot, `SPOTTED BY ${spotted}`);
   // overlays
-  $('whiteout').style.opacity = clamp(flashK * 1.4, 0, 1).toFixed(3); $('hurt').style.opacity = hurtK.toFixed(3); $('laser').style.opacity = laserK.toFixed(3);
-  $('dmgdir').innerHTML = dmgDirs.map(d => `<i style="transform:rotate(${(-(d.ang - player.yaw - Math.PI)) * 180 / Math.PI}deg);opacity:${Math.min(1, d.t)}"></i>`).join('');
+  sS(H.whiteout, 'opacity', clamp(flashK * 1.4, 0, 1).toFixed(3)); sS(H.hurt, 'opacity', hurtK.toFixed(3)); sS(H.laser, 'opacity', laserK.toFixed(3));
+  if (dmgDirs.length || _dmgKey) { const html = dmgDirs.map(d => `<i style="transform:rotate(${(-(d.ang - player.yaw - Math.PI)) * 180 / Math.PI}deg);opacity:${Math.min(1, d.t)}"></i>`).join(''); _dmgKey = html && 'x'; H.dmgdir.innerHTML = html; }
   drawMinimap();
 }
 function hitMarker(kill, head) { hitmT = kill ? 0.45 : 0.2; $('hitm').className = `ov${kill ? ' kill' : head ? ' head' : ''}`; }
 function feed(msg, hs) { const d = document.createElement('div'); d.className = `pnl${hs ? ' hs' : ''}`; d.innerHTML = `<span></span>`; d.firstChild.textContent = msg; $('feed').prepend(d); setTimeout(() => d.remove(), 4000); while ($('feed').children.length > 5) $('feed').lastChild.remove(); }
-function radio(who, text, dur) { radioQ.push([who, text, dur || clamp(text.length / 14, 2.5, 7)]); if (radioT <= 0) nextRadio(); }
-function radioOnce(key) { if (said[key] || !mission.radio[key]) return; said[key] = true; for (const [w, t] of mission.radio[key]) radio(w, t); }
-function nextRadio() {
-  const n = radioQ.shift();
-  if (!n) { $('radio').classList.remove('on'); radioT = 0; return; }
-  $('rwho').textContent = n[0]; $('rtxt').textContent = n[1]; $('radio').classList.add('on'); radioT = n[2];
-  $('radio').querySelector('.who').style.background = n[0] === 'COVENANT' ? '#ff3b47' : n[0] === 'VOSS' ? '#5fe6ff' : '';
-}
+function radio(who, text, dur) { RADIO.say(who, text, dur); }
+function radioOnce(key) { if (!mission.radio[key]) return; RADIO.once(mission.id + ':' + key, mission.radio[key]); }
+function killTick() { if (matchOver) return; let n = 0; for (const e of enemies) if (e.alive) n++; if (n === 1) storyEv('last'); else if (n > 0 && n * 2 <= enemies.length && enemies.length > 4) storyEv('half'); }
+function storyEv(key) { RADIO.event(mission.id, key); }
 
 // ---------- minimap ----------
 let mmBg = null; const MM = { scale: 3, ox: 0, oz: 0 };
@@ -857,7 +960,7 @@ function buildMinimap() {
   $('mmlabel').textContent = mission.title.toUpperCase();
 }
 function drawMinimap() {
-  const c = $('mm'), g = c.getContext('2d'), W2 = c.width, R = 40;            // shows ±R metres
+  const c = (HUD || hudRefs()).mm, g = c._g || (c._g = c.getContext('2d')), W2 = c.width, R = 40;            // shows ±R metres
   const k = W2 / (R * 2);
   g.save(); g.fillStyle = '#1a1d24'; g.fillRect(0, 0, W2, W2);
   g.translate(W2 / 2, W2 / 2); g.rotate(player.yaw); g.scale(k / MM.scale, k / MM.scale);
@@ -884,14 +987,14 @@ function startMission(idx = selected, opts = {}) {
   buildMission(idx, o); xpDoubled = false;
   for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
-  if (idx === 0 && !TEST) { tutorial ??= createTutorial({ isTouch: !!touch }); tutorial.start(); } for (const k in TUT) TUT[k] = false;
+  dropMentor(); if (idx === 0 && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
   radioOnce('start'); music.start(); FX.announce('MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
   sdk(s => s.game.gameplayStart());
 }
-function endMatch() { tutorial?.visible(false); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
-function lose(reason) { if (matchOver) return; endMatch(); showEnd('MISSION FAILED', `${reason}\n\n${missionIdx >= 8 ? 'Yuna' : 'Okonkwo'}: Regroup and try again.`, null, { death: !player.alive }); }
+function endMatch() { tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
+function lose(reason) { if (matchOver) return; endMatch(); showEnd('MISSION FAILED', reason, null, { death: !player.alive }); }
 function win() {
   if (matchOver) return; endMatch();
   matchXP.win = META.XP.win;
@@ -949,8 +1052,9 @@ function showEnd(title, text, nextIdx, { death = false } = {}) {
   $('adRevive').onclick = () => rewardedAd(revive);
   $('endTitle').textContent = title; $('endText').textContent = text;
   $('endStats').textContent = `Time ${fmt(elapsed)} · Kills ${stats.kills} · Accuracy ${stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0}% · Headshots ${stats.heads}`;
+  RADIO.debrief($('debrief'), mission.id, !title.startsWith('MISSION FAILED'));
   $('next').style.display = nextIdx !== null ? '' : 'none';
-  $('next').onclick = () => { selected = nextIdx; openBriefing(); };
+  $('next').onclick = () => { selected = nextIdx; openBriefing('mission'); };
   $('end').classList.add('show');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
@@ -988,6 +1092,7 @@ function selectMission(i) {
     $('routes').append(b);
   }
   if (!m.routes) selRoute = 'default'; else if (!m.routes[selRoute]) selRoute = 'stealth';
+  document.dispatchEvent(new CustomEvent('sz:brief', { detail: { index: i, mission: m } }));
   mission = m; selAbilities = chosenAbilities().slice();
   $('abilities').innerHTML = '';
   for (const id of m.pool) {
@@ -999,19 +1104,33 @@ function selectMission(i) {
   $('start').disabled = i > progress && !DEBUG;
 }
 function refreshAb() { document.querySelectorAll('#abilities button').forEach(b => b.classList.toggle('on', selAbilities.includes(b.dataset.id))); $('start').disabled = selAbilities.length !== 2 || (selected > progress && !DEBUG); }
-function openBriefing() {
+function openBriefing(step = 'mode') {
   $('missions').innerHTML = '';
   MISSIONS.forEach((m, i) => {
-    if (i === 0 || i === 3 || i === 6 || i === 9) $('missions').insertAdjacentHTML('beforeend', `<div style="width:100%;font-size:calc(var(--u)*.9);margin-top:4px">CHAPTER ${i / 3 + 1}</div>`);
-    const b = document.createElement('button'); b.textContent = `${i + 1}. ${m.title.toUpperCase()}${i < progress ? ' ✓' : i > progress ? ' 🔒' : ''}`;
+    if (i === 0 || i === 3 || i === 6 || i === 9) $('missions').insertAdjacentHTML('beforeend', `<div data-ch="${i / 3}" style="width:100%;font-size:calc(var(--u)*.9);margin-top:4px">CHAPTER ${i / 3 + 1}</div>`);
+    const b = document.createElement('button'); b.dataset.ch = Math.floor(i / 3); b.textContent = `${i + 1}. ${m.title.toUpperCase()}${i < progress ? ' ✓' : i > progress ? ' 🔒' : ''}`;
     b.disabled = i > progress && !DEBUG; b.onclick = () => selectMission(i); $('missions').append(b);
   });
   weaponButtons($('primaries'), PRIMARIES, 'primary'); weaponButtons($('sidearms'), SIDEARMS, 'sidearm'); showStats(loadout.primary);
   selectMission(Math.min(selected ?? progress, MISSIONS.length - 1));
+  buildChapters(); showChapter(Math.floor(selected / 3));
   for (const id of ['end', 'pause', 'loading', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.remove('on'); $('brief').classList.add('show');
   operativeButtons(); setPreview();
+  flow.open(step);
 }
+let chapter = 0;
+function showChapter(c) { chapter = c; document.querySelectorAll('#missions [data-ch]').forEach(el => el.classList.toggle('hid', +el.dataset.ch !== c)); document.querySelectorAll('#chapters button').forEach((b, j) => b.classList.toggle('on', j === c)); }
+function buildChapters() {
+  $('chapters').innerHTML = '';
+  for (let c = 0; c < MISSIONS.length / 3; c++) {
+    const b = document.createElement('button'), open = c * 3 <= progress || DEBUG;
+    b.innerHTML = `CHAPTER ${c + 1}<small>${open ? 'MISSIONS ' + (c * 3 + 1) + '–' + (c * 3 + 3) : '🔒 LOCKED'}</small>`; b.disabled = !open;
+    b.onclick = () => { showChapter(c); if (Math.floor(selected / 3) !== c) selectMission(Math.min(c * 3, progress)); flow.next(); };
+    $('chapters').append(b);
+  }
+}
+const flow = createFlow({ $, skip: id => id === 'agent' && [...META.unlocked(progress).operatives].length < 2 && !DEBUG, onExit: () => openLobby() });
 
 // ---------- input ----------
 const isMenu = () => !running;
@@ -1022,7 +1141,7 @@ document.addEventListener('keydown', e => {
   if (e.code === 'KeyR') startReload();
   if (e.code === 'Digit1') equip(0); if (e.code === 'Digit2') equip(1);
   if (e.code === 'KeyQ') useAbility(0); if (e.code === 'KeyF') useAbility(1);
-  if (e.code === 'Enter') nextRadio();
+  if (e.code === 'Enter') RADIO.skip();
   if (e.code === 'KeyT') doSpray();
   if (DEBUG) {
     if (e.code === 'F9') for (const en of enemies) if (en.alive) en.damage(9999);
@@ -1040,7 +1159,7 @@ document.addEventListener('mousemove', e => {
   lookBy(e.movementX, e.movementY, CFG.sens * settings.sens * aimSlow * (camera.fov / 75));
 });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
-$('start').onclick = () => { unlockAudio(); startMission(selected); };
+$('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else canvas.requestPointerLock?.(); sdk(s => s.game.gameplayStart()); };
 $('again').onclick = () => startMission(missionIdx);
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => { paused = false; openLobby(); };
@@ -1063,7 +1182,7 @@ function settingsUI() {
   });
   $('settings').classList.add('show');
 }
-for (const host of ['brief', 'pause']) { const b = document.createElement('button'); b.textContent = '⚙ SETTINGS'; b.onclick = settingsUI; if (host === 'brief') $('start').before(b); else $(host).querySelector('.card').append(b); }
+{ const b = document.createElement('button'); b.textContent = '⚙ SETTINGS'; b.onclick = settingsUI; $('pause').querySelector('.card').append(b); }
 $('setClose').onclick = () => $('settings').classList.remove('show');
 
 // ---------- briefing preview: the chosen operative, armed, idling; ability picks play their clip + effect ----------
@@ -1111,8 +1230,6 @@ async function setPreview() {
   window.__game.preview = preview;
 }
 function operativeButtons() {
-  let box = $('opBox');
-  if (!box) { box = document.createElement('div'); box.id = 'opBox'; box.innerHTML = '<h3>OPERATIVE</h3><div class="row" id="operatives"></div>'; $('primaries').previousElementSibling.before(box); }
   $('operatives').innerHTML = '';
   for (const [id, name] of Object.entries(OPERATIVES)) {
     const b = document.createElement('button'); b.textContent = name.toUpperCase(); b.classList.toggle('on', loadout.operative === id);
@@ -1123,7 +1240,7 @@ function operativeButtons() {
 }
 
 // ---------- lobby / shop / pass / profile ----------
-const PANELS = ['lobby', 'brief', 'shop', 'pass', 'profile', 'end', 'pause', 'loading'];
+const PANELS = ['lobby', 'brief', 'shop', 'pass', 'profile', 'tutPick', 'guide', 'end', 'pause', 'loading'];
 function only(id) { for (const p of PANELS) $(p).classList.toggle('show', p === id); $('hud').classList.remove('on'); }
 function chips() {
   $('lvl').firstChild.textContent = `LV ${META.level()} `; $('lvlbar').firstElementChild.style.width = `${META.levelProgress() * 100}%`;
@@ -1159,9 +1276,12 @@ function openProfile() {
   const open = META.filesOpen();
   $('files').innerHTML = META.FILES.map(([t, b], i) => `<div class="file${i < open ? '' : ' lock'}"><b>${i < open ? t : '🔒 FILE ' + (i + 1)}</b><br>${i < open ? b : `Recover ${(i + 1) * 3} intel caches to open.`}</div>`).join('');
 }
-$('lPlay').onclick = () => { unlockAudio(); openBriefing(); }; $('lLoadout').onclick = () => { openBriefing(); $('opBox')?.scrollIntoView(); };
+$('lPlay').onclick = () => { unlockAudio(); openBriefing(); }; $('lLoadout').onclick = () => { openBriefing('agent'); };
 $('lShop').onclick = openShop; $('lPass').onclick = openPass; $('lProfile').onclick = openProfile; $('lSettings').onclick = settingsUI;
-document.querySelectorAll('.back').forEach(b => b.onclick = openLobby); $('briefBack').onclick = openLobby;
+$('lTutorial').onclick = () => only('tutPick');
+$('tpPlay').onclick = () => window.__replayTutorial?.();
+$('tpDoc').onclick = () => { only('guide'); $('guide').querySelector('.card').scrollTop = 0; };
+document.querySelectorAll('.back').forEach(b => b.onclick = openLobby); 
 
 // ---------- weapon charm (viewmodel) + sprays ----------
 let charm = null, lastYaw = 0;
@@ -1229,6 +1349,7 @@ window.__game = {
   teleport(x, y, z) { player.pos.set(x, y, z); player.vel.set(0, 0, 0); },
   key(code, down = true) { keys[code] = down; }, mouse(btn, down = true) { mouse[btn] = down; },
   equip, reload: startReload, ability: useAbility, fire: () => { W.cd = 0; W.firedSemi = false; fire(); },
+  get tutorial() { return tutorial; }, get mentor() { return mentor; }, TUT,
   killAll() { for (const e of enemies) if (e.alive) e.damage(9999); },
   peace() { for (const e of enemies) { e.update = function (dt) { this.mixer.update(dt); this.sync(); }; } },
   damage: (n) => damagePlayer(n, null), timeout() { clock = 0.01; },

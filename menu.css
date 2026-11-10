@@ -1,0 +1,20 @@
+/* Menu flow: step screens + tidy lobby (same comic look as index.html) */
+.step{display:none}.step.show{display:block;animation:szStep .22s ease-out both}
+@keyframes szStep{0%{opacity:0;transform:translateX(24px)}100%{opacity:1;transform:none}}
+#briefCard{min-width:min(760px,94vw)}
+#stepPips{font-size:calc(var(--u)*1)}
+.modeBtn{display:flex;flex-direction:column;align-items:flex-start;font-size:calc(var(--u)*1.8);padding:calc(var(--u)*.7) calc(var(--u)*1.6)}
+.modeBtn small{font-family:"Trebuchet MS",Arial,sans-serif;font-size:calc(var(--u)*.85);font-weight:bold}
+#chapters button{font-size:calc(var(--u)*1.4);padding:calc(var(--u)*.6) calc(var(--u)*1.4);min-width:calc(var(--u)*11)}
+#chapters button small{display:block;font-size:calc(var(--u)*.8);font-family:"Trebuchet MS",Arial,sans-serif}
+#missions button.hid,#missions>div.hid{display:none}
+/* lobby: Play on top, 2x2 secondary grid, small settings */
+#lobbyNav{min-width:min(380px,44vw);gap:calc(var(--u)*.9)}
+#lobbyNav .sub{display:grid;grid-template-columns:1fr 1fr;gap:calc(var(--u)*.4)}
+#lobbyNav .sub button{font-size:calc(var(--u)*1.2);margin:0;text-align:center}
+#lobbyNav button.go{font-size:calc(var(--u)*3);padding:calc(var(--u)*.8) calc(var(--u)*2)}
+#lobbyNav button.small{font-size:calc(var(--u)*1)!important;align-self:flex-start}
+#lobbyTop .logo{font-size:calc(var(--u)*4.2)}
+/* short landscape phones: keep the loadout card on screen (scroll inside if needed) */
+@media (max-height:480px){#briefCard{max-height:94vh;overflow-y:auto}#brief{align-items:center}}
+#guide p,#guide li{font-size:calc(var(--u)*1.05);line-height:1.4}#guide h3{margin:.8em 0 .2em}#guide ul{margin:.2em 0}

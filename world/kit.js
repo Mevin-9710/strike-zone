@@ -4,6 +4,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from '../lib/addons/utils/BufferGeometryUtils.js';
 import { paintedTexture } from './textures.js';
+import { kenneyModel } from './kenney.js';
+import { archReady, archBuilding, archStairs, archAwning } from './kenney-arch.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -36,6 +38,7 @@ export class Kit {
     this.sharedBatches = new Map();  // sharedKey -> { mat, geos, unlit, shared: true }
     this.root = new THREE.Group(); scene.add(this.root);
     this.lights = []; this.flicker = []; this.water = []; this.beacons = [];
+    this.kgeos = new Map();          // Kenney material -> baked geometries (merged in finish)
     this.minimap = [];               // footprints for the HUD minimap: {x0,z0,x1,z1,y,kind}
   }
 
@@ -97,7 +100,8 @@ export class Kit {
   // ---------- primitives ----------
   // Box centered at (x, y0 + h/2, z). collide: true | false | 'top' (only the walkable top matters, still solid)
   // Optionally culls hidden faces (bottom when on ground, top, or custom cullFaces set).
-  box(x, y0, z, w, h, d, key, { collide = true, rotY = 0, shade, uvTile, cullBottom, cullTop, cullFaces } = {}) {
+  box(x, y0, z, w, h, d, key, { collide = true, rotY = 0, shade, uvTile, cullBottom, cullTop, cullFaces, hide = false } = {}) {
+    if (hide) { this._collideBox(x, y0, z, w, h, d, rotY, collide); return; }
     const batch = this.batches.get(key);
     const tile = uvTile ?? batch.tile;
     const geo = new THREE.BoxGeometry(w, h, d);
@@ -125,14 +129,43 @@ export class Kit {
     this._paint(geo, h, { shade, color: batch.color, unlit: batch.unlit });
     const m = new THREE.Matrix4().makeRotationY(rotY).setPosition(x, y0 + h / 2, z);
     this._add(key, geo, m);
-    if (collide) {
-      const rot = Math.abs(Math.sin(rotY)) > 0.5;
-      const hw = (rot ? d : w) / 2, hd = (rot ? w : d) / 2;
-      this.world.addBox(V(x - hw, y0, z - hd), V(x + hw, y0 + h, z + hd), typeof collide === 'string' ? collide : 'solid');
-    }
+    this._collideBox(x, y0, z, w, h, d, rotY, collide);
+  }
+  _collideBox(x, y0, z, w, h, d, rotY, collide) {
+    if (!collide) return;
+    const rot = Math.abs(Math.sin(rotY)) > 0.5;
+    const hw = (rot ? d : w) / 2, hd = (rot ? w : d) / 2;
+    this.world.addBox(V(x - hw, y0, z - hd), V(x + hw, y0 + h, z + hd), typeof collide === 'string' ? collide : 'solid');
   }
 
-  cyl(x, y0, z, r, h, key, { collide = true, seg = 8, r2 } = {}) {
+  // Place a Kenney model so it fills the footprint box (centre x,z; base y0). rotY 0 = long axis along X.
+  // mode 'stretch': fit all three axes exactly; 'uniform': scale by the long horizontal side, keep proportions.
+  kenney(name, x, y0, z, w, h, d, { rotY = 0, mode = 'stretch' } = {}) {
+    const M = kenneyModel(name); if (!M) return false;
+    const turn = (M.size.x > M.size.z) !== (w > d) && Math.max(M.size.x / M.size.z, M.size.z / M.size.x) > 1.25;   // long axes disagree -> quarter turn
+    const mx = turn ? M.size.z : M.size.x, mz = turn ? M.size.x : M.size.z;
+    let sx = w / mx, sy = h / M.size.y, sz = d / mz;
+    if (mode === 'uniform') { sx = sy = sz = Math.max(w, d) / Math.max(mx, mz); }
+    const S = new THREE.Matrix4().makeScale(turn ? sz : sx, sy, turn ? sx : sz);
+    const m = new THREE.Matrix4().makeRotationY(rotY).setPosition(x, y0, z).multiply(new THREE.Matrix4().makeRotationY(turn ? Math.PI / 2 : 0)).multiply(S);
+    let list = this.kgeos.get(M.mat); if (!list) this.kgeos.set(M.mat, list = []);
+    for (const g of M.geo) list.push(g.clone().applyMatrix4(m));
+    return true;
+  }
+
+  // Kenney decor by height (uniform scale, base at y0, no collider). Silent no-op if the kit is missing.
+  prop(name, x, y0, z, h, rotY = 0) {
+    const M = kenneyModel(name); if (!M) return false;
+    const k = h / M.size.y;
+    const m = new THREE.Matrix4().makeRotationY(rotY).setPosition(x, y0, z).multiply(new THREE.Matrix4().makeScale(k, k, k));
+    let list = this.kgeos.get(M.mat); if (!list) this.kgeos.set(M.mat, list = []);
+    for (const g of M.geo) list.push(g.clone().applyMatrix4(m));
+    return true;
+  }
+  _h(x, z) { return Math.abs(Math.sin(x * 12.9898 + z * 78.233) * 43758.5453) % 1; }
+
+  cyl(x, y0, z, r, h, key, { collide = true, seg = 8, r2, hide = false } = {}) {
+    if (hide) { if (collide) this.world.addBox(V(x - r, y0, z - r), V(x + r, y0 + h, z + r), 'pole'); return; }
     const batch = this.batches.get(key);
     const geo = new THREE.CylinderGeometry(r2 ?? r, r, h, seg);
     this._paint(geo, h, { color: batch.color, unlit: batch.unlit });
@@ -167,7 +200,8 @@ export class Kit {
   building(x0, z0, x1, z1, h, { wall = ['brick', {}], roof = ['roof', {}], trim = 0x5b5f66, windows = true, lit = false,
     faces = ['n', 's', 'e', 'w'], parapet = 0, walkableRoof = false, door = null } = {}) {
     const W = x1 - x0, D = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-    this.box(cx, 0, cz, W, h, D, this.mat(wall[0], wall[1], 3), { cullBottom: true });
+    const ARCH = archReady();   // Kenney facades replace the procedural wall/windows (collider unchanged)
+    this.box(cx, 0, cz, W, h, D, this.mat(wall[0], wall[1], 3), { cullBottom: true, hide: ARCH });
     this.box(cx, h, cz, W + 0.3, 0.3, D + 0.3, this.mat('concrete', { color: trim }, 2), { collide: walkableRoof ? 'roof' : true, cullBottom: true });
     this.box(cx, h + 0.3, cz, W - 0.2, 0.05, D - 0.2, this.mat(roof[0], roof[1], 4), { collide: false, cullBottom: true });
     this.minimap.push({ x0, z0, x1, z1, y: h, kind: 'building' });
@@ -178,7 +212,8 @@ export class Kit {
         this._wallWithGaps(a, b, c, d2, h + 0.3, p, k, t, gaps);
       }
     }
-    if (windows) {
+    if (ARCH) archBuilding(this, x0, z0, x1, z1, h, { faces, wall, walkable: !!walkableRoof });
+    if (windows && !ARCH) {
       const wk = this.mat('window', { lit }, 1, { unlit: lit });
       const trimMat = this.mat('concrete', { color: trim }, 2);
       const floors = Math.max(1, Math.floor((h - 1) / 3));
@@ -200,7 +235,7 @@ export class Kit {
       };
       for (const f of faces) place(f);
     }
-    if (door) {
+    if (door && !ARCH) {
       const along = door.face === 'n' || door.face === 's' ? W : D;
       const px = door.face === 'n' || door.face === 's' ? x0 + W * door.t : (door.face === 'e' ? x1 + 0.05 : x0 - 0.05);
       const pz = door.face === 'e' || door.face === 'w' ? z0 + D * door.t : (door.face === 's' ? z1 + 0.05 : z0 - 0.05);
@@ -228,14 +263,14 @@ export class Kit {
   // Stairs rendered as steps; collision is a smooth ramp. axis 'x'|'z', dir +1/-1 = direction of rising.
   stairs(x0, z0, x1, z1, yLow, yHigh, axis, dir, key, { solidBelow = true, sideRails = [] } = {}) {
     const run = axis === 'x' ? x1 - x0 : z1 - z0, rise = yHigh - yLow;
-    const steps = Math.max(2, Math.round(rise / 0.3));
+    const steps = Math.max(2, Math.round(rise / 0.3)), A = archStairs(this, x0, z0, x1, z1, yLow, yHigh, axis, dir, solidBelow);
     for (let i = 0; i < steps; i++) {
       const t0 = i / steps, t1 = (i + 1) / steps;
       const a = dir > 0 ? t0 : 1 - t1, b = dir > 0 ? t1 : 1 - t0;
       const top = yLow + rise * t1;
       const bottom = solidBelow ? yLow : top - 0.3;
-      if (axis === 'x') this.box(x0 + run * (a + b) / 2, bottom, (z0 + z1) / 2, run * (b - a), top - bottom, z1 - z0, key, { collide: false, cullBottom: solidBelow });
-      else this.box((x0 + x1) / 2, bottom, z0 + run * (a + b) / 2, x1 - x0, top - bottom, run * (b - a), key, { collide: false, cullBottom: solidBelow });
+      if (axis === 'x') this.box(x0 + run * (a + b) / 2, bottom, (z0 + z1) / 2, run * (b - a), top - bottom, z1 - z0, key, { collide: false, cullBottom: solidBelow, hide: A });
+      else this.box((x0 + x1) / 2, bottom, z0 + run * (a + b) / 2, x1 - x0, top - bottom, run * (b - a), key, { collide: false, cullBottom: solidBelow, hide: A });
     }
     this.world.addRamp(V(x0, yLow, z0), V(x1, yHigh, z1), axis, dir);
     for (const side of sideRails) this.railing(...side);
@@ -283,11 +318,13 @@ export class Kit {
 
   // ---------- props (all climbable ones have collision tops) ----------
   crate(x, z, y = 0, s = 1.0, rotY = 0) {
-    this.box(x, y, z, s, s, s, this.mat('wood', {}, s), { rotY: 0, uvTile: s, cullBottom: true });
+    this.box(x, y, z, s, s, s, this.mat('wood', {}, s), { rotY: 0, uvTile: s, cullBottom: true, hide: !!kenneyModel('box-large') });
+    if (kenneyModel('box-large')) this.kenney(s > 1.1 ? 'box-large' : 'box-small', x, y, z, s, s, s);
     this.minimap.push({ x0: x - s / 2, z0: z - s / 2, x1: x + s / 2, z1: z + s / 2, y: y + s, kind: 'prop' });
   }
 
   barrel(x, z, y = 0, color = 0x2f6fb0) {
+    if (this.kenney('barrel', x, y, z, 0.64, 0.95, 0.64)) { this.cyl(x, y, z, 0.32, 0.95, this.mat('flat', {}), { seg: 8, hide: true }); return; }
     this.cyl(x, y, z, 0.32, 0.95, this.mat('metal', { color }, 1), { seg: 8 });
     this.cyl(x, y + 0.3, z, 0.335, 0.06, this.mat('flat', { color: 0x222222 }), { collide: false, seg: 8 });
     this.cyl(x, y + 0.65, z, 0.335, 0.06, this.mat('flat', { color: 0x222222 }), { collide: false, seg: 8 });
@@ -299,6 +336,20 @@ export class Kit {
     const body = this.mat('flat', { color }), dark = this.mat('flat', { color: 0x1c1f24 }), glass = this.mat('window', {}, 1);
     const bx = (w, d) => rot ? [d, w] : [w, d];
     const [bw, bd] = bx(L, W);
+    const CARS = ['sedan', 'suv', 'van', 'taxi', 'hatchback-sports', 'delivery'];
+    if (kenneyModel('sedan')) {   // same colliders, Kenney visual (variant picked from the old paint colour)
+      this.box(x, 0.35, z, bw, 0.55, bd, body, { collide: 'car', hide: true });
+      const [cw0, cd0] = bx(L * 0.55, W * 0.88);
+      this.box(x, 0.9, z, cw0, 0.6, cd0, glass, { collide: 'car', hide: true });
+      this.kenney(CARS[(color >>> 3) % CARS.length], x, 0, z, bw, 1.5, bd, { mode: 'uniform' });
+      const hh = this._h(x, z);   // decorative debris just past the bumper (no collider)
+      const ex = rot ? 0 : L / 2 + 0.7, ez = rot ? L / 2 + 0.7 : 0;
+      if (hh < 0.25) this.prop('debris-tire', x - ex, 0, z - ez, 0.5, hh * 20);
+      else if (hh < 0.45) { this.prop('cone', x - ex, 0, z - ez + (rot ? 0 : 0.6), 0.5); this.prop('cone', x - ex, 0, z - ez - (rot ? 0 : 0.6), 0.5); }
+      else if (hh < 0.6) this.prop('debris-plate-a', x + ex, 0, z + ez, 0.3, hh * 30);
+      this.minimap.push({ x0: x - bw / 2, z0: z - bd / 2, x1: x + bw / 2, z1: z + bd / 2, y: 1.5, kind: 'car' });
+      return;
+    }
     this.box(x, 0.35, z, bw, 0.55, bd, body, { collide: 'car', cullBottom: true });
     const [cw, cd] = bx(L * 0.55, W * 0.88);
     this.box(x, 0.9, z, cw, 0.6, cd, glass, { collide: 'car', uvTile: 1.2, cullBottom: true });
@@ -316,7 +367,10 @@ export class Kit {
   container(x, z, y = 0, rotY = 0, color = 0xc0392b, tag) {
     const rot = Math.abs(Math.sin(rotY)) > 0.5;
     const L = 6.1, W = 2.44, H = 2.6;
-    this.box(x, y, z, rot ? W : L, H, rot ? L : W, this.mat('corrugated', { color, tag }, 2.6), { cullBottom: true });
+    const names = ['shipping-container-a', 'shipping-container-b', 'shipping-container-c'];
+    const hide = !!kenneyModel(names[0]);
+    this.box(x, y, z, rot ? W : L, H, rot ? L : W, this.mat('corrugated', { color, tag }, 2.6), { cullBottom: true, hide });
+    if (hide) this.kenney(names[(color >>> 4) % 3], x, y, z, rot ? W : L, H, rot ? L : W);
     this.minimap.push({ x0: x - (rot ? W : L) / 2, z0: z - (rot ? L : W) / 2, x1: x + (rot ? W : L) / 2, z1: z + (rot ? L : W) / 2, y: y + H, kind: 'container' });
   }
 
@@ -325,6 +379,7 @@ export class Kit {
     this.box(x + 0.6, 4.9, z, 1.3, 0.12, 0.12, this.mat('metal', { color: 0x30363d }, 1), { collide: false });
     const lampKey = this.mat('flat', { color: on ? 0xfff1b8 : 0x555555 }, 1, { unlit: on });
     this.box(x + 1.15, 4.7, z, 0.45, 0.2, 0.3, lampKey, { collide: false });
+    if (this.prop('plant', x + 0.3, 0, z + 0.25, 0.4)) { this.prop('stones', x - 0.3, 0, z - 0.2, 0.25, x); if (this._h(x, z) < 0.4) this.prop('cone', x + 0.7, 0, z - 0.5, 0.5); }
     if (light) {
       const l = new THREE.PointLight(0xffd28a, 14, 16, 2); l.position.set(x + 1.15, 4.5, z); this.root.add(l);
       this.lights.push(l); if (flicker) this.flicker.push({ l, base: 14, phase: Math.random() * 10 });
@@ -332,7 +387,9 @@ export class Kit {
   }
 
   acUnit(x, z, y, h = 1.0) {
-    this.box(x, y, z, 1.8, h, 1.4, this.mat('metal', { color: 0xa9b2bc }, 1.4), { cullBottom: true });
+    const kn = !!kenneyModel('machine-window');
+    this.box(x, y, z, 1.8, h, 1.4, this.mat('metal', { color: 0xa9b2bc }, 1.4), { cullBottom: true, hide: kn });
+    if (kn) { this.kenney('machine-window', x, y, z, 1.8, h, 1.4); return; }
     this.cyl(x, y + h, z, 0.45, 0.05, this.mat('flat', { color: 0x2a2f36 }), { collide: false, seg: 8 });
   }
 
@@ -347,6 +404,13 @@ export class Kit {
 
   tree(x, z, y = 0) {
     this.box(x, y, z, 1.6, 0.6, 1.6, this.mat('concrete', { color: 0x9b958a }, 1.6), { cullBottom: true });
+    if (kenneyModel('tree')) {
+      const hh = this._h(x, z), tall = hh > 0.55;
+      this.prop(tall ? 'tree-high' : 'tree', x, y + 0.6, z, tall ? 4.4 : 3.6, hh * 6.28);
+      this.prop('plant', x + 0.55, y + 0.6, z + 0.5, 0.35, hh * 9);
+      this.prop(hh < 0.5 ? 'stones' : 'rocks-low', x - 1.15, y, z + 0.9, 0.3, hh * 4);
+      return;
+    }
     this.cyl(x, y + 0.6, z, 0.12, 1.6, this.mat('wood', { color: 0x6b4a2b }, 1), { collide: false, seg: 5 });
     const leaf = this.mat('flat', { color: 0x4caf50 });
     this.blob(x, y + 2.6, z, 1.05, leaf);
@@ -354,20 +418,27 @@ export class Kit {
   }
 
   bench(x, z, rotY = 0) {
-    const k = this.mat('wood', { color: 0x9c6b3c }, 1);
     const rot = Math.abs(Math.sin(rotY)) > 0.5;
+    if (kenneyModel('bench')) {
+      this.box(x, 0, z, rot ? 0.5 : 1.8, 0.45, rot ? 1.8 : 0.5, this.mat('flat', {}), { collide: 'prop', hide: true });
+      this.kenney('bench', x, 0, z, rot ? 0.7 : 1.8, 0.9, rot ? 1.8 : 0.7, { mode: 'uniform' });
+      this.prop('plant', x + (rot ? 0.7 : 1.15), 0, z + (rot ? 1.1 : 0.2), 0.35, x); return;
+    }
+    const k = this.mat('wood', { color: 0x9c6b3c }, 1);
     this.box(x, 0.4, z, rot ? 0.5 : 1.8, 0.1, rot ? 1.8 : 0.5, k, { collide: false });
     this.box(x, 0, z, rot ? 0.5 : 1.8, 0.45, rot ? 1.8 : 0.5, this.mat('metal', { color: 0x30363d }, 1), { collide: 'prop', cullBottom: true });
   }
 
   dumpster(x, z, rotY = 0) {
     const rot = Math.abs(Math.sin(rotY)) > 0.5;
-    this.box(x, 0, z, rot ? 1.4 : 2.2, 1.3, rot ? 2.2 : 1.4, this.mat('metal', { color: 0x2e7d32 }, 1.4), { cullBottom: true });
+    const hide = !!kenneyModel('machine');
+    this.box(x, 0, z, rot ? 1.4 : 2.2, 1.3, rot ? 2.2 : 1.4, this.mat('metal', { color: 0x2e7d32 }, 1.4), { cullBottom: true, hide });
+    if (hide) this.kenney('machine', x, 0, z, rot ? 1.4 : 2.2, 1.3, rot ? 2.2 : 1.4);
   }
 
   serverRack(x, z, y, rotY = 0, w = 0.9, h = 2.2, d = 1.2, glow = 0x3aa0ff) {
     const rot = Math.abs(Math.sin(rotY)) > 0.5;
-    this.box(x, y, z, rot ? d : w, h, rot ? w : d, this.mat('metal', { color: 0x2a2f38 }, 1.1), { cullBottom: true });
+    this.box(x, y, z, rot ? d : w, h, rot ? w : d, this.mat('metal', { color: 0x2a2f38 }, 1.1), { cullBottom: true });   // original rack (user's pick over Kenney)
     const glowKey = this.mat('flat', { color: glow }, 1, { unlit: true });
     for (let i = 0; i < 4; i++) {
       const yy = y + 0.35 + i * 0.45;
@@ -413,6 +484,11 @@ export class Kit {
   // Rooftop water tank: wooden barrel on metal stilts with conical roof cap.
   waterTank(x, z, y, { r = 1.2, h = 2.2 } = {}) {
     const legH = 1.0;
+    if (kenneyModel('water-tower')) {
+      this.world.addBox(V(x - r, y, z - r), V(x + r, y + legH + h + 0.55, z + r), 'solid');
+      this.minimap.push({ x0: x - r, z0: z - r, x1: x + r, z1: z + r, y: y + legH + h + 0.55, kind: 'prop' });
+      this.kenney('water-tower', x, y, z, r * 2, legH + h + 0.55, r * 2); return;
+    }
     const kMetal = this.mat('metal', { color: 0x30363d }, 1);
     const kWood = this.mat('wood', { color: 0x7a5b3e }, 1.5);
     const kRoof = this.mat('roof', {}, 1);
@@ -427,6 +503,7 @@ export class Kit {
 
   // Storefront / doorway awning extending from a wall.
   awning(x, y, z, face, w = 2.4, d = 1.2, color = 0xc0392b) {
+    if (archAwning(this, x, y, z, face, w, d)) return;
     const kMat = this.mat('corrugated', { color }, 1.2);
     const kMetal = this.mat('metal', { color: 0x30363d }, 1);
     const rot = face === 'e' || face === 'w';
@@ -493,6 +570,16 @@ export class Kit {
         for (const g of list) g.dispose();
       }
     }
+    for (const [mat, list] of this.kgeos) {   // Kenney props: one merged mesh per kit texture (tiled so culling still works)
+      const tiles = new Map();
+      for (const g of list) { g.computeBoundingBox(); g.boundingBox.getCenter(c); const key = Math.floor(c.x / TILE) + ',' + Math.floor(c.z / TILE); (tiles.get(key) ?? tiles.set(key, []).get(key)).push(g); }
+      for (const l of tiles.values()) {
+        const merged = mergeGeometries(l, false); merged.computeBoundingSphere();
+        const mesh = new THREE.Mesh(merged, mat); mesh.castShadow = true; mesh.receiveShadow = true; mesh.matrixAutoUpdate = false; mesh.updateMatrix();
+        this.root.add(mesh); l.forEach(g => g.dispose());
+      }
+    }
+    this.kgeos.clear();
     this.batches.clear();
     this.sharedBatches.clear();
     return this.root;

@@ -1,23 +1,44 @@
-// First-run coach overlay (non-blocking). Comic HUD style: yellow panel, ink outline, Impact, skewX(-8deg).
+// Guided first-mission tutorial: a mentor (Amara) talks the player through every control, demonstrates each
+// ability, then fights beside them and walks them to the objective. Comic HUD panel: yellow, ink outline, Impact.
 // Usage (game.js):
-//   const tut = createTutorial({ isTouch, onDone: ({ skipped }) => {} });
-//   on mission start: tut.start();              // no-op (returns false) if already completed
-//   every frame:      if (tut.active) tut.update({ moved, looked, fired, reloaded, ability, interacting });
-//   tut.skip() ends it early (also wired to the SKIP button). Completion persists in localStorage 'sz_tutorial_done'.
-// Flags are sticky: if the player already fired before the SHOOT step, that step completes instantly.
+//   const tut = createTutorial({ isTouch, hooks, onDone: ({ skipped }) => {} });
+//   tut.start({ force })            -> false if already completed (unless force)
+//   every frame: tut.update(dt, S)  S = per-frame input/state flags (see STEPS[].need); reuse one object.
+//   tut.hold                        -> true while the world (enemies + timer) should stay frozen
+//   tut.skip() / Backspace / SKIP button end it. Completion persists in localStorage 'sz_tutorial_done'.
+// hooks: say(who, text) · demo(slot) mentor shows ability · onStep(id) per-step setup · abilityName(slot)
+// Steps only accept input after the mentor's intro (and demo) so each action is done on cue.
 // Only transform/opacity animate (cheap on low-end GPUs); prefers-reduced-motion disables motion.
 
 const KEY = 'sz_tutorial_done';
 const DONE_HOLD = 650;     // ms the green "NICE!" state shows before advancing
 
-const STEPS = [
-  { id: 'moved',       title: 'MOVE',      pc: ['W', 'A', 'S', 'D'], pcTxt: 'to move',            touch: 'LEFT STICK',  touchTxt: 'to move' },
-  { id: 'looked',      title: 'LOOK',      pc: ['MOUSE'],            pcTxt: 'to aim',             touch: 'DRAG RIGHT',  touchTxt: 'to aim' },
-  { id: 'fired',       title: 'SHOOT',     pc: ['LMB'],              pcTxt: 'to fire',            touch: 'FIRE',        touchTxt: 'button to shoot' },
-  { id: 'reloaded',    title: 'RELOAD',    pc: ['R'],                pcTxt: 'to reload',          touch: 'RELOAD',      touchTxt: 'button to reload' },
-  { id: 'ability',     title: 'ABILITY',   pc: ['Q', 'F'],           pcTxt: 'use an ability',     touch: 'ABILITY',     touchTxt: 'tap an ability slot' },
-  { id: 'interacting', title: 'OBJECTIVE', pc: ['HOLD E'],           pcTxt: 'at the objective',   touch: 'HOLD USE',    touchTxt: 'at the objective' },
+
+const MENTOR = 'AMARA';
+// need(S, m): S = frame state from game.js; m = per-step scratch (reset on entry). wait = seconds before input counts.
+export const STEPS = [
+  { id: 'look', title: 'LOOK', pc: ['MOUSE'], touch: ['DRAG RIGHT'], tx: 'look around', wait: 1.6,
+    say: "Voss, this is Amara. Okonkwo asked me to walk you in. Look around first.", need: (S, m) => (m.a = (m.a || 0) + S.look) > 1.2 },
+  { id: 'move', title: 'MOVE', pc: ['W', 'A', 'S', 'D'], touch: ['LEFT STICK'], tx: 'move', say: 'Good. Now move.', need: (S, m) => (m.t = (m.t || 0) + (S.moved ? S.dt : 0)) > 0.8 },
+  { id: 'walk', title: 'WALK QUIET', pc: ['HOLD SHIFT'], touch: ['PUSH STICK LIGHTLY'], tx: 'walk silently', say: 'Running is loud. Walk when you sneak up on a guard.', need: (S, m) => (m.t = (m.t || 0) + (S.walked ? S.dt : 0)) > 0.8 },
+  { id: 'jump', title: 'JUMP', pc: ['SPACE'], touch: ['JUMP'], tx: 'jump', say: 'Jump. Ledges and rails are shortcuts.', need: S => S.jumped },
+  { id: 'slide', title: 'SLIDE', pc: ['RUN', '+', 'C'], tx: 'slide while running', say: 'Sprint and hit C to slide. Hard to hit, fast into cover.', need: S => S.slid, pcOnly: true },
+  { id: 'fire', title: 'SHOOT', pc: ['LMB'], touch: ['FIRE'], tx: 'fire at a wall', say: 'Weapons hot. Put a few rounds into that wall.', need: S => S.fired },
+  { id: 'aim', title: 'AIM', pc: ['HOLD RMB'], touch: ['AIM'], tx: 'aim down sights', say: 'Aim down sights. Tighter spread, slower feet.', need: (S, m) => (m.t = S.aiming ? (m.t || 0) + S.dt : 0) > 0.5 },
+  { id: 'reload', title: 'RELOAD', pc: ['R'], touch: ['RELOAD'], tx: 'reload', say: 'Reload before you push, never mid-fight.', need: S => S.reloaded },
+  { id: 'swap', title: 'SWITCH', pc: ['1', '2', 'WHEEL'], touch: ['SWAP'], tx: 'switch weapons', say: 'Sidearm is faster than reloading. Swap.', need: S => S.swapped },
+  { id: 'ab0', title: 'ABILITY 1', ab: 0, pc: ['Q'], touch: ['ABILITY 1'], demo: 0, need: S => S.ab0 },
+  { id: 'ab1', title: 'ABILITY 2', ab: 1, pc: ['F'], touch: ['ABILITY 2'], demo: 1, need: S => S.ab1 },
+  { id: 'kit', title: 'YOUR KIT', pc: ['LOADOUT'], touch: ['LOADOUT'], tx: 'pick 2 abilities per mission', wait: 0, timed: 5.5,
+    say: 'You carry two abilities. Pick them in LOADOUT before each mission. Q is slot one, F is slot two.' },
+  { id: 'fight', title: 'FIGHT', pc: ['TAKE OUT 2'], touch: ['TAKE OUT 2'], tx: 'hostiles, together', wait: 0.5, timeout: 45,
+    say: "Covenant heard us. They're coming. Stay close and shoot what I shoot!", need: S => S.kills >= 2 },
+  { id: 'defuse', title: 'DEFUSE', pc: ['HOLD E'], touch: ['HOLD USE'], tx: 'at the device', wait: 0.5,
+    say: 'Follow the marker to the device. Hold E to cut the wires. I have your back.', need: S => S.interacting },
 ];
+const DEMO_LINE = { smoke: 'Watch. Smoke blocks sight lines.', flash: 'Eyes away! Flash blinds anyone facing it.', dash: 'Dash: a burst of speed. In and out.',
+  sensor: 'Sensor reveals hostiles nearby.', shield: 'Shield soaks damage for a few seconds.', decoy: 'Decoy draws their fire.', lockdown: 'Lockdown slows anyone inside.', drone: 'Drone scouts ahead and marks targets.' };
+const SAY_GAP = 0.15;
 
 const CSS = `
 #tut{position:fixed;left:50%;top:calc(var(--u,12px)*8.2);z-index:30;pointer-events:none;transform:translateX(-50%);
@@ -27,6 +48,8 @@ const CSS = `
   gap:calc(var(--u,12px)*.7);padding:calc(var(--u,12px)*.35) calc(var(--u,12px)*.5) calc(var(--u,12px)*.35) calc(var(--u,12px)*.8);transition:background .15s}
 #tut .tb>*{transform:skewX(8deg)}
 #tut.ok .tb{background:#3ddc84}
+#tut.wait .ks{opacity:.45}
+#tut .ks{transition:opacity .2s}
 #tut .st{font-size:calc(var(--u,12px)*.75);background:#111;color:#ffd23b;padding:1px 6px;white-space:nowrap}
 #tut .ti{font-size:calc(var(--u,12px)*1.35);letter-spacing:1px;white-space:nowrap}
 #tut .ks{display:flex;gap:4px;align-items:center}
@@ -50,9 +73,10 @@ const store = {
   set() { try { localStorage.setItem(KEY, '1'); } catch { /* storage blocked in iframe: ignore */ } },
 };
 
-export function createTutorial({ isTouch = false, onDone = () => {} } = {}) {
-  let root = null, idx = 0, okAt = 0, finished = false;
-  const seen = Object.create(null);
+export function createTutorial({ isTouch = false, hooks = {}, onDone = () => {} } = {}) {
+  let root = null, idx = 0, okT = -1, finished = false, t = 0, readyAt = 0, demoAt = -1, m = {}, steps = STEPS;
+  const say = (who, txt) => { try { hooks.say?.(who, txt); } catch (e) { console.warn('tutorial say', e); } };
+  const onKey = e => { if (api.active && e.code === 'Backspace') { e.preventDefault(); api.skip(); } };
 
   function mount() {
     if (!document.getElementById('tutCss')) {
@@ -60,64 +84,82 @@ export function createTutorial({ isTouch = false, onDone = () => {} } = {}) {
     }
     root = document.createElement('div'); root.id = 'tut'; root.className = 'hide';
     root.innerHTML = '<div class="tb"><span class="st"></span><span class="ti"></span><span class="ks"></span><span class="tx"></span>'
-      + '<button class="sk" type="button">SKIP ✕</button></div><div class="dots">' + STEPS.map(() => '<i></i>').join('') + '</div>';
+      + `<button class="sk" type="button">SKIP${isTouch ? '' : ' <small>⌫</small>'} ✕</button></div><div class="dots">` + steps.map(() => '<i></i>').join('') + '</div>';
     const sk = root.querySelector('.sk');
     const stop = e => { e.stopPropagation(); };
-    sk.addEventListener('pointerdown', stop); sk.addEventListener('touchstart', stop, { passive: true });
+    sk.addEventListener('pointerdown', stop); sk.addEventListener('mousedown', stop); sk.addEventListener('touchstart', stop, { passive: true });
     sk.addEventListener('click', e => { e.stopPropagation(); api.skip(); });
     (document.getElementById('hud') || document.body).append(root);
+    addEventListener('keydown', onKey, true);
   }
-
+  const abName = s => (s.ab !== undefined && hooks.abilityName?.(s.ab)) || '';
   function render() {
-    const s = STEPS[idx];
-    root.querySelector('.st').textContent = `${idx + 1}/${STEPS.length}`;
-    root.querySelector('.ti').textContent = s.title;
-    const keys = isTouch ? [s.touch] : s.pc;
-    root.querySelector('.ks').innerHTML = keys.map(k => `<kbd>${k}</kbd>`).join('');
-    root.querySelector('.tx').textContent = isTouch ? s.touchTxt : s.pcTxt;
+    const s = steps[idx], name = abName(s);
+    root.querySelector('.st').textContent = `${idx + 1}/${steps.length}`;
+    root.querySelector('.ti').textContent = name ? name.toUpperCase() : s.title;
+    root.querySelector('.ks').innerHTML = (isTouch ? s.touch || s.pc : s.pc).map(k => k === '+' ? '+' : `<kbd>${k}</kbd>`).join('');
+    root.querySelector('.tx').textContent = t < readyAt ? (s.demo !== undefined ? `watch ${MENTOR.charAt(0) + MENTOR.slice(1).toLowerCase()}…` : '…') : s.tx || (name ? `use ${name}` : '');
     root.querySelectorAll('.dots i').forEach((d, j) => { d.className = j < idx ? 'd' : j === idx ? 'c' : ''; });
-    root.classList.remove('ok', 'pop'); void root.offsetWidth; root.classList.add('pop');
+    root.classList.toggle('wait', t < readyAt);
   }
-
+  function enter(i) {
+    idx = i; okT = -1; m = {};
+    const s = steps[idx];
+    try { hooks.onStep?.(s.id, s); } catch (e) { console.warn('tutorial onStep', e); }
+    api.hold = s.id !== 'fight' && s.id !== 'defuse';
+    const name = abName(s);
+    if (s.demo !== undefined) {
+      say(MENTOR, DEMO_LINE[hooks.abilityKind?.(s.demo)] || `Watch my ${name}.`);
+      demoAt = t + 0.9; readyAt = t + 3.0;
+    } else { if (s.say) say(MENTOR, s.say); demoAt = -1; readyAt = t + (s.wait ?? SAY_GAP); }
+    render(); root.classList.remove('ok', 'pop'); void root.offsetWidth; root.classList.add('pop');
+  }
   function end(skipped) {
     if (finished) return;
-    finished = true; api.active = false; store.set();
-    if (root) {
-      root.classList.add('hide');
-      const r = root; setTimeout(() => r.remove(), 300); root = null;
-    }
+    finished = true; api.active = false; api.hold = false; store.set();
+    removeEventListener('keydown', onKey, true);
+    if (root) { root.classList.add('hide'); const r = root; setTimeout(() => r.remove(), 300); root = null; }
     try { onDone({ skipped }); } catch (e) { console.warn('tutorial onDone', e); }
   }
 
   const api = {
-    active: false,
-    /** Show the coach if not completed before. Pass { force: true } to replay. Returns true if shown. */
+    active: false, hold: false,
+    /** Start if not completed before (or { force: true } to replay). Returns true if shown. */
     start({ force = false } = {}) {
       if (api.active) return true;
       if (!force && store.get()) return false;
-      finished = false; idx = 0; okAt = 0; for (const k in seen) delete seen[k];
-      if (!root) mount();
-      api.active = true; render();
+      steps = isTouch ? STEPS.filter(s => !s.pcOnly) : STEPS;
+      finished = false; t = 0; if (root) root.remove(); mount();
+      api.active = true; enter(0);
       requestAnimationFrame(() => root && root.classList.remove('hide'));
       return true;
     },
-    /** Call every frame with this frame's input booleans. */
-    update(state = {}) {
+    /** Call every frame (dt seconds) with this frame's state flags. */
+    update(dt, S) {
       if (!api.active || !root) return;
-      for (const s of STEPS) if (state[s.id]) seen[s.id] = true;
-      const now = performance.now();
-      if (okAt) {
-        if (now - okAt < DONE_HOLD) return;
-        okAt = 0; idx++;
-        if (idx >= STEPS.length) { end(false); return; }
-        render();
+      t += dt;
+      const s = steps[idx];
+      if (demoAt >= 0 && t >= demoAt) { demoAt = -1; try { hooks.demo?.(s.demo); } catch (e) { console.warn('tutorial demo', e); } }
+      if (okT >= 0) {
+        if (t - okT < DONE_HOLD / 1000) return;
+        if (idx + 1 >= steps.length) { end(false); return; }
+        enter(idx + 1); return;
       }
-      if (seen[STEPS[idx].id]) { okAt = now; root.classList.add('ok'); root.querySelector('.tx').textContent = 'NICE!'; }
+      if (t < readyAt) return;
+      if (root.classList.contains('wait')) render();
+      const done = s.timed ? t - readyAt >= s.timed : s.timeout && t - readyAt >= s.timeout ? true : s.need(S, m);
+      if (done) { okT = t; root.classList.add('ok'); root.querySelector('.tx').textContent = 'NICE!'; }
     },
     skip() { if (api.active) end(true); },
+    /** Mission ended mid-tutorial (death / quit): tear down without marking it completed. */
+    abort() {
+      if (!api.active) return; finished = true; api.active = false; api.hold = false; removeEventListener('keydown', onKey, true);
+      if (root) { root.remove(); root = null; }
+    },
     /** Hide/show without losing progress (e.g. pause menu). */
     visible(on) { if (root) root.classList.toggle('hide', !on); },
-    get step() { return api.active ? STEPS[idx].id : null; },
+    get step() { return api.active ? steps[idx].id : null; },
+    get steps() { return steps.map(s => s.id); },
   };
   return api;
 }

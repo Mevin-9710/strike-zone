@@ -4,6 +4,7 @@
 // Everything static is merged per material by the Kit, so a whole district is a handful of draw calls.
 import * as THREE from 'three';
 import { Kit } from './kit.js';
+import { archSeg } from './kenney-arch.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 const FH = 3.6, WT = 0.3, RUN = 7.2;            // floor height, wall thickness, stair run
@@ -107,8 +108,9 @@ export function buildDistrict(world, scene, spec) {
     const sgn = (face === 's' || face === 'e') ? 1 : -1;
     const seg = (a, c, yy, hh) => {
       if (c - a < 0.02 || hh < 0.02) return;
-      if (horiz) k.box((a + c) / 2, yy, line, c - a, hh, WT, mat, { cullBottom: yy <= 0.16 });
-      else k.box(line, yy, (a + c) / 2, WT, hh, c - a, mat, { cullBottom: yy <= 0.16 });
+      const A = archSeg(k, face, a, c, yy, hh, line, WT);   // Kenney panel replaces the visual, collider stays
+      if (horiz) k.box((a + c) / 2, yy, line, c - a, hh, WT, mat, { cullBottom: yy <= 0.16, hide: A });
+      else k.box(line, yy, (a + c) / 2, WT, hh, c - a, mat, { cullBottom: yy <= 0.16, hide: A });
     };
     let cur = lo;
     for (const o of ops.sort((p, q) => p.from - q.from)) {

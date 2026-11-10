@@ -46,6 +46,17 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /◎ 0/.test(await pg.textContent('#coins')));
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
     await pg.click('#lPlay');
+    check('Play opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));
+    await pg.click('#chapters button >> nth=0');
+    check('chapter pick advances to mission step', await pg.isVisible('#stepMission') && !(await pg.isVisible('#stepMode')));
+    await pg.keyboard.press('Escape'); check('Esc goes back a step', await pg.isVisible('#stepMode'));
+    await pg.click('#chapters button >> nth=0');
+    await pg.click('#briefNext');
+    check('loadout step has DEPLOY', await pg.isVisible('#stepLoadout') && await pg.isVisible('#start'));
+    await pg.click('#briefBack'); await pg.click('#briefBack');
+    check('Back x2 reaches mode step', await pg.isVisible('#stepMode'));
+    await pg.click('#briefBack'); check('Back from mode returns to lobby', await pg.isVisible('#lobby'));
+    await pg.click('#lPlay');
     const n = await pg.locator('#missions button').count(), locked = await pg.locator('#missions button:disabled').count();
     check('campaign lists 12 missions', n === 12, `n=${n}`);
     check('new profile: only mission 1 open', locked === 11, `locked=${locked}`);
@@ -183,6 +194,64 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const info = await pg.evaluate(() => { __game.start(9); __game.step(0.5); __game.render(); return __game.info; });
     check('district renders in under 350 draw calls (incl. shadow pass)', info.calls < 350, JSON.stringify(info));
     check('district under 600k triangles per frame', info.triangles < 600000, `tris=${info.triangles}`);
+    await ctx.close();
+  }
+
+  // 8. Story data integrity + radio/briefing/debrief wiring
+  {
+    const { ctx, pg } = await open(browser, { progress: 12 });
+    const r = await pg.evaluate(async () => {
+      const { STORY, SPEAKERS } = await import('./game/story-data.js'); const { radio } = await import('./game/radio.js');
+      const bad = []; for (const m of __game.MISSIONS) { const s = STORY[m.id]; if (!s || !s.briefing?.length || !s.win?.length || !s.lose?.length) { bad.push(m.id); continue; }
+        for (const l of [...s.briefing, ...s.win, ...s.lose, ...Object.values(s.ev || {}).flat()]) if (!SPEAKERS[l[0]] || !l[1] || l[1].length > 160) bad.push(m.id + ':' + l[0]); }
+      __game.start(2); __game.step(0.1); radio.say('YUNA', 'Test line'); const on = document.getElementById('radio').classList.contains('on');
+      const txt = document.getElementById('rtxt').textContent; __game.step(0.1);
+      return { bad, on, txt, started: __game.state.mission };
+    });
+    check('every mission has briefing + win/lose debrief with valid speakers', r.bad.length === 0, r.bad.join(','));
+    check('radio subtitle shows non-blocking', r.on && r.txt.length > 0, r.txt);
+    await pg.evaluate(() => { __game.openBriefing('mission'); }); 
+    const brief = await pg.evaluate(() => document.querySelectorAll('#briefExtra .sline').length);
+    check('briefing panel renders portrait lines', brief > 0, String(brief));
+    check('no page errors (story)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // 9. Guided tutorial (mission 1): every step completes headlessly, mentor spawns + fights, flag persists
+  {
+    const { ctx, pg } = await open(browser, {});
+    await pg.evaluate(() => { __game.start(0, { tutorial: true }); __game.step(0.1); });
+    const mentorOk = await pg.waitForFunction(() => !!__game.mentor, null, { timeout: 30000 }).then(() => true, () => false);
+    check('tutorial spawns the Amara mentor bot', mentorOk);
+    const r = await pg.evaluate(() => {
+      const g = __game, t = g.tutorial, out = [], clock0 = g.state.clock;
+      const act = {
+        look: () => g.look(g.player.yaw + 0.3, 0), move: () => g.key('KeyW', true), walk: () => { g.key('KeyW', true); g.key('ShiftLeft', true); },
+        jump: () => g.key('Space', true), slide: () => { g.key('KeyW', true); g.key('ShiftLeft', false); g.key('KeyC', true); },
+        fire: () => g.fire(), aim: () => g.mouse('r', true), reload: () => g.reload(), swap: () => g.equip(1),
+        ab0: () => g.ability(0), ab1: () => g.ability(1), kit: () => {},
+        fight: n => { if (n > 20) { const e = g.enemies.find(e => e.alive); e?.damage(9999); } },
+        defuse: () => { const p = g.map.points[0]; g.teleport(p.x + 1.2, p.y, p.z); g.key('KeyE', true); },
+      };
+      let held = true;
+      for (const id of t.steps) {
+        if (t.step !== id) { out.push(id + ':skipped'); continue; }
+        g.step(3.2); let n = 0;
+        while (t.active && t.step === id && n < 200) { act[id]?.(n); g.step(0.3); n++; }
+        for (const k of ['KeyW', 'ShiftLeft', 'Space', 'KeyC', 'KeyE']) g.key(k, false); g.mouse('r', false);
+        if (id === 'kit') held = held && clock0 - g.state.clock < 0.5;   // last 0.3s tick may already be in the (unfrozen) fight step
+        out.push(id + ':' + (n < 200 ? 'ok' : 'STUCK'));
+      }
+      g.step(0.2);
+      return { out, active: t.active, held, flag: localStorage.getItem('sz_tutorial_done'), mentorKills: g.mentor?.kills ?? -1, fight: g.mentor?.fight };
+    });
+    check('tutorial: every guided step completes in order', !r.active && r.out.every(s => s.endsWith(':ok')), r.out.join(' '));
+    check('tutorial freezes the mission timer during drills', r.held);
+    check('tutorial completion persists (forced only on first play)', r.flag === '1');
+    check('mentor keeps fighting after the tutorial', r.fight === true);
+    const skip = await pg.evaluate(() => { __game.start(0, { tutorial: true }); __game.step(0.5); const a = __game.tutorial.active; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace' })); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace' })); __game.step(0.1); return { a, after: __game.tutorial.active, hold: __game.tutorial.hold }; });
+    check('tutorial is replayable and skippable (Backspace)', skip.a && !skip.after && !skip.hold, JSON.stringify(skip));
+    check('no page errors (tutorial)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 

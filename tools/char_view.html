@@ -1,0 +1,29 @@
+<!doctype html><meta charset=utf8><body style="margin:0;background:#789"><script type="importmap">{"imports":{"three":"../lib/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { calibrateGun } from '../game/enemies.js';
+// ?dir=models/_preview&f=rhea,kade&clip=shoot&t=0.1&gun=1&yaw=0.6
+const q = new URLSearchParams(location.search), dir = q.get('dir') || 'models/rigged', names = (q.get('f') || 'rhea').split(',');
+const clip = q.get('clip') || 'none', t = +(q.get('t') || 0.1), yaw = +(q.get('yaw') || 0.5);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(innerWidth, innerHeight); document.body.append(r.domElement);
+const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x556677, 1.6)); const dl = new THREE.DirectionalLight(0xffffff, 2); dl.position.set(2, 4, 3); sc.add(dl);
+const grid = new THREE.GridHelper(20, 40); sc.add(grid); sc.add(new THREE.AxesHelper(1));
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100); const n = names.length;
+const Z = +(q.get('z') || 0); cam.position.set(0, 1.2 - Z * 0.3, Z || 2.2 + n * 1.0); cam.lookAt(0, 0.9 - (Z ? 0.7 : 0), 0);
+const L = new GLTFLoader(); const gun = q.get('gun') ? (await L.loadAsync('../models/weapons/' + (q.get('gun') === '1' ? 'ar7_lance' : q.get('gun')) + '.glb')) : null;
+const SU = await import('../lib/addons/utils/SkeletonUtils.js');
+for (let i = 0; i < n; i++) {
+  const g = await L.loadAsync(`../${dir}/${names[i]}.glb`); const root = SU.clone(g.scene); root.position.x = (i - (n - 1) / 2) * 1.3; root.rotation.y = yaw; sc.add(root);
+  const mx = new THREE.AnimationMixer(root); const c = g.animations.find(a => a.name === clip); if (c) mx.clipAction(c).play(); else console.log('noclip', clip, g.animations.map(a=>a.name).join());
+  mx.update(t); root.updateMatrixWorld(true);
+  for (const [nm, col] of [['head', 0xff0000], ['chest', 0x00ff00], ['hips', 0x0000ff], ['footL', 0xffff00], ['footR', 0xffff00], ['handR', 0xff00ff], ['forearmR', 0x00ffff]]) {
+    const o = root.getObjectByName(nm); if (!o) { console.log('MISSING', names[i], nm); continue; }
+    const s = new THREE.Mesh(new THREE.SphereGeometry(nm === 'head' ? 0.22 : 0.04), new THREE.MeshBasicMaterial({ color: col, wireframe: nm === 'head' })); if (nm === 'head') s.position.y = 0.2; o.add(s);
+  }
+  if (gun) { const off = calibrateGun(g, clip); const w = gun.scene.clone(true); w.matrixAutoUpdate = false; w.matrix.copy(off); root.getObjectByName('handR').add(w); }
+  root.updateMatrixWorld(true);
+}
+window.__dbg = (a) => 0; for (const o of sc.children) if (o.isGroup && o.getObjectByName('handR')) { for (const nm of ['arm-right','handR','forearmR','torso','head','hips','chest']) { const v = new THREE.Vector3(); o.getObjectByName(nm).getWorldPosition(v); console.log(nm, v.toArray().map(x=>x.toFixed(2)).join(' ')); } }
+r.render(sc, cam); document.title = 'done';
+</script>

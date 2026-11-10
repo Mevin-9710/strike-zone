@@ -255,42 +255,72 @@
     <div id="lobbyTop"><span class="logo">STRIKE ZONE</span><span class="chip" id="lvl">LV 1<span id="lvlbar"><i></i></span></span><span class="chip" id="coins">◎ 0</span></div>
     <div id="lobbyNav">
       <button id="lPlay" class="go">▶ PLAY</button>
-      <button id="lLoadout">LOADOUT</button>
-      <button id="lShop">SHOP</button>
-      <button id="lPass">BATTLE PASS</button>
-      <button id="lProfile">PROFILE · INTEL</button>
-      <button id="lSettings">⚙ SETTINGS</button>
+      <div class="sub">
+        <button id="lLoadout">LOADOUT</button>
+        <button id="lShop">SHOP</button>
+        <button id="lPass">BATTLE PASS</button>
+        <button id="lProfile">PROFILE</button>
+      </div>
+      <button id="lSettings" class="small">⚙ SETTINGS</button>
+      <button id="lTutorial" class="small">🎓 TUTORIAL</button>
     </div>
     <div id="lobbyOp" class="chip"></div>
   </div>
+  <div id="tutPick" class="panel"><div class="card" style="min-width:min(520px,92vw)"><h2>HOW TO PLAY</h2>
+    <p>Learn by doing with Amara, or read the field guide.</p>
+    <div class="row" style="gap:12px;flex-wrap:wrap"><button id="tpPlay" class="go">▶ INTERACTIVE TUTORIAL</button><button id="tpDoc" class="go">📖 FIELD GUIDE</button></div>
+    <button class="back">BACK</button></div></div>
+  <div id="guide" class="panel"><div class="card" style="min-width:min(760px,94vw);max-height:90vh;overflow-y:auto;text-align:left"><h2>FIELD GUIDE</h2>
+    <h3>CONTROLS (PC)</h3><p><b>WASD</b> move · <b>SHIFT</b> walk quietly · <b>SPACE</b> jump · <b>C</b> slide (while running) · <b>Left click</b> fire · <b>Right click</b> aim · <b>R</b> reload · <b>1 / 2</b> or <b>wheel</b> switch weapon · <b>Q / F</b> abilities · <b>Hold E</b> plant / defuse / pick up · <b>T</b> spray · <b>ESC</b> pause</p>
+    <h3>CONTROLS (PHONE)</h3><p>Left thumb: move stick. Right side: drag to look. On-screen buttons fire, jump, use abilities and pause. Hold the action button to plant or defuse.</p>
+    <h3>MISSIONS</h3><p>Every mission has a timer. Watch the objective banner at the top and the marker on your minimap.</p><ul>
+      <li><b>Defuse</b> – reach each device and hold E until the bar fills.</li>
+      <li><b>Plant &amp; hold</b> – plant the charge on the marked target, then defend it until it blows.</li>
+      <li><b>Retrieve</b> – grab the drives and carry them to the extraction point.</li>
+      <li><b>Intel</b> – optional files hidden on each map. Collect them for XP and story.</li></ul>
+    <h3>ABILITIES</h3><p>Pick two per mission in the Loadout step. Each has a cooldown shown on its button.</p><ul>
+      <li><b>Smoke</b> – blocks enemy sight lines. <b>Flash</b> – blinds enemies who look at it. <b>Dash</b> – fast burst of movement.</li>
+      <li><b>Sensor</b> – reveals nearby enemies. <b>Decoy</b> – a fake target that draws enemy fire. <b>Shield</b> – absorbs incoming damage.</li>
+      <li><b>Lockdown</b> – pins down enemies inside its zone. <b>Drone</b> – a flying scout that reveals enemies around it.</li></ul>
+    <h3>ENEMIES</h3><ul>
+      <li><b>Guard</b> – standard rifleman. <b>Heavy</b> – armored, slow, big damage. <b>Sniper</b> – deadly at range; watch for the red laser.</li>
+      <li><b>Commander</b> – uses abilities and rallies others. <b>Drone / Turret</b> – fast or fixed fire; flank them.</li></ul>
+    <h3>TIPS</h3><ul><li>Headshots deal the most damage.</li><li>Walk (SHIFT) to stay quiet; running gets you heard.</li><li>Reload behind cover, and use smoke before crossing open streets.</li><li>Finish missions to earn XP and coins for new operatives, weapons and cosmetics.</li></ul>
+    <button class="back go">BACK</button></div></div>
   <div id="shop" class="panel"><div class="card" style="min-width:min(900px,94vw)"><div class="row" style="justify-content:space-between"><h2>SHOP</h2><span class="chip" id="shopCoins"></span></div>
     <h3>WEAPON CHARMS</h3><div class="grid" id="charms"></div><h3>SPRAYS · PRESS T IN MISSION</h3><div class="grid" id="sprays"></div>
     <p class="help">Coins come from the Battle Pass. New weapons and operatives unlock through the campaign.</p><button class="back go">BACK</button></div></div>
   <div id="pass" class="panel"><div class="card" style="min-width:min(900px,94vw)"><h2>BATTLE PASS · SEASON 1</h2><p id="passInfo"></p><div id="passTrack"></div><button class="back go">BACK</button></div></div>
   <div id="profile" class="panel"><div class="card" style="min-width:min(800px,94vw)"><h2>PROFILE</h2><p id="profStats"></p><h3>STORY UNLOCKS</h3><p id="profUnlocks"></p><h3>INTEL FILES</h3><div id="files"></div><button class="back go">BACK</button></div></div>
   <div id="brief" class="panel">
-    <div class="card">
-      <h1>CAMPAIGN · SEASON 1</h1>
-      <div class="cols">
-        <div>
-          <h3>MISSION</h3>
-          <div class="row" id="missions"></div>
-          <p id="brief-text"></p>
-          <div id="routeBox"><h3>ROUTE</h3><div class="row" id="routes"></div></div>
-          <h3>ABILITIES · PICK TWO</h3>
-          <div class="row" id="abilities"></div>
+    <div class="card" id="briefCard">
+      <div class="row" style="justify-content:space-between"><h1 id="stepTitle">MODE</h1><span class="chip" id="stepPips"></span></div>
+      <section class="step" id="stepMode">
+        <p class="help">Choose how to play, then pick a chapter.</p>
+        <div class="row"><button class="modeBtn on" id="modeCampaign">CAMPAIGN<small>Season 1 story missions</small></button></div>
+        <h3>CHAPTER</h3><div class="row" id="chapters"></div>
+      </section>
+      <section class="step" id="stepMission">
+        <div class="cols">
+          <div><h3>MISSION</h3><div class="row" id="missions"></div></div>
+          <div><h3>BRIEFING</h3><p id="brief-text"></p><div id="briefExtra"></div>
+            <div id="routeBox"><h3>ROUTE</h3><div class="row" id="routes"></div></div></div>
         </div>
-        <div>
-          <h3>PRIMARY</h3>
-          <div class="row" id="primaries"></div>
-          <h3>SIDEARM</h3>
-          <div class="row" id="sidearms"></div>
-          <div id="wstats"></div>
+      </section>
+      <section class="step" id="stepAgent">
+        <h3>OPERATIVE</h3><div class="row" id="operatives"></div>
+        <p class="help">Your operative is shown behind this panel.</p>
+      </section>
+      <section class="step" id="stepLoadout">
+        <div class="cols">
+          <div><h3>PRIMARY</h3><div class="row" id="primaries"></div><h3>SIDEARM</h3><div class="row" id="sidearms"></div><div id="wstats"></div></div>
+          <div><h3>ABILITIES · PICK TWO</h3><div class="row" id="abilities"></div>
+            <p class="help">WASD move · SHIFT walk · SPACE jump · C slide · LMB fire · RMB aim · R reload · 1/2 or wheel switch · E hold to defuse/plant · Q/F abilities · ESC pause</p></div>
         </div>
-      </div>
+      </section>
       <div class="row" style="justify-content:space-between;margin-top:calc(var(--u)*0.8)">
-        <p class="help">WASD move · SHIFT walk · SPACE jump · LMB fire · RMB aim · R reload · 1/2 or wheel switch · E hold to defuse/plant · Q/F abilities · ESC pause</p>
-        <span><button id="briefBack">◀ LOBBY</button><button id="start" class="go">DEPLOY</button></span>
+        <button id="briefBack">◀ BACK</button>
+        <span><button id="briefNext" class="go">NEXT ▶</button><button id="start" class="go">DEPLOY</button></span>
       </div>
     </div>
   </div>
@@ -298,10 +328,11 @@
   <div id="pause" class="panel"><div class="card" style="text-align:center"><h2>PAUSED</h2><button id="resume" class="go">RESUME</button><br><button id="pauseMenu">QUIT TO LOBBY</button></div></div>
 
   <div id="end" class="panel"><div class="card" style="max-width:min(720px,94vw)">
-    <h1 id="endTitle"></h1><p id="endText"></p><p id="endStats" class="help"></p><p id="endXP"></p><div id="upBox" style="display:none"><h3 id="upTitle"></h3><div class="row"><button id="upDmg">+ DAMAGE</button><button id="upAmmo">+ AMMO</button></div></div>
+    <h1 id="endTitle"></h1><div id="debrief"></div><p id="endText"></p><p id="endStats" class="help"></p><p id="endXP"></p><div id="upBox" style="display:none"><h3 id="upTitle"></h3><div class="row"><button id="upDmg">+ DAMAGE</button><button id="upAmmo">+ AMMO</button></div></div>
     <div class="row"><button id="next" class="go">NEXT MISSION</button><button id="again">REPLAY</button><button id="menuBtn">LOBBY</button></div><div class="row"><button id="adXP">▶ WATCH AD · DOUBLE XP</button><button id="adRevive" class="go">▶ WATCH AD · REVIVE</button></div>
   </div></div>
 
+  <link rel="stylesheet" href="menu.css">
   <script type="module" src="game.js"></script>
 </body>
 </html>
