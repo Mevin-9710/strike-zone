@@ -143,6 +143,87 @@
 
     #lbar{height:14px;border:3px solid var(--ink);background:#fff;margin-top:8px}
     #lbar i{display:block;height:100%;width:0;background:var(--red)}
+
+    /* ===== polish pass: transform/opacity-only motion (cheap on HD 2500 / budget phones) ===== */
+    @media (min-height:1000px){:root{--u:clamp(9px,1.55vh,18px)}}
+    /* buttons: hover lift + press sink (transform only; shadow swaps instantly, never animated) */
+    button{transition:transform .12s cubic-bezier(.3,1.6,.5,1)}
+    button:not(:disabled):hover{transform:skewX(-8deg) translate(-2px,-2px)}
+    button:not(:disabled):active{transform:skewX(-8deg) translate(3px,3px);box-shadow:0 0 0 var(--ink);transition-duration:.04s}
+    button:focus-visible{outline:3px dashed var(--red);outline-offset:3px}
+    /* lobby title: shimmer band sweeps across the logo + slow float */
+    #lobbyTop .logo{position:relative;display:inline-block;overflow:hidden;padding:0 8px 6px 2px;animation:szFloat 3.2s ease-in-out infinite}
+    #lobbyTop .logo::after{content:"";position:absolute;top:-20%;bottom:-20%;left:0;width:30%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent);
+      transform:translateX(-150%) skewX(-20deg);animation:szShine 3.6s ease-in-out 1s infinite;pointer-events:none}
+    @keyframes szShine{0%{transform:translateX(-150%) skewX(-20deg)}45%,100%{transform:translateX(450%) skewX(-20deg)}}
+    @keyframes szFloat{0%,100%{transform:skewX(-8deg) translateY(0)}50%{transform:skewX(-8deg) translateY(-3px)}}
+    #lobbyTop .chip{animation:szDrop .4s cubic-bezier(.2,1.5,.4,1) both}
+    #lobbyTop .chip:nth-child(2){animation-delay:.08s}#lobbyTop .chip:nth-child(3){animation-delay:.16s}
+    @keyframes szDrop{0%{opacity:0;transform:skewX(-8deg) translateY(-24px)}100%{opacity:1;transform:skewX(-8deg) translateY(0)}}
+    /* lobby nav: staggered slide-in, bigger hover nudge, pulsing PLAY ring */
+    #lobby.show #lobbyNav button{animation:szSlide .42s cubic-bezier(.2,1.3,.4,1) backwards}
+    #lobbyNav button:nth-child(2){animation-delay:.05s}#lobbyNav button:nth-child(3){animation-delay:.1s}#lobbyNav button:nth-child(4){animation-delay:.15s}
+    #lobbyNav button:nth-child(5){animation-delay:.2s}#lobbyNav button:nth-child(6){animation-delay:.25s}
+    @keyframes szSlide{0%{opacity:0;transform:skewX(-8deg) translateX(60px)}100%{opacity:1;transform:skewX(-8deg) translateX(0)}}
+    #lobbyNav button:not(:disabled):hover{transform:skewX(-8deg) translateX(-10px)}
+    #lobbyNav button:not(:disabled):active{transform:skewX(-8deg) translate(-6px,3px)}
+    #lobbyNav button{position:relative;border-width:4px;box-shadow:5px 5px 0 var(--ink)}
+    #lobbyNav button.go{box-shadow:6px 6px 0 var(--ink);letter-spacing:2px}
+    #lobbyNav button.go::after,#start::after{content:"";position:absolute;inset:-4px;border:4px solid var(--red);pointer-events:none;animation:szRing 1.6s ease-out infinite}
+    #start{position:relative}
+    @keyframes szRing{0%{opacity:.9;transform:scale(1)}100%{opacity:0;transform:scale(1.12,1.35)}}
+    #lobbyOp{animation:szDrop .45s .3s cubic-bezier(.2,1.5,.4,1) both}
+    /* panels: card pops in when a panel opens */
+    .panel.show>.card{animation:szCard .28s cubic-bezier(.2,1.4,.4,1) backwards}
+    @keyframes szCard{0%{opacity:0;transform:scale(.92) translateY(10px)}100%{opacity:1;transform:none}}
+    /* mission list: chapter headers + cards */
+    #missions{gap:6px;margin-bottom:4px}
+    #missions>div{background:var(--ink);color:var(--y);font-size:calc(var(--u)*1)!important;letter-spacing:2px;padding:2px calc(var(--u)*.7);margin-top:calc(var(--u)*.5)!important;
+      transform:skewX(-8deg);box-sizing:border-box;border-left:calc(var(--u)*.6) solid var(--red)}
+    #missions>div:first-child{margin-top:0!important}
+    #missions button{flex:1 1 calc(var(--u)*11);margin:0;border-left-width:calc(var(--u)*.5);font-size:calc(var(--u)*1.05);line-height:1.15}
+    #missions button.on{border-left-color:var(--red);box-shadow:4px 4px 0 var(--red)}
+    #missions button:disabled{background:repeating-linear-gradient(-45deg,#eee 0 8px,#ddd 8px 16px);opacity:.55}
+    /* end screen: title slam, stats rise, XP pop */
+    #end .card{text-align:center}
+    #end .card .row{justify-content:center}
+    #endTitle{font-size:calc(var(--u)*4.2)!important;line-height:1;color:var(--red);-webkit-text-stroke:2px var(--ink);text-shadow:5px 5px 0 var(--ink);letter-spacing:2px;
+      display:inline-block;transform:skewX(-8deg);margin:4px 0 10px!important}
+    #end.show #endTitle{animation:szSlam .5s cubic-bezier(.2,1.8,.4,1) .08s both}
+    @keyframes szSlam{0%{opacity:0;transform:skewX(-8deg) scale(2.6) rotate(-6deg)}60%{opacity:1}100%{opacity:1;transform:skewX(-8deg) scale(1) rotate(0)}}
+    #end.show #endText,#end.show #endStats{animation:szRise .35s ease-out both}
+    #end.show #endText{animation-delay:.35s}#end.show #endStats{animation-delay:.45s}
+    @keyframes szRise{0%{opacity:0;transform:translateY(12px)}100%{opacity:1;transform:none}}
+    #endXP{display:inline-block;background:var(--ink);color:var(--y);font-family:inherit!important;font-size:calc(var(--u)*1.5)!important;letter-spacing:1px;padding:4px calc(var(--u)*1)!important;
+      transform:skewX(-8deg);box-shadow:4px 4px 0 var(--red)}
+    #endXP:empty{display:none}
+    #end.show #endXP{animation:szPop .45s cubic-bezier(.2,1.9,.4,1) .6s both}
+    @keyframes szPop{0%{opacity:0;transform:skewX(-8deg) scale(.3)}100%{opacity:1;transform:skewX(-8deg) scale(1)}}
+    #upBox{background:#fff;border:3px solid var(--ink);box-shadow:5px 5px 0 var(--red);padding:6px 10px;margin:8px auto;max-width:min(520px,90vw);animation:szPop .4s cubic-bezier(.2,1.8,.4,1) .75s both}
+    #upBox h3{margin-top:2px}
+    #end .row:last-child{margin-top:4px}
+    /* HUD legibility: small phones (e.g. 907x510) and big screens */
+    #feed div{text-shadow:none}
+    #obj,#wname,#hpl{text-shadow:1px 1px 0 rgba(255,255,255,.35)}
+    @media (max-height:560px){
+      #hud{--u:9px}
+      #objp{min-width:0;padding:1px calc(var(--u)*1)}
+      #timer{font-size:calc(var(--u)*1.9)}
+      #mm{width:calc(var(--u)*9);height:calc(var(--u)*9)}
+      #vit{min-width:calc(var(--u)*10.5)}#wep{min-width:calc(var(--u)*11)}
+      #radio{bottom:calc(var(--u)*5.6);max-width:62vw}
+      #radio .txt{font-size:calc(var(--u)*1.15)}
+      #lobbyNav button{font-size:calc(var(--u)*1.55)}#lobbyNav button.go{font-size:calc(var(--u)*2.2)}
+      #endTitle{font-size:calc(var(--u)*3.4)!important}
+      .card{padding:calc(var(--u)*.8) calc(var(--u)*1.1)}
+    }
+    @media (max-width:700px){#feed{max-width:44vw}#feed div{font-size:calc(var(--u)*.85)}}
+    @media (min-height:1000px){.pnl{border-width:4px;box-shadow:5px 5px 0 var(--ink)}}
+    /* accessibility: no motion when the OS asks for it */
+    @media (prefers-reduced-motion:reduce){
+      *,*::before,*::after{animation:none!important;transition:none!important}
+      #lobbyTop .logo::after{display:none}
+    }
   </style>
 </head>
 <body>

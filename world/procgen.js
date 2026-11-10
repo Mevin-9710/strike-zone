@@ -57,18 +57,18 @@ export function buildDistrict(world, scene, spec) {
     k.slab(bx0, bz0, bx1, bz1, 0.15, walk, 1);
     blocks.push({ x0: bx0, z0: bz0, x1: bx1, z1: bz1, cx: (bx0 + bx1) / 2, cz: (bz0 + bz1) / 2 });
   }
-  // outer city ring: the grid keeps going past the play area so the edge reads as open streets, not a wall
+  // Outer city ring: the grid keeps going past the play area so the edge reads as open streets, not a wall
   for (let gx = -far + 4; gx < far; gx += 22) for (let gz = -far + 4; gz < far; gz += 22) {
     if (Math.abs(gx + 8) < B + 6 && Math.abs(gz + 8) < B + 6) continue;
     const h = R.range(9, 34), w = R.pick(T.walls);
-    // windows only on the face looking into the play area (the rest is never seen up close)
+    // Windows only on the face looking into the play area (the rest is never seen up close)
     const cx = gx + 8, cz = gz + 8, faces = [];
     if (Math.abs(cx) > Math.abs(cz)) faces.push(cx > 0 ? 'w' : 'e'); else faces.push(cz > 0 ? 'n' : 's');
     const nearRing = Math.max(Math.abs(cx), Math.abs(cz)) < B + 26;
     k.building(gx, gz, gx + 16, gz + 16, h, { wall: w, windows: nearRing, faces, lit: spec.time === 'night' || spec.time === 'dusk' ? R() < 0.5 : false });
   }
   for (const [x0, z0, x1, z1] of [[-B, -B, B, -B], [-B, B, B, B], [-B, -B, -B, B], [B, -B, B, B]]) k.invisibleWall(x0, z0, x1, z1);
-  // police cordon where streets meet the play boundary
+  // Police cordon where streets meet the play boundary
   const cordon = (x, z, rot) => { k.box(x, 0, z, rot ? 0.5 : 2.4, 1, rot ? 2.4 : 0.5, hazard, { collide: false }); };
   for (let i = 0; i < xs.length; i++) { const sx = (xs[i][1] + (xs[i + 1]?.[0] ?? B + STREET)) / 2; if (sx < B) { cordon(sx, -B + 0.4, false); cordon(sx, B - 0.4, false); } }
   for (let i = 0; i < zs.length; i++) { const sz = (zs[i][1] + (zs[i + 1]?.[0] ?? B + STREET)) / 2; if (sz < B) { cordon(-B + 0.4, sz, true); cordon(B - 0.4, sz, true); } }
@@ -84,7 +84,7 @@ export function buildDistrict(world, scene, spec) {
   const wallOf = () => R.pick(T.walls);
 
   // ---------- interior building ----------
-  // opening on face: {face, from, to (along), kind: 'door'|'window'|'breach'}
+  // Opening on face: {face, from, to (along), kind: 'door'|'window'|'breach'}
   function openingsFor(face, along0, along1, floor, opts) {
     const L = along1 - along0, ops = [];
     if (floor === 0) {
@@ -99,14 +99,27 @@ export function buildDistrict(world, scene, spec) {
     }
     return ops;
   }
+
   function facade(face, x0, z0, x1, z1, y0, h, mat, ops, b) {
     const horiz = face === 'n' || face === 's';
     const line = horiz ? (face === 'n' ? z0 + WT / 2 : z1 - WT / 2) : (face === 'w' ? x0 + WT / 2 : x1 - WT / 2);
     const lo = horiz ? x0 : z0, hi = horiz ? x1 : z1;
-    const seg = (a, c, yy, hh) => { if (c - a < 0.02 || hh < 0.02) return; if (horiz) k.box((a + c) / 2, yy, line, c - a, hh, WT, mat); else k.box(line, yy, (a + c) / 2, WT, hh, c - a, mat); };
+    const sgn = (face === 's' || face === 'e') ? 1 : -1;
+    const seg = (a, c, yy, hh) => {
+      if (c - a < 0.02 || hh < 0.02) return;
+      if (horiz) k.box((a + c) / 2, yy, line, c - a, hh, WT, mat, { cullBottom: yy <= 0.16 });
+      else k.box(line, yy, (a + c) / 2, WT, hh, c - a, mat, { cullBottom: yy <= 0.16 });
+    };
     let cur = lo;
     for (const o of ops.sort((p, q) => p.from - q.from)) {
-      seg(cur, o.from, y0, h); cur = o.to;
+      seg(cur, o.from, y0, h);
+      // Street graffiti decal on blank wall segments near ground
+      if (y0 === 0 && o.from - cur > 3.2 && R() < 0.35) {
+        const gx = horiz ? (cur + o.from) / 2 : line + 0.16 * sgn;
+        const gz = horiz ? line + 0.16 * sgn : (cur + o.from) / 2;
+        k.decal(gx, 1.4, gz, face, 2.2, 1.1, R.pick(['STRIKE', 'ZONE', 'VOID', 'HALVANE', 'GHOST', 'REBEL', 'RIOT', 'SECTOR']), R.pick(['#ffd23b', '#ff4444', '#00e5ff', '#38ef7d']));
+      }
+      cur = o.to;
       if (o.bottom > 0) seg(o.from, o.to, y0, o.bottom);
       seg(o.from, o.to, y0 + o.top, h - o.top);
       if (o.kind === 'breach') {
@@ -118,10 +131,26 @@ export function buildDistrict(world, scene, spec) {
         const col = world.addGate(V(cx - hw, y0, cz - hd), V(cx + hw, y0 + o.top, cz + hd));
         const n = { n: V(0, 0, -1), s: V(0, 0, 1), e: V(1, 0, 0), w: V(-1, 0, 0) }[face];
         out.breaches.push({ pos: V(cx, y0, cz), normal: n, mesh, col, done: false, b });
+      } else if (o.kind === 'door' && y0 === 0) {
+        // Decorative storefront awning and neon sign over ground-floor doors
+        const cx = horiz ? (o.from + o.to) / 2 : line;
+        const cz = horiz ? line : (o.from + o.to) / 2;
+        if (R() < 0.65) {
+          k.awning(cx, 2.5, cz, face, o.to - o.from + 0.4, 1.2, R.pick([0xc0392b, 0x1d6fd8, 0x27ae60, 0xd35400, 0x2c3e50, 0x8e44ad]));
+        }
+        if (R() < 0.45) {
+          k.neonSign(cx, 2.9, cz, face, 2.0, 0.75, R.pick(['OPEN 24H', 'BAR', 'METRO', 'MOTEL', 'AMMO', 'CYBER', 'LOAN', 'CAFE']), { color: R.pick(['#3aa0ff', '#ff3366', '#ffd23b', '#00ff88', '#b388ff']) });
+        }
       }
     }
     seg(cur, hi, y0, h);
+    if (y0 === 0 && hi - cur > 3.2 && R() < 0.35) {
+      const gx = horiz ? (cur + hi) / 2 : line + 0.16 * sgn;
+      const gz = horiz ? line + 0.16 * sgn : (cur + hi) / 2;
+      k.decal(gx, 1.4, gz, face, 2.2, 1.1, R.pick(['STRIKE', 'ZONE', 'VOID', 'HALVANE', 'GHOST', 'REBEL', 'RIOT', 'SECTOR']), R.pick(['#ffd23b', '#ff4444', '#00e5ff', '#38ef7d']));
+    }
   }
+
   function interior(x0, z0, x1, z1, floors, opts = {}) {
     const wall = k.mat(...(opts.wall || wallOf()), 3), b = { x0, z0, x1, z1, floors, top: floors * FH };
     const W = x1 - x0, D = z1 - z0;
@@ -132,34 +161,39 @@ export function buildDistrict(world, scene, spec) {
         const horiz = face === 'n' || face === 's';
         facade(face, x0, z0, x1, z1, y0, FH, wall, openingsFor(face, horiz ? x0 : z0, horiz ? x1 : z1, f, opts), b);
       }
-      // stairs up from this floor (alternating strips so each landing sits on solid floor)
+      // Stairs up from this floor (alternating strips so each landing sits on solid floor)
       const s = strips[f % 2], up = f < floors;
       if (up) {
         const rise = f % 2 === 0 ? 1 : -1;
         k.stairs(s[0], s[1], s[2], s[3], y0 + (f ? 0 : 0.15), y0 + FH, 'x', rise, stairM);
       }
-      // floor slab of the next level, with a hole over this floor's stairs
+      // Floor slab of the next level, with a hole over this floor's stairs
       const yTop = (f + 1) * FH, rect = [x0 + WT, z0 + WT, x1 - WT, z1 - WT];
       const hole = [s[0] - 0.1, s[1] - 0.05, s[2] + 0.1, s[3] + 0.05];
       const landX = f % 2 === 0 ? [s[2] - 0.01, s[2] + 1.2] : [s[0] - 1.2, s[0] + 0.01];
-      for (const [a, bb, c, d] of subtract(rect, hole)) k.box((a + c) / 2, yTop - 0.3, (bb + d) / 2, c - a, 0.3, d - bb, f === floors - 1 ? k.mat('roof', {}, 4) : floorM, { collide: f === floors - 1 ? 'roof' : true });
-      // railings around the stair hole on the floor above (open on the arrival end)
+      for (const [a, bb, c, d] of subtract(rect, hole)) {
+        k.box((a + c) / 2, yTop - 0.3, (bb + d) / 2, c - a, 0.3, d - bb, f === floors - 1 ? k.mat('roof', {}, 4) : floorM, { collide: f === floors - 1 ? 'roof' : true, cullBottom: true });
+      }
+      // Railings around the stair hole on the floor above (open on the arrival end)
       const rx0 = hole[0], rx1 = hole[2], rz = f % 2 === 0 ? hole[3] : hole[1];
       k.railing(rx0, rz, rx1, rz, yTop);
-      // floor slots: centre of the floor clear of the strips
+      // Floor slots: centre of the floor clear of the strips
       const slot = V((x0 + x1) / 2 + R.range(-W * 0.15, W * 0.15), y0 + (f ? 0 : 0.15), (z0 + z1) / 2);
       (f ? out.upperSlots : out.groundSlots).push(slot); (b.slots ??= []).push(slot);
       out.guards.push(V(x0 + W * R.range(0.25, 0.75), y0 + (f ? 0 : 0.15), (z0 + z1) / 2 + R.range(-1, 1)));
-      // cover: a desk row + column
-      if (W > 12) { k.box((x0 + x1) / 2 + R.range(-2, 2), y0, (z0 + z1) / 2 + R.range(-1.2, 1.2), R.range(1.6, 2.6), 1.0, 0.8, k.mat('flat', { color: 0x6b4f3a })); }
+      // Cover: a desk row + column
+      if (W > 12) { k.box((x0 + x1) / 2 + R.range(-2, 2), y0, (z0 + z1) / 2 + R.range(-1.2, 1.2), R.range(1.6, 2.6), 1.0, 0.8, k.mat('flat', { color: 0x6b4f3a }), { cullBottom: true }); }
       if (landX && f > 0) out.intel.push(V((x0 + x1) / 2 + R.range(-W * 0.3, W * 0.3), y0 + 0.05, (z0 + z1) / 2 + R.range(-0.8, 0.8)));
     }
-    // roof: parapet, roof hatch stairs come out of the top strip
+    // Roof: parapet, roof hatch stairs come out of the top strip, water tank
     const top = floors * FH;
-    for (const [a, bb, c, d] of [[x0, z0, x1, z0 + WT], [x0, z1 - WT, x1, z1], [x0, z0, x0 + WT, z1], [x1 - WT, z0, x1, z1]]) k.box((a + c) / 2, top, (bb + d) / 2, c - a, 1.0, d - bb, wall);
+    for (const [a, bb, c, d] of [[x0, z0, x1, z0 + WT], [x0, z1 - WT, x1, z1], [x0, z0, x0 + WT, z1], [x1 - WT, z0, x1, z1]]) {
+      k.box((a + c) / 2, top, (bb + d) / 2, c - a, 1.0, d - bb, wall, { cullBottom: true });
+    }
     const s = strips[(floors - 1) % 2];
     k.railing(s[0] - 0.1, (s[1] + s[3]) / 2 + ((floors - 1) % 2 === 0 ? -1.05 : 1.05), s[2] + 0.1, (s[1] + s[3]) / 2 + ((floors - 1) % 2 === 0 ? -1.05 : 1.05), top);
     k.acUnit(x0 + W * 0.7, z0 + D * 0.5, top, 1.2);
+    if (R() < 0.65) k.waterTank(x0 + W * 0.25, z0 + D * 0.35, top);
     out.roofSlots.push(V(x0 + W * 0.3, top, (z0 + z1) / 2)); b.roof = V(x0 + W * 0.3, top, (z0 + z1) / 2);
     out.guards.push(V(x0 + W * 0.5, top, (z0 + z1) / 2 + R.range(-1, 1)));
     k.minimap.push({ x0, z0, x1, z1, y: top, kind: 'roof' });
@@ -174,8 +208,8 @@ export function buildDistrict(world, scene, spec) {
     if (R() < 0.4) k.car(bl.x1 + 2.2, bl.cz + R.range(-4, 4), Math.PI / 2, R.pick([0x3a6ea5, 0xb5533c, 0x2f3a45]));
   }
   function explosiveBarrel(x, z, y = 0.15) {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 10), new THREE.MeshLambertMaterial({ color: 0xd62828 }));
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.18, 10), new THREE.MeshLambertMaterial({ color: 0xffd23b })); band.position.y = 0.1; mesh.add(band);
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 8), new THREE.MeshLambertMaterial({ color: 0xd62828 }));
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.18, 8), new THREE.MeshLambertMaterial({ color: 0xffd23b })); band.position.y = 0.1; mesh.add(band);
     mesh.position.set(x, y + 0.55, z); mesh.castShadow = true; k.root.add(mesh);
     const col = world.addBox(V(x - 0.42, y, z - 0.42), V(x + 0.42, y + 1.1, z + 0.42), 'barrel');
     const b = { pos: V(x, y + 0.6, z), mesh, col, alive: true }; col.prop = b; out.barrels.push(b);
@@ -195,6 +229,7 @@ export function buildDistrict(world, scene, spec) {
       k.platform(a + 1 + h * 2, d - 3.0, c - 0.6, d - 0.6, h + 0.3, metal, 's');
       k.railing(a + 1, d - 0.6, a + 1 + h * 2, d - 0.6, 0.15, 1.05, h + 0.3);
       k.acUnit(a + (c - a) * 0.3, b + 3, h + 0.3); k.crate(c - 4, b + 3, h + 0.3); k.crate(c - 2.9, b + 3, h + 0.3);
+      k.waterTank(a + 3.2, b + 3.2, h + 0.3);
       out.roofSlots.push(V((a + c) / 2, h + 0.3, (b + d - 3.2) / 2)); out.guards.push(V((a + c) / 2 + 2, h + 0.3, (b + d - 3.2) / 2));
       out.intel.push(V(a + (c - a) * 0.8, h + 0.35, b + 2.5));
       k.minimap.push({ x0: a, z0: b, x1: c, z1: d - 3.2, y: h, kind: 'roof' });
@@ -202,13 +237,14 @@ export function buildDistrict(world, scene, spec) {
     },
     plaza(bl) {
       const cx = bl.cx, cz = bl.cz, r = Math.min(bl.x1 - bl.x0, bl.z1 - bl.z0);
-      k.cyl(cx, 0.15, cz, r * 0.14, 0.7, k.mat('concrete', { color: 0xb9b4aa }, 2), { seg: 12 });
-      k.cyl(cx, 0.85, cz, 0.6, 1.6, k.mat('concrete', { color: 0xb9b4aa }, 1), { seg: 10 });
-      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + R.range(-0.3, 0.3), d = r * 0.32; k.box(cx + Math.cos(a) * d, 0.15, cz + Math.sin(a) * d, i % 2 ? 0.6 : 4, 1.1, i % 2 ? 4 : 0.6, k.mat('concrete', { color: 0x8d949c }, 1)); }
+      k.cyl(cx, 0.15, cz, r * 0.14, 0.7, k.mat('concrete', { color: 0xb9b4aa }, 2), { seg: 10 });
+      k.cyl(cx, 0.85, cz, 0.6, 1.6, k.mat('concrete', { color: 0xb9b4aa }, 1), { seg: 8 });
+      for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + R.range(-0.3, 0.3), d = r * 0.32; k.box(cx + Math.cos(a) * d, 0.15, cz + Math.sin(a) * d, i % 2 ? 0.6 : 4, 1.1, i % 2 ? 4 : 0.6, k.mat('concrete', { color: 0x8d949c }, 1), { cullBottom: true }); }
       k.tree(bl.x0 + 2.5, bl.z0 + 2.5, 0.15); k.tree(bl.x1 - 2.5, bl.z1 - 2.5, 0.15); k.bench(cx, bl.z0 + 2.5); k.bench(cx, bl.z1 - 2.5);
       explosiveBarrel(bl.x0 + 3, bl.z1 - 3);
       out.groundSlots.push(V(cx + r * 0.25, 0.15, cz)); out.guards.push(V(cx - r * 0.25, 0.15, cz + 2));
       k.billboard(bl.x0 + 1, bl.cz, 0.15, 6, 2.5, R.pick(['HALVANE', 'METRO', 'CIVIC SHIELD', 'OPEN 24H']), { bg: T.accent, face: 'e' });
+      k.neonSign(cx, 2.8, bl.z0 + 1.2, 's', 2.6, 0.9, R.pick(['CENTRAL', 'PLAZA', 'METRO', '24H']), { color: '#ffd23b' });
       streetProps(bl);
     },
     lot(bl) {
@@ -218,6 +254,7 @@ export function buildDistrict(world, scene, spec) {
         const x = bl.x0 + 4 + (bl.x1 - bl.x0 - 8) * R(), z = bl.z0 + 4 + (bl.z1 - bl.z0 - 8) * (i / n);
         const lv = R() < 0.35 ? 2 : 1;
         for (let l = 0; l < lv; l++) k.container(x, z, 0.15 + l * 2.6, 0, R.pick(cols));
+        if (R() < 0.5) k.decal(x, 1.4, z + 1.25, 's', 2.0, 1.0, R.pick(['CAUTION', 'TOXIC', 'CARGO', 'SECTOR 4']), '#ffd23b');
         if (lv === 2) out.guards.push(V(x, 0.15 + 5.2, z)); else out.guards.push(V(x + 2, 0.15, z + 2.5));
       }
       for (let i = 0; i < 3; i++) k.crate(bl.x0 + 3 + i * 1.1, bl.z1 - 3, 0.15);
@@ -226,8 +263,8 @@ export function buildDistrict(world, scene, spec) {
       out.intel.push(V(bl.x0 + 2.5, 0.2, bl.z0 + 2.5));
     },
     park(bl) {
-      for (let i = 0; i < 6; i++) k.tree(bl.x0 + 3 + (bl.x1 - bl.x0 - 6) * R(), bl.z0 + 3 + (bl.z1 - bl.z0 - 6) * R(), 0.15);
-      k.box(bl.cx, 0.15, bl.cz, 6, 0.9, 0.5, k.mat('concrete', { color: 0x8d949c }, 1));
+      for (let i = 0; i < 5; i++) k.tree(bl.x0 + 3 + (bl.x1 - bl.x0 - 6) * R(), bl.z0 + 3 + (bl.z1 - bl.z0 - 6) * R(), 0.15);
+      k.box(bl.cx, 0.15, bl.cz, 6, 0.9, 0.5, k.mat('concrete', { color: 0x8d949c }, 1), { cullBottom: true });
       k.bench(bl.cx - 4, bl.cz + 3); k.bench(bl.cx + 4, bl.cz - 3, Math.PI);
       out.guards.push(V(bl.cx, 0.15, bl.cz + 3)); out.groundSlots.push(V(bl.cx + 3, 0.15, bl.cz + 3));
       streetProps(bl);
@@ -241,13 +278,15 @@ export function buildDistrict(world, scene, spec) {
       const t = interior(a, b, c, d, spec.hubFloors || 4, { doors: { s: 1, n: 1, e: 0, w: 1 }, breach: { w: true }, wall: ['concrete', { color: 0x9aa7b4 }] });
       out.hubSlots.push(...t.slots.slice(-2), t.roof);
       k.billboard(a + 1, d + 0.2, t.top - 3, 10, 2.6, spec.hubSign || 'COVENANT', { bg: 0x7f1d1d, fg: '#ffffff' });
+      k.waterTank(a + 4, b + 4, t.top);
     } else if (spec.hub === 'vault') {
       const t = interior(a, b, c, d, 2, { doors: { s: 1, n: 1, e: 1, w: 1 }, breach: { s: true, n: true, e: true, w: true }, wall: ['concrete', { color: 0x6f7d86 }] });
       out.hubSlots.push(t.slots[0], t.slots[1]);
       for (let i = 0; i < 4; i++) k.serverRack(a + 3 + i * 2, b + (d - b) * 0.5 + 2.2, 0.15, 0);
       k.billboard(a + 1, d + 0.2, FH * 2 - 2.6, 10, 2.4, spec.hubSign || 'VAULT', { bg: 0x222222, fg: '#ffd23b' });
+      k.waterTank(a + 3.5, b + 3.5, t.top);
     } else {
-      // compound: walled yard with breach gaps and one open gate, a guardhouse inside
+      // Compound: walled yard with breach gaps and one open gate, a guardhouse inside
       const wall = k.mat('concrete', { color: 0x8d949c }, 2.5), H = 3.2;
       const gaps = { s: [(a + c) / 2 - 1.5, (a + c) / 2 + 1.5] };
       for (const face of ['n', 's', 'e', 'w']) {
@@ -270,10 +309,10 @@ export function buildDistrict(world, scene, spec) {
     fillers[R.pick(kinds)](bl);
   }
 
-  // street clutter at intersections
+  // Street clutter at intersections
   for (const [, x1] of xs) for (const [, z1] of zs) {
     if (x1 + STREET / 2 > B - 1 || z1 + STREET / 2 > B - 1) continue;
-    if (R() < 0.35) k.box(x1 + STREET / 2, 0, z1 + STREET / 2, 2.2, 0.9, 0.5, hazard);
+    if (R() < 0.35) k.box(x1 + STREET / 2, 0, z1 + STREET / 2, 2.2, 0.9, 0.5, hazard, { cullBottom: true });
     if (R() < 0.25) explosiveBarrel(x1 + STREET / 2 + 1.5, z1 + STREET / 2 + 1.5, 0);
   }
   k.civicTower(R.range(-60, 60), -B - 110);

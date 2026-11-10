@@ -15,6 +15,8 @@ import { TouchControls, isTouchDevice, TOUCH_CSS } from './game/touch.js';
 import { buildDistrict } from './world/procgen.js';
 import * as META from './game/meta.js';
 import * as FX from './game/feel.js';
+import { createTutorial } from './game/tutorial.js';
+const TUT = { moved: false, looked: false, fired: false, reloaded: false, ability: false, interacting: false };
 
 const Q = new URLSearchParams(location.search);
 const TEST = Q.has('test'), DEBUG = Q.has('debug') || TEST;
@@ -197,6 +199,7 @@ const proxyHolo = { template: null, clips: null };
 
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
+  get difficulty() { return 0.8 + Math.min(11, missionIdx) * 0.035; },   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
   losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
   nearestDecoy(p, r) { let best = null, bd = r; for (const d of zones.decoy) { const q = d.obj.position.clone().add(V(0, 1.2, 0)); const dd = q.distanceTo(p); if (dd < bd) { bd = dd; best = q; } } return best; },
@@ -749,8 +752,14 @@ function update(dt) {
     else map.points.forEach((p, i) => { if (objective.done[i] || (mission.objective === 'plant_hold' && objective.planted && i)) return; const d = p.distanceTo(player.pos); if (d < bd) { bd = d; tgt = p; } });
     if (tgt) { _arrowP.copy(tgt).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; } FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(tgt.distanceTo(player.pos))); }
   }
+  if (tutorial?.active) {
+    TUT.moved ||= player.moving; TUT.looked ||= Math.abs(lookD.x) + Math.abs(lookD.y) > 2; TUT.fired ||= mouse.l || !!touch?.fire;
+    TUT.reloaded ||= W.reloadT > 0; TUT.ability ||= abilityCD.some(c => c > 0); TUT.interacting ||= objective.active >= 0;
+    tutorial.update(TUT);
+  }
   FX.update(dt);
 }
+let tutorial = null;
 const _arrowP = new THREE.Vector3();
 function updateCamera() {
   camera.position.set(player.pos.x, player.pos.y + CFG.eye - (FEEL.slideT > 0 ? 0.55 : 0), player.pos.z);
@@ -875,12 +884,13 @@ function startMission(idx = selected, opts = {}) {
   buildMission(idx, o); xpDoubled = false;
   for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
+  if (idx === 0 && !TEST) { tutorial ??= createTutorial({ isTouch: !!touch }); tutorial.start(); } for (const k in TUT) TUT[k] = false;
   radioOnce('start'); music.start(); FX.announce('MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
   sdk(s => s.game.gameplayStart());
 }
-function endMatch() { music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
+function endMatch() { tutorial?.visible(false); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
 function lose(reason) { if (matchOver) return; endMatch(); showEnd('MISSION FAILED', `${reason}\n\n${missionIdx >= 8 ? 'Yuna' : 'Okonkwo'}: Regroup and try again.`, null, { death: !player.alive }); }
 function win() {
   if (matchOver) return; endMatch();
