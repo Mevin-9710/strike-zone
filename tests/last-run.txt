@@ -46,8 +46,8 @@ PASS  no errors in shop/pass/profile/charm/spray
 PASS  HUD + touch buttons on screen at 907x510  [{"obj":true,"hp":true,"ammo":true,"mm":true,"tfire":true,"tjump":true,"tab0":true,"tpause":true,"tspray":true}]
 PASS  HUD + touch buttons on screen at 1024x768  [{"obj":true,"hp":true,"ammo":true,"mm":true,"tfire":true,"tjump":true,"tab0":true,"tpause":true,"tspray":true}]
 PASS  HUD + touch buttons on screen at 1920x1080  [{"obj":true,"hp":true,"ammo":true,"mm":true,"tfire":true,"tjump":true,"tab0":true,"tpause":true,"tspray":true}]
-PASS  district renders in under 350 draw calls (incl. shadow pass)  [{"frame":15,"calls":238,"triangles":158150,"points":0,"lines":0,"geometries":214,"textures":175,"q":1,"fps":0}]
-PASS  district under 600k triangles per frame  [tris=158150]
+PASS  district renders in under 350 draw calls (incl. shadow pass)  [{"frame":16,"calls":138,"triangles":63412,"points":0,"lines":0,"geometries":185,"textures":118,"q":1,"fps":2}]
+PASS  district under 600k triangles per frame  [tris=63412]
 
 50/50 passed
 EXIT 0

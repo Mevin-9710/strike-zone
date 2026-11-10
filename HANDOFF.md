@@ -9,7 +9,7 @@ Phases 1-3 are built: 3D lobby, XP/battle pass/shop (charms, sprays), weapon upg
 
 ## Last thing in progress: "make it 1000x more fun + fast" parallel sprint
 DONE and committed (50d2a1d): music + new audio (game/audio.js), slide (C/Ctrl), sprint FOV kick, hit-stop, camera punch, death knockback, damage numbers/kill banners/streaks/objective arrow (game/feel.js wired in game.js), enemy LOD culling, dynamic resolution, G.difficulty ramp, tutorial wired (game/tutorial.js).
-UNCOMMITTED, written by sub-agents, NOT yet verified together:
+Sub-agent edits (committed d3d6ff5) — VERIFIED: full suite 50/50 passes on the combined code (kit.js/procgen.js load fine; no rollback needed). Still not FPS-measured or phone-tested:
 - game/enemies.js (aim tell, stagger, accuracy ramp, strafing, difficulty) — agent said it works in headless run
 - index.html CSS polish block (lobby/end-screen animations)
 - world/kit.js + world/procgen.js (agy: perf + props) — agy was killed mid-edit; CHECK these load without errors, else `git checkout world/`
