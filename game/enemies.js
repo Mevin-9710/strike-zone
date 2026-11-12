@@ -458,7 +458,9 @@ export class Enemy {
       goal = d > 12 ? this.target.clone().add(to.normalize().multiplyScalar(10)) : null;
       this.faceTowards(this.target, dt, 6);
     } else if (this.lastKnown && this.state === 'search') goal = this.lastKnown.clone();
-    else { const t = performance.now() / 1000 + this.id; goal = this.post.clone().add(V(Math.cos(t * 0.3) * 5, 0, Math.sin(t * 0.3) * 5)); }
+    else { const t = performance.now() / 1000 + this.id; const R = this.dRad ?? 5; goal = this.post.clone().add(V(Math.cos(t * 0.3) * R, 0, Math.sin(t * 0.3) * R)); }
+    if (this.dWander && (this.dWanderT -= dt) > 0) goal = this.dWander;   // escaping a wall: fly to a clear spot first
+    else this.dWander = null;
     const want = V();
     if (goal) { want.copy(goal).sub(this.pos).setY(0); const l = want.length(); if (l > 0.5) want.multiplyScalar(Math.min(this.T.walk, l) / l * this.lockSlow); else want.set(0, 0, 0); if (this.state !== 'combat' && want.lengthSq() > 0.01) this.faceTowards(this.pos.clone().add(want), dt, 3); }
     const targetY = Math.max(this.groundY, goal?.y ?? -99) + this.hover + Math.sin(performance.now() / 600 + this.id) * 0.15;
@@ -466,8 +468,21 @@ export class Enemy {
     this.vel.lerp(want, Math.min(1, dt * 3));
     const next = this.pos.clone().addScaledVector(this.vel, dt);
     const hit = G.world.raycast(this.pos, this.vel.clone().normalize(), this.vel.length() * dt + 0.6);
-    if (hit) { this.vel.addScaledVector(hit.normal, -this.vel.dot(hit.normal)); this.vel.y += 1.5 * dt; }
-    else this.pos.copy(next);
+    if (hit) { this.vel.addScaledVector(hit.normal, -this.vel.dot(hit.normal)); this.vel.y += 1.5 * dt; this.dStuck = (this.dStuck || 0) + dt; }
+    else { this.pos.copy(next); this.dStuck = Math.max(0, (this.dStuck || 0) - dt * 0.25); }
+    // Grinding against a wall: pick the most open of 8 headings and fly there for a few seconds.
+    if (this.dStuck > 0.4) {
+      this.dStuck = 0; this.dRad = Math.max(1.5, (this.dRad ?? 5) * 0.6);   // tighter orbit so it stops re-hitting the same wall
+      let best = 0, bx = 0, bz = 0;
+      for (let i = 0; i < 8; i++) {
+        const a = i * Math.PI / 4 + Math.random() * 0.3, dir = V(Math.cos(a), 0, Math.sin(a));
+        const h = G.world.raycast(this.pos, dir, 8), d = h ? h.t : 8;
+        if (d > best) { best = d; bx = dir.x; bz = dir.z; }
+      }
+      const go = Math.max(0, best - 1);
+      this.dWander = V(this.pos.x + bx * go, this.pos.y - this.hover, this.pos.z + bz * go); this.dWanderT = 3;
+      this.post.set(this.dWander.x, this.post.y, this.dWander.z);   // re-centre patrol on open space
+    }
     if (this.state === 'search' && this.lastKnown && this.pos.distanceTo(this.lastKnown) < 3) { this.searchT -= dt; if (this.searchT <= 0) this.state = 'patrol'; }
     this.play(this.burstLeft > 0 ? 'fire' : 'hover');
   }

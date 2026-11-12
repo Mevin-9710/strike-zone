@@ -4,9 +4,24 @@
 // Everything static is merged per material by the Kit, so a whole district is a handful of draw calls.
 import * as THREE from 'three';
 import { Kit } from './kit.js';
-import { archSeg } from './kenney-arch.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+// Breach panel: steel plate, hazard border, big BREACH label. Shared by every breach wall (own material, never batched).
+let _breachMat = null;
+function breachMat() {
+  if (_breachMat) return _breachMat;
+  const c = document.createElement('canvas'); c.width = 256; c.height = 288; const g = c.getContext('2d');
+  g.fillStyle = '#3a3f46'; g.fillRect(0, 0, 256, 288);
+  g.save(); g.beginPath(); g.rect(0, 0, 256, 288); g.rect(26, 26, 204, 236); g.clip('evenodd');
+  g.fillStyle = '#ffb000'; g.fillRect(0, 0, 256, 288); g.fillStyle = '#151515';
+  for (let i = -300; i < 600; i += 44) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 22, 0); g.lineTo(i - 288 + 22, 288); g.lineTo(i - 288, 288); g.fill(); }
+  g.restore();
+  g.fillStyle = '#ff9f1c'; g.font = 'bold 44px Impact, Arial Black, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('BREACH', 128, 96); g.fillStyle = '#e8e8e8'; g.font = 'bold 22px Arial'; g.fillText('PLACE CHARGE', 128, 140);
+  g.strokeStyle = '#ff9f1c'; g.lineWidth = 6; g.strokeRect(78, 170, 100, 70); g.beginPath(); g.arc(128, 205, 18, 0, 6.3); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return _breachMat = new THREE.MeshLambertMaterial({ map: t, emissive: 0x442200, emissiveMap: t });
+}
 const FH = 3.6, WT = 0.3, RUN = 7.2;            // floor height, wall thickness, stair run
 
 export function rng(seed) {
@@ -108,7 +123,8 @@ export function buildDistrict(world, scene, spec) {
     const sgn = (face === 's' || face === 'e') ? 1 : -1;
     const seg = (a, c, yy, hh) => {
       if (c - a < 0.02 || hh < 0.02) return;
-      const A = archSeg(k, face, a, c, yy, hh, line, WT);   // Kenney panel replaces the visual, collider stays
+      // Enterable buildings keep solid procedural walls: the Kenney panels are one-sided/open frames and read as see-through from inside.
+      const A = false;
       if (horiz) k.box((a + c) / 2, yy, line, c - a, hh, WT, mat, { cullBottom: yy <= 0.16, hide: A });
       else k.box(line, yy, (a + c) / 2, WT, hh, c - a, mat, { cullBottom: yy <= 0.16, hide: A });
     };
@@ -127,7 +143,7 @@ export function buildDistrict(world, scene, spec) {
       if (o.kind === 'breach') {
         const w = o.to - o.from, cx = horiz ? (o.from + o.to) / 2 : line, cz = horiz ? line : (o.from + o.to) / 2;
         const geo = new THREE.BoxGeometry(horiz ? w : WT * 1.6, o.top, horiz ? WT * 1.6 : w);
-        const mesh = new THREE.Mesh(geo, k.batches.get(hazard).mat); mesh.position.set(cx, y0 + o.top / 2, cz); mesh.castShadow = true; mesh.receiveShadow = true;
+        const mesh = new THREE.Mesh(geo, breachMat()); mesh.position.set(cx, y0 + o.top / 2, cz); mesh.castShadow = true; mesh.receiveShadow = true;
         k.root.add(mesh);
         const hw = horiz ? w / 2 : WT, hd = horiz ? WT : w / 2;
         const col = world.addGate(V(cx - hw, y0, cz - hd), V(cx + hw, y0 + o.top, cz + hd));
@@ -174,7 +190,7 @@ export function buildDistrict(world, scene, spec) {
       const hole = [s[0] - 0.1, s[1] - 0.05, s[2] + 0.1, s[3] + 0.05];
       const landX = f % 2 === 0 ? [s[2] - 0.01, s[2] + 1.2] : [s[0] - 1.2, s[0] + 0.01];
       for (const [a, bb, c, d] of subtract(rect, hole)) {
-        k.box((a + c) / 2, yTop - 0.3, (bb + d) / 2, c - a, 0.3, d - bb, f === floors - 1 ? k.mat('roof', {}, 4) : floorM, { collide: f === floors - 1 ? 'roof' : true, cullBottom: true });
+        k.box((a + c) / 2, yTop - 0.3, (bb + d) / 2, c - a, 0.3, d - bb, f === floors - 1 ? k.mat('roof', {}, 4) : floorM, { collide: f === floors - 1 ? 'roof' : true });
       }
       // Railings around the stair hole on the floor above (open on the arrival end)
       const rx0 = hole[0], rx1 = hole[2], rz = f % 2 === 0 ? hole[3] : hole[1];

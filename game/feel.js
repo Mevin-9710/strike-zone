@@ -41,7 +41,7 @@ const CSS = `
 
 /* ---- floating damage numbers ---- */
 .sz-dmg{position:absolute;left:0;top:0;opacity:0;white-space:nowrap;
-  font-size:calc(var(--u,12px)*1.5);line-height:1;color:#fff;-webkit-text-stroke:2px #111;paint-order:stroke fill;
+  font-size:calc(var(--u,12px)*1.5);line-height:1;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.9),2px 2px 0 #111;
   text-shadow:2px 2px 0 #111;transform:translate3d(var(--x,0px),var(--y,0px),0) translate(-50%,-50%)}
 .sz-dmg.kill{font-size:calc(var(--u,12px)*1.72);color:#ff3b47}
 .sz-dmg.head{font-size:calc(var(--u,12px)*1.88);color:#ffd23b;text-shadow:2px 2px 0 #111,0 0 8px rgba(255,210,59,.55)}
@@ -107,7 +107,7 @@ const CSS = `
 /* ---- big center announcements ---- */
 .sz-ann{position:absolute;left:50%;top:36%;opacity:0;white-space:nowrap;
   font-size:calc(var(--u,12px)*4);line-height:1;letter-spacing:2px;text-transform:uppercase;color:#ffd23b;
-  -webkit-text-stroke:3px #111;paint-order:stroke fill;text-shadow:5px 5px 0 #111;
+  text-shadow:0 0 6px rgba(0,0,0,.85),3px 3px 0 #111;
   transform:translate(-50%,-50%) skewX(-8deg) scale(.8)}
 .sz-ann.on{animation:sz-ann-a 1.7s cubic-bezier(.18,.9,.3,1) forwards}
 @keyframes sz-ann-a{
@@ -137,7 +137,7 @@ const CSS = `
   transform:translate3d(-200px,-200px,0)}
 .sz-obj.on{display:block;opacity:1}
 .sz-obj .sz-oa{position:absolute;left:-11px;top:-11px;width:22px;height:22px;line-height:22px;text-align:center;
-  font-style:normal;font-size:22px;color:#ffd23b;-webkit-text-stroke:2px #111;paint-order:stroke fill;
+  font-style:normal;font-size:22px;color:#ffd23b;text-shadow:0 0 4px rgba(0,0,0,.9),2px 2px 0 #111;
   transform-origin:50% 50%}
 .sz-obj.onScreen .sz-oa{left:-8px;top:-8px;width:16px;height:16px;line-height:16px;font-size:16px;color:#5fe6ff}
 .sz-obj .sz-ol{position:absolute;left:0;top:15px;transform:translateX(-50%) skewX(-8deg);white-space:nowrap;
@@ -279,7 +279,10 @@ export function announce(text, kind) {
   if (!layer || !annPool.length) return;
   const slot = annPool[annCursor];
   annCursor = (annCursor + 1) % ANN_POOL;
+  // One announcement at a time: a new one replaces any still on screen so they never overlap.
+  for (const o of annPool) { o.el.classList.remove('on'); o.el.style.opacity = '0'; }
   const a = slot.el;
+  a.style.opacity = '';
   a.textContent = text == null ? '' : text;
   a.style.color = KIND_COLOR[kind] || KIND_COLOR.info;
   a.style.animationName = nextAnim('sz-ann');

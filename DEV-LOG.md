@@ -267,3 +267,16 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Everything goes into `kit.kgeos` → merged per texture at `finish()`: +5 draw calls (one per kit texture), no per-frame cost.
 - Still procedural: railings, platforms/landings, parapets, the m2 vault interior, hub roofs.
 - Stats (draw calls / tris, before→after) in the agent report; screenshots in screenshots/maps/{before,after}_NN_{a,b,c,d}.png. `tools/shots_maps.cjs <tag> [idx…]` (server :8811, `NOARCH=1` for the baseline).
+
+## 2026-11-10 CrazyGames SDK v3 + loading bar + dist build
+- game/crazy.js: SDK wrapper (init w/ 4s script wait + 5s timeout, skipped on ?test=1; no-ops when absent). loading/gameplay start/stop, happytime on win, midgame ad before startMission (>=3 min gap, only when SDK active), rewarded ads (no reward on adError; instant grant when no SDK), audio mute + pause during ads, sz_* localStorage mirrored to SDK data module (hydrated on init). game.js: startMission -> startMissionNow behind midgame ad.
+- Loading bar: loader.loadAsync wrapped during loadAll so every GLB (weapons, props, 5 arch + 8 kenney kits, operative, enemies) advances it; capped 99% until done.
+- tools/build_dist.sh -> dist/ (19 MB, 71 files) + dist/strike-zone.zip (3.2 MB). dist/ gitignored. Smoke-tested on :8831 (missions 0/2/8, no 404s/errors, non-test boot too).
+
+## 2026-11-10 — Medkits + breach fix
+- Medkits: game.js buildMedkits/updateMedkits. 3–6 per map, seeded per mission id, picked from nav nodes (>15 m from spawns, >6 m from objectives/extract, ≥22 m apart, reachable). Walk-over, +35 HP cap 100, 30 s respawn, pickup sfx + feed + popup, green cross on minimap. Field Guide TIPS line added.
+- Breach: wall panel was black (batched hazard material needs vertex colors the box lacked) -> own textured steel/hazard "BREACH / PLACE CHARGE" panel (world/procgen.js breachMat). Charge is now placed along the wall normal on the player's side (was diagonal -> twisted), scaled 1.5x, flush on the wall. Interaction range 2.6 -> 3.2 m. Collider/nav handling unchanged.
+- Mobile: tap anywhere enters fullscreen + landscape lock (old call ran after async midgame, losing the user gesture).
+- Fonts: bundled Oswald (OFL, fonts/Oswald.ttf, 170KB) as the main UI font (Impact is missing on Android); replaced thick text strokes with soft shadows. Announcements now replace each other instead of overlapping (MISSION START over DEVICE DEFUSED).
+- Maps (procgen, ch2+): enterable buildings use solid procedural walls/steps again (Kenney archSeg panels + stretched archStairs read as see-through/missing); ceilings no longer backface-culled from below.
+- Drones: detect grinding against walls (raycast hits) -> fly to the most open of 8 headings and tighten patrol orbit; enemies that would spawn inside a collider snap to the nearest nav node.

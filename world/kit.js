@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from '../lib/addons/utils/BufferGeometryUtils.js';
 import { paintedTexture } from './textures.js';
 import { kenneyModel } from './kenney.js';
-import { archReady, archBuilding, archStairs, archAwning } from './kenney-arch.js';
+import { archReady, archBuilding, archAwning } from './kenney-arch.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 
@@ -263,7 +263,7 @@ export class Kit {
   // Stairs rendered as steps; collision is a smooth ramp. axis 'x'|'z', dir +1/-1 = direction of rising.
   stairs(x0, z0, x1, z1, yLow, yHigh, axis, dir, key, { solidBelow = true, sideRails = [] } = {}) {
     const run = axis === 'x' ? x1 - x0 : z1 - z0, rise = yHigh - yLow;
-    const steps = Math.max(2, Math.round(rise / 0.3)), A = archStairs(this, x0, z0, x1, z1, yLow, yHigh, axis, dir, solidBelow);
+    const steps = Math.max(2, Math.round(rise / 0.3)), A = false;   // procedural steps: stretched Kenney stair models were invisible/misaligned with the collider
     for (let i = 0; i < steps; i++) {
       const t0 = i / steps, t1 = (i + 1) / steps;
       const a = dir > 0 ? t0 : 1 - t1, b = dir > 0 ? t1 : 1 - t0;

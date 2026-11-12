@@ -6,6 +6,7 @@ import { GLTFLoader } from './lib/addons/loaders/GLTFLoader.js';
 import { World } from './world/collision.js';
 import { loadKenney, dressMap } from './world/kenney.js';
 import { loadArch } from './world/kenney-arch.js';
+import { crazy } from './game/crazy.js';
 import { buildM1, buildM2, buildM3, LIGHTING } from './world/maps.js';
 import { AbilityFX } from './fx/abilities.js';
 import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons.js';
@@ -131,6 +132,15 @@ document.head.insertAdjacentHTML('beforeend', `<style>${TOUCH_CSS}</style>`);
 document.body.insertAdjacentHTML('beforeend', `<div id="rotate"><div>ROTATE YOUR DEVICE<br><small style="font-family:Arial">Strike Zone plays in landscape</small></div></div>`);
 if (IS_TOUCH) document.body.classList.add('touch');
 const touch = IS_TOUCH ? new TouchControls(document.body, settings) : null;
+// Mobile browsers only allow fullscreen inside a user gesture, so request it on every tap until it sticks.
+if (touch) {
+  const goFull = () => {
+    if (document.fullscreenElement) return;
+    const el = document.documentElement;
+    (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el, { navigationUI: 'hide' })?.then?.(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+  };
+  addEventListener('pointerup', goFull, true);
+}
 
 // ---------- renderer ----------
 const canvas = $('gl');
@@ -162,14 +172,17 @@ addEventListener('resize', resize); resize();
 const loader = new GLTFLoader();
 const A = { weapons: {}, icons: {}, props: {}, enemies: null, rhea: null };
 async function loadAll() {
-  const ids = Object.keys(WEAPONS), total = ids.length + 2 + 1 + 6; let done = 0;
-  const tick = () => { done++; $('lbar').firstElementChild.style.width = `${Math.round(done / total * 100)}%`; };
-  await Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); tick(); }));
-  await Promise.all(['covenant_device', 'counter_charge'].map(async id => { const g = await loader.loadAsync(`models/props/${id}.glb`); g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); A.props[id] = g.scene; tick(); }));
+  const ids = Object.keys(WEAPONS), total = ids.length + 2 + 8 + 5 + 1 + Object.keys(ENEMY_TYPES).length; let done = 0;   // weapons + props + kenney kits + arch kits + operative + enemies
+  const bar = $('lbar').firstElementChild, tick = () => { done++; bar.style.width = `${Math.min(99, Math.round(done / total * 100))}%`; };
+  const origLoad = loader.loadAsync.bind(loader);   // every GLB (weapons, kenney kits, arch, enemies, operative) advances the bar
+  loader.loadAsync = async u => { try { return await origLoad(u); } finally { tick(); } };
+  await Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); }));
+  await Promise.all(['covenant_device', 'counter_charge'].map(async id => { const g = await loader.loadAsync(`models/props/${id}.glb`); g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); A.props[id] = g.scene; }));
   await loadArch(loader);   // Kenney architecture (world/kenney-arch.js)
   await loadKenney(loader);   // Kenney map props (world/kenney.js); falls back to procedural boxes if missing
-  A.ops = {}; const rhea = await loadOperative(loadout.operative in OPERATIVES ? loadout.operative : 'rhea'); A.rhea = rhea; tick();
-  A.enemies = await loadEnemyAssets(loader, A.weapons); done += 6; tick();
+  A.ops = {}; const rhea = await loadOperative(loadout.operative in OPERATIVES ? loadout.operative : 'rhea'); A.rhea = rhea;
+  A.enemies = await loadEnemyAssets(loader, A.weapons);
+  loader.loadAsync = origLoad; bar.style.width = '100%';
   for (const id of ids) A.icons[id] = renderIcon(A.weapons[id]);
   for (const m of Object.values(vm.models)) { toonify(m.scene); outline(m.scene, { thick: 0.0035 }); }
   toonify(vm.root); outline(vm.armR, { thick: 0.003 }); outline(vm.armL, { thick: 0.003 });
@@ -202,7 +215,7 @@ let stats = { kills: 0, shots: 0, hits: 0, heads: 0 };
 let flashK = 0, hurtK = 0, hitmT = 0, laserK = 0, dmgDirs = [], said = {}, repathBudget = 2, stepT = 0;
 const proxy = new THREE.Object3D();                 // stands in for the player's body for dash/shield fx
 let tracers = [], impacts = [], lasers = new Map();
-let breaches = [], barrels = [], intel = [], extractMark = null, matchXP = {}, revived = false, invT = 0, shakeK = 0, sprays = [], sprayCD = 0, xpDoubled = false;
+let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, matchXP = {}, revived = false, invT = 0, shakeK = 0, sprays = [], sprayCD = 0, xpDoubled = false;
 const proxyHolo = { template: null, clips: null };
 
 const G = {                                         // services handed to enemies
@@ -268,6 +281,7 @@ function buildMission(idx, opts = {}) {
   map.guards.slice(0, r.count).forEach((p, i) => {
     const type = mission.roster[i % mission.roster.length];
     if (type === 'warden') p = map.points[map.points.length - 1].clone().add(V(2.5, 0, 0));      // the boss holds the last device
+    if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }   // never spawn inside a wall
     const e = new Enemy(type, A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) });
     scene.add(e.root); enemies.push(e);
   });
@@ -293,6 +307,7 @@ function buildMission(idx, opts = {}) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.03, 6, 20), new THREE.MeshBasicMaterial({ color: 0xffd23b, transparent: true, opacity: 0.7 })); ring.rotation.x = Math.PI / 2; ring.position.y = 0.05; g.add(ring);
     g.visible = !got; scene.add(g); return { id, g, pos: p.clone(), got };
   });
+  medkits = buildMedkits();
   extractMark = null;
   if (mission.objective === 'retrieve') {
     extractMark = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 6, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0x3ddc84, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
@@ -579,13 +594,16 @@ function updateInteract(dt, prompt) {
     }
     if (b.done || prompt || objective.active >= 0) continue;
     const d = Math.hypot(player.pos.x - b.pos.x, player.pos.z - b.pos.z);
-    if (d > 2.6 || Math.abs(player.pos.y - b.pos.y) > 1.6) { b.prog = Math.max(0, b.prog - dt * 2); continue; }
+    if (d > 3.2 || Math.abs(player.pos.y - b.pos.y) > 1.6) { b.prog = Math.max(0, b.prog - dt * 2); continue; }
     if (keys.KeyE && player.alive) {
       b.prog += dt; breachRing = b.prog / CFG.breach;
       if (b.prog >= CFG.breach) {
         b.fuse = CFG.fuse; sfx.beep(false);
-        const c = A.props.counter_charge.clone(true); const side = player.pos.clone().sub(b.pos).setY(0).normalize();
-        c.position.copy(b.pos).addScaledVector(side, 0.35).add(V(0, 1.0, 0)); c.lookAt(c.position.clone().add(side)); toonify(c); scene.add(c); b.charge = c;
+        const c = A.props.counter_charge.clone(true), n = b.normal;
+        const sg = (player.pos.x - b.pos.x) * n.x + (player.pos.z - b.pos.z) * n.z >= 0 ? 1 : -1;   // wall side the player stands on
+        c.scale.setScalar(1.5);
+        c.position.set(b.pos.x + n.x * sg * 0.4, b.pos.y + 1.2, b.pos.z + n.z * sg * 0.4);
+        c.lookAt(c.position.x + n.x * sg, c.position.y, c.position.z + n.z * sg); toonify(c); scene.add(c); b.charge = c;
         radio('VOSS', 'Breach charge set. Stand clear!', 2);
       }
     } else prompt = 'HOLD E · PLACE BREACH CHARGE';
@@ -601,8 +619,49 @@ function updateInteract(dt, prompt) {
       feed(`INTEL RECOVERED · ${META.profile.intel.length} TOTAL${left ? ` · ${left} HERE` : ''}`, true);
     }
   }
+  updateMedkits(dt);
   if (extractMark) extractMark.material.opacity = 0.18 + Math.sin(elapsed * 4) * 0.08;
   return prompt;
+}
+// ---------- medkits: seeded nav-node health pickups (+35 HP, respawn 30 s) ----------
+const MEDKIT = { heal: 35, respawn: 30, r: 1.5 };
+let _mkGeo = null;
+function medkitMesh() {
+  if (!_mkGeo) _mkGeo = { box: new THREE.BoxGeometry(0.46, 0.32, 0.34), bar: new THREE.BoxGeometry(0.28, 0.09, 0.02), white: new THREE.MeshBasicMaterial({ color: 0xf4f4f0 }), red: new THREE.MeshBasicMaterial({ color: 0xe8202a }), ring: new THREE.TorusGeometry(0.5, 0.03, 6, 20), ringM: new THREE.MeshBasicMaterial({ color: 0x3ddc84, transparent: true, opacity: 0.7 }) };
+  const g = new THREE.Group(), m = new THREE.Group(); m.position.y = 0.6;
+  m.add(new THREE.Mesh(_mkGeo.box, _mkGeo.white));
+  for (const z of [0.175, -0.175]) { const a = new THREE.Mesh(_mkGeo.bar, _mkGeo.red); a.position.z = z; const b = new THREE.Mesh(_mkGeo.bar, _mkGeo.red); b.rotation.z = Math.PI / 2; b.position.z = z; m.add(a, b); }
+  g.add(m); const ring = new THREE.Mesh(_mkGeo.ring, _mkGeo.ringM); ring.rotation.x = Math.PI / 2; ring.position.y = 0.05; g.add(ring);
+  return g;
+}
+function buildMedkits() {
+  let h = 2166136261; for (const ch of mission.id + (mission.proc?.seed || '')) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rnd = () => { h = (h + 0x6D2B79F5) | 0; let t = Math.imul(h ^ (h >>> 15), 1 | h); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const nodes = world.nav?.nodes || [], sps = Object.values(map.spawns), sp = map.spawns.default, want = 3 + Math.floor(rnd() * 4), out = [];
+  const pool = [];
+  for (const n of nodes) {
+    const p = n.pos;
+    if (sps.some(q => q.distanceTo(p) < 15) || map.points.some(q => q.distanceTo(p) < 6) || (map.extract && map.extract.distanceTo(p) < 6)) continue;
+    if (breaches.some(b => b.pos.distanceTo(p) < 3) || barrels.some(b => b.pos.distanceTo(p) < 2)) continue;
+    pool.push(p);
+  }
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); const t = pool[i]; pool[i] = pool[j]; pool[j] = t; }
+  for (const p of pool) {
+    if (out.length >= want) break;
+    if (out.some(m => m.pos.distanceTo(p) < 22) || !world.reachable(sp, p, 1.2)) continue;
+    const g = medkitMesh(); g.position.copy(p); scene.add(g); out.push({ g, pos: p.clone(), t: 0 });
+  }
+  return out;
+}
+function updateMedkits(dt) {
+  for (const m of medkits) {
+    if (m.t > 0) { m.t -= dt; if (m.t <= 0) m.g.visible = true; else continue; }
+    m.g.rotation.y += dt * 2; m.g.children[0].position.y = 0.6 + Math.sin(elapsed * 3 + m.pos.x) * 0.08;
+    if (player.alive && player.hp < 100 && Math.abs(player.pos.y - m.pos.y) < 1.5 && Math.hypot(player.pos.x - m.pos.x, player.pos.z - m.pos.z) < MEDKIT.r) {
+      const before = player.hp; player.hp = Math.min(100, player.hp + MEDKIT.heal); m.t = MEDKIT.respawn; m.g.visible = false;
+      sfx.pickup(); FX.xpPop(Math.round(player.hp - before), 'HEALTH'); feed(`MEDKIT · +${Math.round(player.hp - before)} HP`, true);
+    }
+  }
 }
 function explode(p, r, dmg, label) {
   sfx.boom(); shakeK = Math.max(shakeK, clamp(1 - player.pos.distanceTo(p) / 30, 0, 1));
@@ -970,6 +1029,7 @@ function drawMinimap() {
   map.points.forEach((p, i) => { if (!objective.done[i]) dot(p.x, p.z, '#ffd23b', 6); });
   for (const b of breaches) if (!b.done) dot(b.pos.x, b.pos.z, '#ff9f1c', 3.5);
   for (const it of intel) if (!it.got && it.pos.distanceTo(player.pos) < 22) dot(it.pos.x, it.pos.z, '#b44bff', 3);
+  for (const m of medkits) if (m.t <= 0) { const x = (m.pos.x - MM.ox) * MM.scale, y = (m.pos.z - MM.oz) * MM.scale, r = 4 * MM.scale / k; g.fillStyle = '#3ddc84'; g.strokeStyle = '#111'; g.lineWidth = 1.5 * MM.scale / k; g.beginPath(); g.rect(x - r, y - r / 3, r * 2, r * 2 / 3); g.rect(x - r / 3, y - r, r * 2 / 3, r * 2); g.fill(); g.stroke(); }
   if (objective.extract) dot(map.extract.x, map.extract.z, '#3ddc84', 7);
   for (const e of enemies) if (e.alive && (e.revealT > 0 || (e.state === 'combat' && e.targetKind === 'player'))) dot(e.pos.x, e.pos.z, '#ff3b47', 4.5);
   for (const z of zones.smoke) dot(z.pos.x, z.pos.z, 'rgba(200,205,212,.7)', z.radius * k / MM.scale * MM.scale);
@@ -978,10 +1038,13 @@ function drawMinimap() {
 }
 
 // ---------- flow ----------
-let sdkOk = false;
-function sdk(fn) { try { const s = window.CrazyGames?.SDK; if (s && sdkOk) fn(s); } catch (e) { /* offline */ } }
 function startMission(idx = selected, opts = {}) {
   if (idx > progress && !DEBUG) return;
+  if (!crazy.active) { startMissionNow(idx, opts); return; }
+  if (startMission.busy) return; startMission.busy = true;                       // midgame ad between missions (rate-limited in crazy.js)
+  crazy.midgame().then(() => { startMission.busy = false; startMissionNow(idx, opts); });
+}
+function startMissionNow(idx, opts) {
   const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice() };
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
   buildMission(idx, o); xpDoubled = false;
@@ -991,9 +1054,9 @@ function startMission(idx = selected, opts = {}) {
   radioOnce('start'); music.start(); FX.announce('MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
-  sdk(s => s.game.gameplayStart());
+  crazy.gameplay(true);
 }
-function endMatch() { tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); sdk(s => s.game.gameplayStop()); }
+function endMatch() { tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
 function lose(reason) { if (matchOver) return; endMatch(); showEnd('MISSION FAILED', reason, null, { death: !player.alive }); }
 function win() {
   if (matchOver) return; endMatch();
@@ -1004,7 +1067,7 @@ function win() {
   const after = META.unlocked(progress), fresh = [...after.weapons].filter(w => !before.weapons.has(w)).map(w => WEAPONS[w].name).concat([...after.operatives].filter(o => !before.operatives.has(o)).map(o => OPERATIVES[o]));
   if (fresh.length) mission = Object.assign({}, mission, { win: { ...mission.win, text: mission.win.text + `\n\nUNLOCKED: ${fresh.join(', ').toUpperCase()}` } });
   const next = MISSIONS[missionIdx + 1];
-  sdk(s => s.game.happytime());
+  crazy.happy();
   showEnd(mission.win.title, mission.win.text + (next ? `\n\n[ NEXT: "${next.title}" ]` : ''), next ? missionIdx + 1 : null);
 }
 function matchTotal() { return Object.entries(matchXP).reduce((a, [k, v]) => k === 'applied' ? a : a + v, 0); }
@@ -1029,17 +1092,14 @@ function upgradeUI() {
   $('upDmg').onclick = () => { if (META.upgrade(id, 'dmg')) { sfx.coin(); upgradeUI(); } };
   $('upAmmo').onclick = () => { if (META.upgrade(id, 'ammo')) { sfx.coin(); upgradeUI(); } };
 }
-function rewardedAd(onDone) {
-  if (!sdkOk) { onDone(); return; }                                // offline / local build: grant straight away
-  sdk(s => s.ad.requestAd('rewarded', { adStarted: () => { audioMute(true); }, adFinished: () => { audioMute(false); onDone(); }, adError: () => { audioMute(false); } }));
-}
+function rewardedAd(onDone) { crazy.rewarded(onDone); }
 function audioMute(on) { try { const c = window.__audioCtx; if (c) on ? c.suspend() : c.resume(); } catch (e) { /* none */ } }
 function revive() {
   revived = true; $('end').classList.remove('show'); $('hud').classList.add('on');
   player.hp = 100; player.alive = true; invT = 3; hurtK = 0; matchOver = false; running = true; paused = false;
   for (const e of enemies) if (e.alive && e.pos.distanceTo(player.pos) < 6) e.alert(player.pos, 0.3);
   if (touch) touch.show(true); else if (!TEST) canvas.requestPointerLock?.();
-  radio('VOSS', 'Not done yet.', 2); sdk(s => s.game.gameplayStart());
+  radio('VOSS', 'Not done yet.', 2); crazy.gameplay(true);
 }
 function showEnd(title, text, nextIdx, { death = false } = {}) {
   $('hud').classList.remove('on');
@@ -1058,7 +1118,7 @@ function showEnd(title, text, nextIdx, { death = false } = {}) {
   $('end').classList.add('show');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
-function doPause() { if (!running) return; touch?.show(false); running = false; paused = true; mouse.l = false; $('pause').classList.add('show'); sdk(s => s.game.gameplayStop()); }
+function doPause() { if (!running) return; touch?.show(false); running = false; paused = true; mouse.l = false; $('pause').classList.add('show'); crazy.gameplay(false); }
 
 // ---------- briefing ----------
 let selected = Math.min(progress, MISSIONS.length - 1), selRoute = 'stealth', selAbilities = [];
@@ -1160,7 +1220,7 @@ document.addEventListener('mousemove', e => {
 });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
-$('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else canvas.requestPointerLock?.(); sdk(s => s.game.gameplayStart()); };
+$('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else canvas.requestPointerLock?.(); crazy.gameplay(true); };
 $('again').onclick = () => startMission(missionIdx);
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => { paused = false; openLobby(); };
 
@@ -1340,7 +1400,7 @@ window.__game = {
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
   start: (i, o = {}) => startMission(i, o), openBriefing, openLobby, openShop, openPass, openProfile, META, doSpray, detonateBarrel, revive,
   get charm() { return charm; }, get sprays() { return sprays; },
-  get breaches() { return breaches; }, get barrels() { return barrels; }, get intel() { return intel; }, get matchXP() { return matchXP; },
+  get breaches() { return breaches; }, get medkits() { return medkits; }, get barrels() { return barrels; }, get intel() { return intel; }, get matchXP() { return matchXP; },
   prof: { up: 0, re: 0, progs: 0 },
   step(seconds, f = 30) { manual = true; const n = Math.round(seconds * f); let t = performance.now(); for (let i = 0; i < n; i++) update(1 / f); const u = performance.now() - t; t = performance.now(); const p0 = renderer.info.programs.length; render(); const r = performance.now() - t; const P = window.__game.prof; P.up = Math.max(P.up, u); P.re = Math.max(P.re, r); P.progs += renderer.info.programs.length - p0; },
   auto() { manual = false; last = performance.now(); },
@@ -1361,11 +1421,11 @@ window.__game = {
 
 // ---------- boot ----------
 (async () => {
-  sdk(s => s.game.loadingStart?.());
-  try { if (window.CrazyGames?.SDK && /crazygames/.test(location.hostname + document.referrer)) { await window.CrazyGames.SDK.init(); sdkOk = true; } } catch (e) { /* offline or not on CrazyGames */ }
+  crazy.onAd(on => { audioMute(on); if (on && running) doPause(); });
+  await crazy.init(TEST); crazy.loading(true);
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
-  sdk(s => s.game.loadingStop?.());
+  crazy.loading(false);
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

@@ -8,9 +8,10 @@
   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js" async onerror="window.__noSDK=true"></script>
   <script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
   <style>
+    @font-face{font-family:"Oswald";src:url(fonts/Oswald.ttf) format("truetype");font-weight:200 700;font-display:block}
     /* ===== HUD style D "Comic bold": yellow panels, heavy ink outlines, skewed, Impact ===== */
     :root{--y:#ffd23b;--ink:#111;--red:#ff3b47;--cyan:#5fe6ff;--u:clamp(9px,1.45vh,15px)}
-    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:Impact,"Haettenschweiler","Arial Narrow Bold","Franklin Gothic Heavy",sans-serif;user-select:none;color:var(--ink)}
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"Oswald",Impact,"Arial Narrow Bold",sans-serif;font-weight:700;user-select:none;color:var(--ink)}
     canvas#gl{display:block;position:fixed;inset:0}
     .ov{position:fixed;pointer-events:none}
     .pnl{background:var(--y);border:3px solid var(--ink);box-shadow:4px 4px 0 var(--ink);transform:skewX(-8deg)}
@@ -121,7 +122,7 @@
     /* ===== lobby / shop / pass / profile ===== */
     #lobby{background:linear-gradient(90deg,transparent 0,transparent 45%,rgba(20,24,34,.55) 75%);justify-content:flex-end;align-items:stretch}
     #lobbyTop{position:fixed;left:calc(var(--u)*1.2);top:calc(var(--u)*1);display:flex;gap:calc(var(--u)*.8);align-items:center}
-    #lobbyTop .logo{font-size:calc(var(--u)*3);color:var(--y);-webkit-text-stroke:2px var(--ink);text-shadow:4px 4px 0 var(--ink);transform:skewX(-8deg)}
+    #lobbyTop .logo{font-size:calc(var(--u)*3);color:var(--y);text-shadow:3px 3px 0 var(--ink);transform:skewX(-8deg)}
     .chip{background:var(--y);border:3px solid var(--ink);box-shadow:3px 3px 0 var(--ink);padding:4px 10px;font-size:calc(var(--u)*1.1);transform:skewX(-8deg)}
     #lvlbar{display:inline-block;width:calc(var(--u)*8);height:10px;border:2px solid var(--ink);background:#fff;vertical-align:middle;margin-left:6px}#lvlbar i{display:block;height:100%;background:var(--red)}
     #lobbyNav{display:flex;flex-direction:column;justify-content:center;gap:calc(var(--u)*.5);margin-right:3vw;min-width:min(340px,40vw)}
@@ -187,7 +188,7 @@
     /* end screen: title slam, stats rise, XP pop */
     #end .card{text-align:center}
     #end .card .row{justify-content:center}
-    #endTitle{font-size:calc(var(--u)*4.2)!important;line-height:1;color:var(--red);-webkit-text-stroke:2px var(--ink);text-shadow:5px 5px 0 var(--ink);letter-spacing:2px;
+    #endTitle{font-size:calc(var(--u)*4.2)!important;line-height:1;color:var(--red);text-shadow:3px 3px 0 var(--ink);letter-spacing:2px;
       display:inline-block;transform:skewX(-8deg);margin:4px 0 10px!important}
     #end.show #endTitle{animation:szSlam .5s cubic-bezier(.2,1.8,.4,1) .08s both}
     @keyframes szSlam{0%{opacity:0;transform:skewX(-8deg) scale(2.6) rotate(-6deg)}60%{opacity:1}100%{opacity:1;transform:skewX(-8deg) scale(1) rotate(0)}}
@@ -244,7 +245,7 @@
     <div id="wep" class="ov pnl"><div><img id="wicon" alt=""><div id="wname">AR-7 LANCE</div><div id="ammo">30 <small>/ 120</small></div><div class="bar" id="rbar"><i></i></div></div></div>
     <div id="abil" class="ov"></div>
     <div id="radio" class="ov"><span class="who"><span id="rwho">OKONKWO</span></span><span class="txt" id="rtxt"></span></div>
-    <div id="ringw" class="ov"><svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="rgba(17,17,17,.55)" stroke="#111" stroke-width="16"/><circle id="ringp" cx="50" cy="50" r="40" fill="none" stroke="#ffd23b" stroke-width="9" stroke-dasharray="251.3" stroke-dashoffset="251.3" transform="rotate(-90 50 50)"/><text id="ringt" x="50" y="58" text-anchor="middle" font-size="24" fill="#fff" font-family="Impact">0%</text></svg><div><span id="ringl" class="pnl"><span>DEFUSING</span></span></div></div>
+    <div id="ringw" class="ov"><svg id="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="rgba(17,17,17,.55)" stroke="#111" stroke-width="16"/><circle id="ringp" cx="50" cy="50" r="40" fill="none" stroke="#ffd23b" stroke-width="9" stroke-dasharray="251.3" stroke-dashoffset="251.3" transform="rotate(-90 50 50)"/><text id="ringt" x="50" y="58" text-anchor="middle" font-size="24" fill="#fff" font-family="Oswald, Impact">0%</text></svg><div><span id="ringl" class="pnl"><span>DEFUSING</span></span></div></div>
     <div id="prompt" class="ov pnl"><span id="promptt">HOLD E</span></div>
   </div>
 
@@ -285,7 +286,7 @@
     <h3>ENEMIES</h3><ul>
       <li><b>Guard</b> – standard rifleman. <b>Heavy</b> – armored, slow, big damage. <b>Sniper</b> – deadly at range; watch for the red laser.</li>
       <li><b>Commander</b> – uses abilities and rallies others. <b>Drone / Turret</b> – fast or fixed fire; flank them.</li></ul>
-    <h3>TIPS</h3><ul><li>Headshots deal the most damage.</li><li>Walk (SHIFT) to stay quiet; running gets you heard.</li><li>Reload behind cover, and use smoke before crossing open streets.</li><li>Finish missions to earn XP and coins for new operatives, weapons and cosmetics.</li></ul>
+    <h3>TIPS</h3><ul><li>Headshots deal the most damage.</li><li>Green-cross MEDKITS (also on the minimap) heal 35 HP when you walk over them and respawn after 30 s.</li><li>Walk (SHIFT) to stay quiet; running gets you heard.</li><li>Reload behind cover, and use smoke before crossing open streets.</li><li>Finish missions to earn XP and coins for new operatives, weapons and cosmetics.</li></ul>
     <button class="back go">BACK</button></div></div>
   <div id="shop" class="panel"><div class="card" style="min-width:min(900px,94vw)"><div class="row" style="justify-content:space-between"><h2>SHOP</h2><span class="chip" id="shopCoins"></span></div>
     <h3>WEAPON CHARMS</h3><div class="grid" id="charms"></div><h3>SPRAYS · PRESS T IN MISSION</h3><div class="grid" id="sprays"></div>
