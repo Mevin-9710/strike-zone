@@ -125,11 +125,6 @@ $('#authDlg').addEventListener('close', async () => {
   if (how === 'cancel' || !how) return;
   if (!sb) return comingSoon();
   const redirect = location.origin + '/#ideas';
-  if (how === 'google') {
-    const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: redirect } });
-    if (error) toast('Google sign-in is not available yet. Use the email link.');
-    return;
-  }
   const email = $('#authEmail').value.trim();
   if (!email) return toast('Enter your email first.');
   const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: redirect } });
