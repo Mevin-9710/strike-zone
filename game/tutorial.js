@@ -39,6 +39,11 @@ export const STEPS = [
 const DEMO_LINE = { smoke: 'Watch. Smoke blocks sight lines.', flash: 'Eyes away! Flash blinds anyone facing it.', dash: 'Dash: a burst of speed. In and out.',
   sensor: 'Sensor reveals hostiles nearby.', shield: 'Shield soaks damage for a few seconds.', decoy: 'Decoy draws their fire.', lockdown: 'Lockdown slows anyone inside.', drone: 'Drone scouts ahead and marks targets.' };
 const SAY_GAP = 0.15;
+const HL = { jump: { touch: '#tjump' }, fire: { touch: '#tfire' }, aim: { touch: '#taim' }, reload: { pc: '#ammo', touch: '#treload' },
+  swap: { pc: '#wep', touch: '#wep' }, ab0: { pc: '#ab0', touch: '#tab0' }, ab1: { pc: '#ab1', touch: '#tab1' }, defuse: { pc: '#prompt', touch: '#tuse' } };
+const HL_CSS = `.tut-hl{animation:tutHl 1s ease-in-out infinite!important;outline:3px solid #ffd23b!important;outline-offset:3px}
+@keyframes tutHl{0%,100%{box-shadow:0 0 0 0 rgba(255,210,59,.9),3px 3px 0 #111}50%{box-shadow:0 0 0 12px rgba(255,210,59,0),3px 3px 0 #111}}
+@media (prefers-reduced-motion:reduce){.tut-hl{animation:none!important}}`;
 
 const CSS = `
 #tut{position:fixed;left:50%;top:calc(var(--u,12px)*8.2);z-index:30;pointer-events:none;transform:translateX(-50%);
@@ -80,7 +85,7 @@ export function createTutorial({ isTouch = false, hooks = {}, onDone = () => {} 
 
   function mount() {
     if (!document.getElementById('tutCss')) {
-      const s = document.createElement('style'); s.id = 'tutCss'; s.textContent = CSS; document.head.append(s);
+      const s = document.createElement('style'); s.id = 'tutCss'; s.textContent = CSS + HL_CSS; document.head.append(s);
     }
     root = document.createElement('div'); root.id = 'tut'; root.className = 'hide';
     root.innerHTML = '<div class="tb"><span class="st"></span><span class="ti"></span><span class="ks"></span><span class="tx"></span>'
@@ -102,6 +107,12 @@ export function createTutorial({ isTouch = false, hooks = {}, onDone = () => {} 
     root.querySelectorAll('.dots i').forEach((d, j) => { d.className = j < idx ? 'd' : j === idx ? 'c' : ''; });
     root.classList.toggle('wait', t < readyAt);
   }
+  let hlEls = [];
+  function clearHl() { for (const e of hlEls) e.classList.remove('tut-hl'); hlEls = []; }
+  function highlight(s) {
+    clearHl(); const sel = HL[s.id]?.[isTouch ? 'touch' : 'pc'];
+    for (const e of [sel && document.querySelector(sel), root?.querySelector('.ks')]) if (e) { e.classList.add('tut-hl'); hlEls.push(e); }
+  }
   function enter(i) {
     idx = i; okT = -1; m = {};
     const s = steps[idx];
@@ -112,11 +123,11 @@ export function createTutorial({ isTouch = false, hooks = {}, onDone = () => {} 
       say(MENTOR, DEMO_LINE[hooks.abilityKind?.(s.demo)] || `Watch my ${name}.`);
       demoAt = t + 0.9; readyAt = t + 3.0;
     } else { if (s.say) say(MENTOR, s.say); demoAt = -1; readyAt = t + (s.wait ?? SAY_GAP); }
-    render(); root.classList.remove('ok', 'pop'); void root.offsetWidth; root.classList.add('pop');
+    render(); highlight(s); root.classList.remove('ok', 'pop'); void root.offsetWidth; root.classList.add('pop');
   }
   function end(skipped) {
     if (finished) return;
-    finished = true; api.active = false; api.hold = false; store.set();
+    finished = true; api.active = false; api.hold = false; store.set(); clearHl();
     removeEventListener('keydown', onKey, true);
     if (root) { root.classList.add('hide'); const r = root; setTimeout(() => r.remove(), 300); root = null; }
     try { onDone({ skipped }); } catch (e) { console.warn('tutorial onDone', e); }
@@ -148,16 +159,17 @@ export function createTutorial({ isTouch = false, hooks = {}, onDone = () => {} 
       if (t < readyAt) return;
       if (root.classList.contains('wait')) render();
       const done = s.timed ? t - readyAt >= s.timed : s.timeout && t - readyAt >= s.timeout ? true : s.need(S, m);
-      if (done) { okT = t; root.classList.add('ok'); root.querySelector('.tx').textContent = 'NICE!'; }
+      if (done) { clearHl(); okT = t; root.classList.add('ok'); root.querySelector('.tx').textContent = 'NICE!'; }
     },
     skip() { if (api.active) end(true); },
     /** Mission ended mid-tutorial (death / quit): tear down without marking it completed. */
     abort() {
-      if (!api.active) return; finished = true; api.active = false; api.hold = false; removeEventListener('keydown', onKey, true);
+      if (!api.active) return; finished = true; api.active = false; api.hold = false; clearHl(); removeEventListener('keydown', onKey, true);
       if (root) { root.remove(); root = null; }
     },
     /** Hide/show without losing progress (e.g. pause menu). */
     visible(on) { if (root) root.classList.toggle('hide', !on); },
+    get highlighted() { return hlEls.map(e => e.id || e.className); },
     get step() { return api.active ? steps[idx].id : null; },
     get steps() { return steps.map(s => s.id); },
   };

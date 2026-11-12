@@ -14,6 +14,7 @@ export class TouchControls {
       <button class="tb" id="tfire" data-k="fire">FIRE</button>
       <button class="tb" id="taim" data-k="aim">AIM</button>
       <button class="tb" id="tjump" data-k="jump">JUMP</button>
+      <button class="tb" id="treload" data-k="reload">RELOAD</button>
       <button class="tb ab" id="tab0" data-k="ab0">Q</button>
       <button class="tb ab" id="tab1" data-k="ab1">F</button>
       <button class="tb" id="tuse" data-k="use">DEFUSE</button>
@@ -100,6 +101,7 @@ export const TOUCH_CSS = `
 #tfire{right:calc(18px + 7vw);bottom:calc(46vh);width:calc(84px*var(--ts))!important;height:calc(84px*var(--ts))!important;background:#ff3b47;color:#fff}
 #taim{right:calc(24px);bottom:calc(46vh + 70px*var(--ts))}
 #tjump{right:calc(24px);bottom:calc(24vh)}
+#treload{right:calc(28px + 76px*var(--ts));bottom:calc(46vh + 60px*var(--ts));font-size:calc(11px*var(--ts))!important}
 #tab0{right:calc(28px + 76px*var(--ts));bottom:calc(24vh - 20px*var(--ts))}
 #tab1{right:calc(28px + 76px*var(--ts) * 2);bottom:calc(24vh - 30px*var(--ts))}
 #touch .tb.ab.cd{opacity:calc(var(--to)*.45)}

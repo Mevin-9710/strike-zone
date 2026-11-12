@@ -280,3 +280,10 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Fonts: bundled Oswald (OFL, fonts/Oswald.ttf, 170KB) as the main UI font (Impact is missing on Android); replaced thick text strokes with soft shadows. Announcements now replace each other instead of overlapping (MISSION START over DEVICE DEFUSED).
 - Maps (procgen, ch2+): enterable buildings use solid procedural walls/steps again (Kenney archSeg panels + stretched archStairs read as see-through/missing); ceilings no longer backface-culled from below.
 - Drones: detect grinding against walls (raycast hits) -> fly to the most open of 8 headings and tighten patrol orbit; enemies that would spawn inside a collider snap to the nearest nav node.
+
+## 2026-11-12 — onboarding tour, tutorial highlights, phone reload, CrazyGames zip
+- game/onboarding.js (new): first-launch coach-mark tour (spotlight + bubble, NEXT/SKIP) over lobby, step menu, operative (auto-skipped while hidden), weapons, abilities, shop charms/sprays, battle pass, intel files, settings; DEPLOY starts mission 1 where the guided tutorial continues. Flag `sz_onboard_done` (mirrored to CrazyGames data). Settings > INTERFACE TOUR > REPLAY. `?onboard=1` forces it. Never auto-runs with ?test=1.
+- game/tutorial.js: each step highlights its control (pulsing ring): touch buttons on phone, HUD element on PC (#ammo, #wep, #ab0/#ab1, #prompt), plus the on-screen key hint. Cleared on completion/skip/abort.
+- game/touch.js + game.js: RELOAD touch button (#treload) -> startReload().
+- tools/build_dist.sh: also writes dist/strike-zone-crazygames.zip, verifies index.html at zip root and no absolute paths.
+- tests: seed `sz_onboard_done` by default; shop/charm test seeds `sz_tutorial_done` (the auto-started mission-1 tutorial was what broke the charm/spray tests); new tests for tour (PC + phone), highlight, reload button, SDK no-op.

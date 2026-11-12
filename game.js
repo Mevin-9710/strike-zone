@@ -20,6 +20,7 @@ import { buildDistrict } from './world/procgen.js';
 import * as META from './game/meta.js';
 import * as FX from './game/feel.js';
 import { createTutorial, tutorialDone } from './game/tutorial.js';
+import { createOnboarding } from './game/onboarding.js';
 import { Mentor } from './game/mentor.js';
 import { weaponInfo } from './game/weapons.js';
 import { radio as RADIO } from './game/radio.js';
@@ -761,6 +762,7 @@ function pollInput(dt) {
     if (touch.take('swap')) equip(W.cur ? 0 : 1);
     if (touch.take('pause')) doPause();
     if (touch.take('spray')) doSpray();
+    if (touch.take('reload')) startReload();
     keys.KeyE = touch.use;
     touch.setCooldowns(abilityCD);
     if (settings.fireMode === 'auto') mouse.l = !!(assist && assist.ang < 0.03 + 0.4 / assist.c.distanceTo(player.pos));
@@ -1240,7 +1242,24 @@ function settingsUI() {
     const k = el.dataset.k; settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? Number(el.value) : el.value;
     store.set('sz_settings', settings); touch?.applySettings(); if (k === 'quality') { qLevel = settings.quality === 'high' ? 2 : 1; applyQuality(); }
   });
+  $('setRows').insertAdjacentHTML('beforeend', '<p style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>INTERFACE TOUR</span><button id="setTour" type="button">REPLAY</button></p>');
+  $('setTour').onclick = () => { $('settings').classList.remove('show'); startOnboarding(true); };
   $('settings').classList.add('show');
+}
+// ---------- first-time interface tour (coach marks) -> mission 1 guided tutorial ----------
+let onboard = null;
+function startOnboarding(force) {
+  if (onboard?.active) return true;
+  onboard = createOnboarding({
+    open(panel) {
+      if (panel !== 'settings') $('settings').classList.remove('show');
+      if (panel === 'lobby') openLobby(); else if (panel === 'shop') openShop(); else if (panel === 'pass') openPass();
+      else if (panel === 'profile') openProfile(); else if (panel === 'settings') { openLobby(); settingsUI(); }
+      else if (!$('brief').classList.contains('show') || flow.cur() !== panel) openBriefing(panel);
+    },
+    onFinish(played) { $('settings').classList.remove('show'); if (played) { unlockAudio(); selected = 0; startMission(0); } else openLobby(); },
+  });
+  return onboard.start({ force });
 }
 { const b = document.createElement('button'); b.textContent = '⚙ SETTINGS'; b.onclick = settingsUI; $('pause').querySelector('.card').append(b); }
 $('setClose').onclick = () => $('settings').classList.remove('show');
@@ -1409,7 +1428,7 @@ window.__game = {
   teleport(x, y, z) { player.pos.set(x, y, z); player.vel.set(0, 0, 0); },
   key(code, down = true) { keys[code] = down; }, mouse(btn, down = true) { mouse[btn] = down; },
   equip, reload: startReload, ability: useAbility, fire: () => { W.cd = 0; W.firedSemi = false; fire(); },
-  get tutorial() { return tutorial; }, get mentor() { return mentor; }, TUT,
+  get tutorial() { return tutorial; }, get onboard() { return onboard; }, startOnboarding, get mentor() { return mentor; }, TUT,
   killAll() { for (const e of enemies) if (e.alive) e.damage(9999); },
   peace() { for (const e of enemies) { e.update = function (dt) { this.mixer.update(dt); this.sync(); }; } },
   damage: (n) => damagePlayer(n, null), timeout() { clock = 0.01; },
@@ -1434,5 +1453,6 @@ window.__game = {
   buildMission(Math.min(progress, MISSIONS.length - 1));             // a live backdrop behind the lobby
   running = false;
   if (Q.has('brief')) openBriefing(); else openLobby();
+  if (Q.has('onboard') || (!TEST && progress === 0 && !tutorialDone())) startOnboarding(Q.has('onboard'));
   requestAnimationFrame(frame);
 })();

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Strike Zone · Tactical spy FPS in your browser</title>
+<meta name="description" content="Strike Zone is a free tactical FPS that runs in your browser. Defuse devices, plant charges and uncover a traitor inside Civic Shield. Install it and play offline on PC and phone.">
+<meta name="theme-color" content="#0b0d10">
+<meta property="og:title" content="Strike Zone">
+<meta property="og:description" content="Tactical spy FPS in your browser. Plays offline.">
+<meta property="og:type" content="website">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="stylesheet" href="/style.css">
+<script src="/site.config.js"></script>
+<script src="/env.js"></script>
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<header class="nav">
+  <a class="brand" href="#top" aria-label="Strike Zone home"><img src="/icons/icon.svg" alt="" width="28" height="28"> STRIKE ZONE</a>
+  <nav>
+    <a href="#media">Intel</a><a href="#devlog">Devlog</a><a href="#ideas">Ideas</a><a href="#updates">Updates</a>
+    <button class="btn ghost sm" id="authBtn" type="button">Sign in</button>
+  </nav>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="hero-bg" aria-hidden="true"><div class="scan"></div><div class="grid"></div></div>
+  <div class="hero-in">
+    <p class="kicker">CIVIC SHIELD · CHANNEL SECURE · SEASON 1</p>
+    <h1>STRIKE<br><span>ZONE</span></h1>
+    <p class="lede">Halvane is wired to blow. You are Operative Rhea Voss. Defuse the devices, plant the counter-charges, and find out who in your own unit sent them.</p>
+    <div class="cta">
+      <a class="btn primary lg" href="/play/">▶ Play now</a>
+      <button class="btn ghost lg" id="installBtn" type="button">⤓ Install to play offline</button>
+    </div>
+    <p class="meta">Free · No download needed · Keyboard + mouse or touch · <a id="cgLink" href="#" class="cg">Coming soon to CrazyGames</a></p>
+  </div>
+  <div class="hero-quote" aria-hidden="true">"Trust no channel but mine."</div>
+</section>
+
+<section class="features">
+  <article><h3>Plant or defuse</h3><p>Every mission is a timed device op: crack the server, hold the vault, beat the blackout clock.</p></article>
+  <article><h3>Pick your kit</h3><p>Smoke, dash, flash, shield, decoy, recon drone. Choose two abilities per mission and play it your way.</p></article>
+  <article><h3>A traitor on the line</h3><p>Serialized spy story told over clipped radio calls. Each episode ends on a reveal.</p></article>
+  <article><h3>Runs anywhere</h3><p>Browser on PC and phone, installable, and fully playable offline once installed.</p></article>
+</section>
+
+<section id="media" class="sec">
+  <h2>Field intel</h2>
+  <div id="trailer" class="trailer"></div>
+  <div id="gallery" class="gallery"></div>
+  <div id="clips" class="clips"></div>
+</section>
+
+<section id="devlog" class="sec">
+  <h2>Devlog</h2>
+  <div id="devlogList" class="devlog"><p class="muted">Loading reports…</p></div>
+  <button class="btn ghost" id="devlogMore" type="button" hidden>Show older entries</button>
+</section>
+
+<section id="ideas" class="sec">
+  <h2>Idea board</h2>
+  <p class="muted">Pitch a mission, ability or feature. Upvote the ones you want next. One vote per operative.</p>
+  <form id="ideaForm" class="row">
+    <input name="title" required minlength="3" maxlength="120" placeholder="Your idea (e.g. night mission on a cargo ship)" aria-label="Idea title">
+    <button class="btn primary" type="submit">Submit</button>
+  </form>
+  <ol id="ideaList" class="ideas"></ol>
+</section>
+
+<section id="updates" class="sec narrow">
+  <h2>Get mission updates</h2>
+  <p class="muted">New episodes, playtests and the CrazyGames launch. No spam.</p>
+  <form id="subForm" class="row">
+    <input name="email" type="email" required placeholder="you@example.com" aria-label="Email" autocomplete="email">
+    <button class="btn primary" type="submit">Subscribe</button>
+  </form>
+</section>
+</main>
+
+<footer><span>© Strike Zone</span><a id="ghLink" href="#">Source</a><a href="/play/">Play</a></footer>
+
+<dialog id="authDlg">
+  <form method="dialog" class="dlg">
+    <h3>Sign in</h3>
+    <p class="muted">We email you a one-time link. No password.</p>
+    <input id="authEmail" type="email" placeholder="you@example.com" aria-label="Email" autocomplete="email">
+    <button class="btn primary" id="magicBtn" value="magic">Email me a link</button>
+    <button class="btn ghost" id="googleBtn" value="google">Continue with Google</button>
+    <button class="btn link" value="cancel">Cancel</button>
+  </form>
+</dialog>
+
+<dialog id="iosDlg">
+  <form method="dialog" class="dlg">
+    <h3>Install on iPhone / iPad</h3>
+    <ol class="steps"><li>Open this page in <b>Safari</b>.</li><li>Tap <b>Share</b> <span aria-hidden="true">⎋</span> at the bottom.</li><li>Choose <b>Add to Home Screen</b>.</li><li>Launch Strike Zone from your home screen. It works offline.</li></ol>
+    <button class="btn primary" value="ok">Got it</button>
+  </form>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

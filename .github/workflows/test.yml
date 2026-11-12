@@ -1,0 +1,42 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test deps + Chromium
+        working-directory: tests
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright-core install --with-deps chromium
+          echo "CHROME=$(node -e "console.log(require('playwright-core').chromium.executablePath())")" >> "$GITHUB_ENV"
+      - name: Start dev server
+        run: |
+          nohup python3 tools/serve.py > /tmp/serve.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://localhost:8765/index.html && exit 0; sleep 0.5; done
+          cat /tmp/serve.log; exit 1
+      - name: Run suite
+        working-directory: tests
+        run: node run.cjs 2>&1 | tee run-output.txt; exit ${PIPESTATUS[0]}
+      - name: Upload screenshots + output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          if-no-files-found: ignore
+          path: |
+            tests/run-output.txt
+            qa/**
+            screenshots/**/*.png

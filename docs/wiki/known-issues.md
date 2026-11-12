@@ -1,0 +1,11 @@
+# Known issues and gaps (2026-11-12)
+- Headless FPS is meaningless (SwiftShader, about 2 FPS). Real target: Intel HD 2500. FPS was not re-measured after the sub-agent sprint (enemies AI, kit/procgen perf, CSS polish).
+- Not tested on a real phone since the latest changes. LAN testing: `http://<pc-ip>:8765`.
+- `tests/run.cjs` defaults to `/usr/bin/chromium`; set `CHROME` elsewhere (setup_cloud.sh does this).
+- Headless has no audio device: "AudioContext encountered an error" console errors are filtered out on purpose.
+- Non-`_rifle` base clips (used by turrets/flyers) are not gun-calibrated.
+- Still procedural (not Kenney art): railings, landings, parapets, the m2 vault interior, hub roofs, streetlight poles.
+- dressMap uses footprint-edge clearance, not a flat 1.2 m nav rule (that rule rejected about 95% of spots).
+- Operatives are cosmetic only.
+- Browser caching caused stale-module bugs before; always use tools/serve.py.
+- Website/Supabase docs are a placeholder until site/ lands (website.md).

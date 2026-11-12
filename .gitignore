@@ -2,3 +2,6 @@ tests/node_modules/
 *.png.tmp
 node_modules
 dist/
+.vercel
+.env*
+!.env.example

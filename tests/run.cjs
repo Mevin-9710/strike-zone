@@ -6,14 +6,14 @@ const BASE = process.env.SZ_URL || 'http://localhost:8765/index.html';
 const results = [];
 const check = (name, ok, info = '') => { results.push({ name, ok }); console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${info ? '  [' + info + ']' : ''}`); };
 
-async function open(browser, { query = 'test=1', progress = null, profile = null, viewport = { width: 1280, height: 720 }, touch = false } = {}) {
+async function open(browser, { query = 'test=1', progress = null, profile = null, viewport = { width: 1280, height: 720 }, touch = false, seen = ['sz_onboard_done'] } = {}) {
   const ctx = await browser.newContext({ viewport, hasTouch: touch });
-  await ctx.addInitScript(([p, prof]) => {
+  await ctx.addInitScript(([p, prof, seen]) => {
     if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1');
-    localStorage.clear();
+    localStorage.clear(); for (const k of seen) localStorage.setItem(k, '1');
     if (p !== null) localStorage.setItem('sz_progress', String(p));
     if (prof) localStorage.setItem('sz_profile', JSON.stringify(prof));
-  }, [progress, profile]);
+  }, [progress, profile, seen]);
   const pg = await ctx.newPage(); pg.errors = [];
   pg.on('pageerror', e => pg.errors.push(String(e))); pg.on('console', m => { if (m.type() === 'error' && !/AudioContext encountered an error/.test(m.text())) pg.errors.push(m.text()); });   // headless has no audio device
   await pg.goto(`${BASE}?${query}`);
@@ -150,7 +150,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
 
   // 5. Shop, pass, profile, charm, spray
   {
-    const { ctx, pg } = await open(browser, { query: '', profile: { xp: 4000, coins: 1000, claimed: 4 } });
+    const { ctx, pg } = await open(browser, { query: '', profile: { xp: 4000, coins: 1000, claimed: 4 }, seen: ['sz_onboard_done', 'sz_tutorial_done'] });
     await pg.click('#lShop');
     const buy = pg.locator('#charms .item', { hasText: 'GOLD STAR' }).locator('button'); await buy.click();
     const s = await pg.evaluate(() => ({ coins: __game.META.profile.coins, charm: __game.META.profile.charm }));
@@ -252,6 +252,72 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const skip = await pg.evaluate(() => { __game.start(0, { tutorial: true }); __game.step(0.5); const a = __game.tutorial.active; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace' })); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace' })); __game.step(0.1); return { a, after: __game.tutorial.active, hold: __game.tutorial.hold }; });
     check('tutorial is replayable and skippable (Backspace)', skip.a && !skip.after && !skip.hold, JSON.stringify(skip));
     check('no page errors (tutorial)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // 9. First-time interface tour (coach marks) -> mission 1 guided tutorial
+  {
+    const { ctx, pg } = await open(browser, { query: '', seen: [] });
+    const r0 = await pg.evaluate(() => ({ a: __game.onboard?.active, step: __game.onboard?.step, vis: !!document.querySelector('#onb .spot') }));
+    check('first launch starts the interface tour on the lobby', r0.a && r0.step === 'lobby' && r0.vis, JSON.stringify(r0));
+    const seen = [];
+    for (let i = 0; i < 15; i++) {
+      const st = await pg.evaluate(() => { const o = __game.onboard; if (!o.active) return null; const t = document.querySelector(o.target), r = t?.getBoundingClientRect(); return { id: o.step, vis: !!r && r.width > 0 }; });
+      if (!st) break; seen.push(st.id + (st.vis ? '' : '!hidden'));
+      await pg.click('#onb .nx');
+    }
+    const want = ['lobby', 'mode', 'loadout', 'abilities', 'charms', 'sprays', 'pass', 'intel', 'settings', 'deploy'];
+    check('tour walks lobby, step menu, loadout, shop, pass, intel, settings', want.every(w => seen.includes(w)) && !seen.some(s => s.includes('!')), seen.join(' '));
+    await pg.waitForTimeout(300);
+    const r1 = await pg.evaluate(() => ({ running: __game.state.running, mission: __game.state.mission, tut: __game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), hl: !!document.querySelector('#tut .ks.tut-hl') }));
+    check('DEPLOY starts mission 1 with the guided tutorial + key-hint highlight', r1.running && r1.tut && r1.flag === '1' && r1.hl, JSON.stringify(r1));
+    await pg.evaluate(() => __game.tutorial.skip());
+    check('tutorial highlight removed when it ends', await pg.evaluate(() => !document.querySelector('.tut-hl')));
+    check('no page errors (interface tour)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+  {
+    const { ctx, pg } = await open(browser, { query: 'touch=1', seen: [], viewport: { width: 907, height: 510 }, touch: true });
+    const r = await pg.evaluate(() => { const b = document.querySelector('#onb .bub').getBoundingClientRect(); return { a: __game.onboard?.active, inView: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight }; });
+    check('phone: tour shows with the bubble inside the screen', r.a && r.inView, JSON.stringify(r));
+    await pg.tap('#onb .sk');
+    const r2 = await pg.evaluate(() => ({ a: __game.onboard.active, lobby: document.getElementById('lobby').classList.contains('show'), flag: localStorage.getItem('sz_onboard_done') }));
+    check('phone: SKIP ends the tour, persists, returns to lobby', !r2.a && r2.lobby && r2.flag === '1', JSON.stringify(r2));
+    await pg.tap('#lSettings'); await pg.tap('#setTour');
+    check('tour is replayable from settings', await pg.evaluate(() => __game.onboard.active && __game.onboard.step === 'lobby'));
+    await pg.evaluate(() => __game.onboard.skip());
+    check('no page errors (phone tour)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // 10. Phone reload button, touch-button highlight, SDK no-op
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1&touch=1', viewport: { width: 907, height: 510 }, touch: true, progress: 12 });
+    await pg.evaluate(() => { const g = __game; g.start(0); g.peace(); g.step(0.5); g.state.ammo; const w = g.state; });
+    await pg.evaluate(() => { __game.fire(); __game.step(0.2); });
+    check('phone: RELOAD button is visible', await pg.isVisible('#treload'));
+    await pg.tap('#treload');
+    const rl = await pg.evaluate(() => { __game.step(0.1); return __game.state.reloading; });
+    check('phone: RELOAD button reloads like R', rl);
+    const hl = await pg.evaluate(async () => {
+      const { createTutorial } = await import('./game/tutorial.js');
+      const t = createTutorial({ isTouch: true }); t.start({ force: true });
+      const S = { dt: 1, look: 5, moved: true, walked: true, jumped: true, slid: true, fired: true, aiming: true, reloaded: false, swapped: false, ab0: false, ab1: false, kills: 0, interacting: false };
+      for (let i = 0; i < 60 && t.step !== 'reload'; i++) t.update(1, S);
+      const on = t.step === 'reload' && document.getElementById('treload').classList.contains('tut-hl');
+      t.update(5, S); S.reloaded = true; t.update(1, S);
+      const off = !document.getElementById('treload').classList.contains('tut-hl'); t.abort();
+      return { on, off };
+    });
+    check('tutorial pulses the real touch button and clears it on completion', hl.on && hl.off, JSON.stringify(hl));
+    const sdk = await pg.evaluate(async () => {
+      const { crazy } = await import('./game/crazy.js'); let granted = false;
+      crazy.loading(true); crazy.loading(false); crazy.gameplay(true); crazy.gameplay(false); crazy.happy();
+      await crazy.midgame(); crazy.rewarded(() => { granted = true; });
+      return { active: crazy.active, granted };
+    });
+    check('CrazyGames SDK absent: every call no-ops, rewarded grants', !sdk.active && sdk.granted, JSON.stringify(sdk));
+    check('no page errors (reload/highlight/sdk)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 
