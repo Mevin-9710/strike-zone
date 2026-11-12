@@ -58,7 +58,9 @@ if [ -n "${CUTS:-}" ]; then
   AUD=()
   if [ -f "$R/audio_bed.webm" ]; then AUD=(-i "$R/audio_bed.webm" -map 1:a -af "afade=in:0:d=1.5,afade=out:st=$(calc "$dur-2.5"):d=2.5,loudnorm=I=-15" -c:a aac -b:a 160k -shortest); fi
   $FF -i "$tmp/video.mp4" "${AUD[@]}" -map 0:v -c:v libx264 -preset slow -crf 21 -maxrate 8M -bufsize 12M -pix_fmt yuv420p -movflags +faststart "$T/strike_zone_trailer_16x9.mp4"
-  $FF -i "$T/strike_zone_trailer_16x9.mp4" -map 0 -vf "crop=608:1080:656:0,scale=1080:1920:flags=lanczos" -c:v libx264 -preset slow -crf 22 -maxrate 7M -bufsize 10M -pix_fmt yuv420p -c:a copy -movflags +faststart "$T/strike_zone_trailer_9x16.mp4"
+  # portrait: gameplay is a centre crop; title cards (found by blackdetect) are shown full width on a stretched card background so text is never cut
+  E=$(ffmpeg -v info -i "$T/strike_zone_trailer_16x9.mp4" -vf "blackdetect=d=0.8:pix_th=0.13:pic_th=0.8" -an -f null - 2>&1 | grep -o "black_start:[0-9.]* black_end:[0-9.]*" | sed -E 's/black_start:([0-9.]+) black_end:([0-9.]+)/between(t,\1,\2)/' | paste -sd+)
+  $FF -i "$T/strike_zone_trailer_16x9.mp4" -filter_complex "[0:v]split=3[a][b][bg];[a]crop=608:1080:656:0,scale=1080:1920:flags=lanczos[g];[bg]crop=1920:150:0:0,scale=1080:1920[bgs];[b]scale=1400:788:flags=lanczos,crop=1080:788[txt];[bgs][txt]overlay=0:566[c];[g][c]overlay=0:0:enable='${E:-0}'[v]" -map "[v]" -map 0:a? -c:v libx264 -preset slow -crf 22 -maxrate 7M -bufsize 10M -pix_fmt yuv420p -c:a copy -movflags +faststart "$T/strike_zone_trailer_9x16.mp4"
   rm -rf "$tmp"
 fi
 ls -la "$S" "$S/portrait" "$S/covers" "$C" "$T"
