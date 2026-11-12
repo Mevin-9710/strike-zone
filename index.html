@@ -118,7 +118,8 @@
     #brief{justify-content:flex-end;background:linear-gradient(90deg,transparent 0,transparent 30%,rgba(20,24,34,.75) 55%)}
     #brief .card{max-width:min(800px,66vw);margin-right:1vw}
     @media (max-aspect-ratio:4/3){#brief .card{max-width:96vw}}
-    #loading .card{text-align:center}
+    #loading{background:var(--y)} #loading .card{text-align:center;border:0;box-shadow:none;background:transparent}
+    #loading .card h1{font-size:calc(var(--u)*4.2)} #loading #lbar{width:min(480px,70vw);margin:12px auto 0}
     /* ===== lobby / shop / pass / profile ===== */
     #lobby{background:linear-gradient(90deg,transparent 0,transparent 45%,rgba(20,24,34,.55) 75%);justify-content:flex-end;align-items:stretch}
     #lobbyTop{position:fixed;left:calc(var(--u)*1.2);top:calc(var(--u)*1);display:flex;gap:calc(var(--u)*.8);align-items:center}
