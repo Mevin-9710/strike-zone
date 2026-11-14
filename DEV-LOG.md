@@ -287,3 +287,4 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - game/touch.js + game.js: RELOAD touch button (#treload) -> startReload().
 - tools/build_dist.sh: also writes dist/strike-zone-crazygames.zip, verifies index.html at zip root and no absolute paths.
 - tests: seed `sz_onboard_done` by default; shop/charm test seeds `sz_tutorial_done` (the auto-started mission-1 tutorial was what broke the charm/spray tests); new tests for tour (PC + phone), highlight, reload button, SDK no-op.
+- 2026-11-14: Added docs/marketing/launch-plan.md (phased launch + marketing plan).
