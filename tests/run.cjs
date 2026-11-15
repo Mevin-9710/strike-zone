@@ -10,7 +10,8 @@ async function open(browser, { query = 'test=1', progress = null, profile = null
   const ctx = await browser.newContext({ viewport, hasTouch: touch });
   await ctx.addInitScript(([p, prof, seen]) => {
     if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1');
-    localStorage.clear(); for (const k of seen) localStorage.setItem(k, '1'); localStorage.setItem('sz_settings', JSON.stringify({ quality: 'auto', qMigrated: 1 }));   // software GL: High (shadows) is too slow
+    localStorage.clear(); for (const k of seen) localStorage.setItem(k, '1');
+    localStorage.setItem('sz_settings', JSON.stringify({ quality: 'auto', qMigrated: 1 }));   // swiftshader: High (shadows) is too slow for the suite localStorage.setItem('sz_settings', JSON.stringify({ quality: 'auto', qMigrated: 1 }));   // software GL: High (shadows) is too slow
     if (p !== null) localStorage.setItem('sz_progress', String(p));
     if (prof) localStorage.setItem('sz_profile', JSON.stringify(prof));
   }, [progress, profile, seen]);
