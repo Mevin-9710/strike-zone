@@ -287,3 +287,17 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - game/touch.js + game.js: RELOAD touch button (#treload) -> startReload().
 - tools/build_dist.sh: also writes dist/strike-zone-crazygames.zip, verifies index.html at zip root and no absolute paths.
 - tests: seed `sz_onboard_done` by default; shop/charm test seeds `sz_tutorial_done` (the auto-started mission-1 tutorial was what broke the charm/spray tests); new tests for tour (PC + phone), highlight, reload button, SDK no-op.
+
+## 2026-11-13 — Submitted to CrazyGames (Basic launch)
+- Game ID 171659, build 5d3acbd8. Status: awaiting review.
+- Uploaded dist/ as a folder (the portal rejects zips). HTML5, Data Module saves, mobile landscape. Category Shooting; tags FPS, Gun, 3D, Mission, 1 Player.
+- Media: covers from media/screenshots/covers (plus a new cover_800x800.png). Videos: smg_elimination_16x9.mp4 and smg_elimination_2x3.mp4, a new 1080x1620 crop because the portrait video must be 2:3.
+- QA: gameplayStart only registers after a mission has been started in the preview tab, before you click Continue.
+
+## 2026-11-15 — Faster first session (Basic Launch day 1: 3m43s avg playtime, 43% reach 1 min, 5.6% reach 10 min)
+- First launch: no interface tour. Lobby PLAY goes straight into the mission-1 drill (sets `sz_onboard_done`); the tour is still under Settings > INTERFACE TOUR or `?onboard=1`.
+- Drill trimmed from 15 to 9 steps: look, move, fire, aim, reload, ability 1, fight, defuse. Dropped walk, jump, slide, swap, ability 2 and kit.
+- End screen NEXT MISSION deploys immediately with the current kit (route normalised, the mission's saved or default abilities). Change the loadout via LOBBY.
+- crazy.js: midgame ads stay off until `armAds()`, which runs at the first non-tutorial mission; the 3-min gap counts from there, not from page load.
+- Mission 2: if no fight has started after 14 s, the nearest non-static enemy and its buddies within 14 m hunt the player (`forceContact`).
+- Tests: test 9 rewritten for the new first launch, and the phone tour test opens the tour from Settings. 78/80 pass; the 2 charm/spray failures also fail without these changes.

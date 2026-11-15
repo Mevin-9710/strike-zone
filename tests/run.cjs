@@ -255,29 +255,21 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
-  // 9. First-time interface tour (coach marks) -> mission 1 guided tutorial
+  // 9. First launch: no tour, PLAY drops straight into the mission-1 drill; tour still replayable from Settings
   {
     const { ctx, pg } = await open(browser, { query: '', seen: [] });
-    const r0 = await pg.evaluate(() => ({ a: __game.onboard?.active, step: __game.onboard?.step, vis: !!document.querySelector('#onb .spot') }));
-    check('first launch starts the interface tour on the lobby', r0.a && r0.step === 'lobby' && r0.vis, JSON.stringify(r0));
-    const seen = [];
-    for (let i = 0; i < 15; i++) {
-      const st = await pg.evaluate(() => { const o = __game.onboard; if (!o.active) return null; const t = document.querySelector(o.target), r = t?.getBoundingClientRect(); return { id: o.step, vis: !!r && r.width > 0 }; });
-      if (!st) break; seen.push(st.id + (st.vis ? '' : '!hidden'));
-      await pg.click('#onb .nx');
-    }
-    const want = ['lobby', 'mode', 'loadout', 'abilities', 'charms', 'sprays', 'pass', 'intel', 'settings', 'deploy'];
-    check('tour walks lobby, step menu, loadout, shop, pass, intel, settings', want.every(w => seen.includes(w)) && !seen.some(s => s.includes('!')), seen.join(' '));
-    await pg.waitForTimeout(300);
+    check('first launch shows the lobby without the interface tour', await pg.evaluate(() => !__game.onboard?.active && !document.querySelector('#onb')));
+    await pg.click('#lPlay'); await pg.waitForTimeout(300);
     const r1 = await pg.evaluate(() => ({ running: __game.state.running, mission: __game.state.mission, tut: __game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), hl: !!document.querySelector('#tut .ks.tut-hl') }));
-    check('DEPLOY starts mission 1 with the guided tutorial + key-hint highlight', r1.running && r1.tut && r1.flag === '1' && r1.hl, JSON.stringify(r1));
+    check('first PLAY starts mission 1 with the guided tutorial + key-hint highlight', r1.running && r1.tut && r1.flag === '1' && r1.hl, JSON.stringify(r1));
     await pg.evaluate(() => __game.tutorial.skip());
     check('tutorial highlight removed when it ends', await pg.evaluate(() => !document.querySelector('.tut-hl')));
-    check('no page errors (interface tour)', pg.errors.length === 0, pg.errors.join('|'));
+    check('no page errors (first launch)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
   {
     const { ctx, pg } = await open(browser, { query: 'touch=1', seen: [], viewport: { width: 907, height: 510 }, touch: true });
+    await pg.tap('#lSettings'); await pg.tap('#setTour');
     const r = await pg.evaluate(() => { const b = document.querySelector('#onb .bub').getBoundingClientRect(); return { a: __game.onboard?.active, inView: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight }; });
     check('phone: tour shows with the bubble inside the screen', r.a && r.inView, JSON.stringify(r));
     await pg.tap('#onb .sk');

@@ -20,7 +20,7 @@ import { buildDistrict } from './world/procgen.js';
 import * as META from './game/meta.js';
 import * as FX from './game/feel.js';
 import { createTutorial, tutorialDone } from './game/tutorial.js';
-import { createOnboarding } from './game/onboarding.js';
+import { createOnboarding, onboardingDone } from './game/onboarding.js';
 import { Mentor } from './game/mentor.js';
 import { weaponInfo } from './game/weapons.js';
 import { radio as RADIO } from './game/radio.js';
@@ -477,6 +477,15 @@ function enemyAbility(e, kind) {
   efx.spawn(kind, { hand, forward: fwd, root: e.root, template: e.root, clips: e.A.gltf.animations, move: false });
   effectOwner = null;
 }
+let firstContactT = -1;
+function forceContact() {                                                      // nearest patrol + its buddies hunt the player (skipped if already fighting)
+  if (enemies.some(e => e.alive && e.state === 'combat')) return;
+  let best = null, bd = Infinity;
+  for (const e of enemies) if (e.alive && !e.T.static) { const d = e.pos.distanceToSquared(player.pos); if (d < bd) { bd = d; best = e; } }
+  if (!best) return;
+  for (const e of enemies) if (e.alive && !e.T.static && (e === best || e.pos.distanceTo(best.pos) < 14)) { e.alert(player.pos, 1); e.goTo?.(player.pos, G); }
+  radioOnce('contact');
+}
 function revealPlayer() { for (const o of enemies) if (o.alive) o.alert(player.pos, 1); if (!said.revealed) { said.revealed = true; radio('OKONKWO', 'They have a fix on you. Move!'); } setTimeout(() => { said.revealed = false; }, 8000); }
 function enemyEffect(kind, d) {
   const owner = effectOwner;
@@ -784,6 +793,7 @@ let aimSlow = 1;
 const FEEL = { hitStop: 0, punchP: 0, punchY: 0, slideT: 0, slideCD: 0, fovKick: 0, combo: 0, comboT: 0 };
 function update(dt) {
   if (!running) return;
+  if (firstContactT > 0 && (firstContactT -= dt) <= 0) forceContact();
   if (FEEL.hitStop > 0) { FEEL.hitStop -= dt; dt *= 0.12; }               // lethal headshot: world slows for a beat
   FEEL.punchP *= Math.max(0, 1 - dt * 16); FEEL.punchY *= Math.max(0, 1 - dt * 16);
   FEEL.comboT -= dt; if (FEEL.comboT <= 0) FEEL.combo = 0;
@@ -1053,6 +1063,8 @@ function startMissionNow(idx, opts) {
   for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); if (idx === 0 && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
+  if (!tutorial) crazy.armAds();
+  firstContactT = idx === 1 ? 14 : -1;                                          // mission 2: force a first fight within ~15 s
   radioOnce('start'); music.start(); FX.announce('MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
@@ -1116,7 +1128,7 @@ function showEnd(title, text, nextIdx, { death = false } = {}) {
   $('endStats').textContent = `Time ${fmt(elapsed)} · Kills ${stats.kills} · Accuracy ${stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0}% · Headshots ${stats.heads}`;
   RADIO.debrief($('debrief'), mission.id, !title.startsWith('MISSION FAILED'));
   $('next').style.display = nextIdx !== null ? '' : 'none';
-  $('next').onclick = () => { selected = nextIdx; openBriefing('mission'); };
+  $('next').onclick = () => { unlockAudio(); selected = nextIdx; const nm = MISSIONS[nextIdx]; const route = !nm.routes ? 'default' : nm.routes[selRoute] ? selRoute : 'stealth'; startMission(nextIdx, { route, abilities: [] }); };   // straight in with the current kit; LOBBY to change it
   $('end').classList.add('show');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
@@ -1355,7 +1367,11 @@ function openProfile() {
   const open = META.filesOpen();
   $('files').innerHTML = META.FILES.map(([t, b], i) => `<div class="file${i < open ? '' : ' lock'}"><b>${i < open ? t : '🔒 FILE ' + (i + 1)}</b><br>${i < open ? b : `Recover ${(i + 1) * 3} intel caches to open.`}</div>`).join('');
 }
-$('lPlay').onclick = () => { unlockAudio(); openBriefing(); }; $('lLoadout').onclick = () => { openBriefing('agent'); };
+$('lPlay').onclick = () => {                                                       // first launch: PLAY drops straight into the mission-1 drill (tour stays in Settings)
+  unlockAudio();
+  if (progress === 0 && !onboardingDone() && !tutorialDone()) { try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ } selected = 0; startMission(0); return; }
+  openBriefing();
+}; $('lLoadout').onclick = () => { openBriefing('agent'); };
 $('lShop').onclick = openShop; $('lPass').onclick = openPass; $('lProfile').onclick = openProfile; $('lSettings').onclick = settingsUI;
 $('lTutorial').onclick = () => only('tutPick');
 $('tpPlay').onclick = () => window.__replayTutorial?.();
@@ -1453,6 +1469,6 @@ window.__game = {
   buildMission(Math.min(progress, MISSIONS.length - 1));             // a live backdrop behind the lobby
   running = false;
   if (Q.has('brief')) openBriefing(); else openLobby();
-  if (Q.has('onboard') || (!TEST && progress === 0 && !tutorialDone())) startOnboarding(Q.has('onboard'));
+  if (Q.has('onboard')) startOnboarding(true);
   requestAnimationFrame(frame);
 })();
