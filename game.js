@@ -24,6 +24,7 @@ import { createOnboarding, onboardingDone } from './game/onboarding.js';
 import { Mentor } from './game/mentor.js';
 import { weaponInfo } from './game/weapons.js';
 import { radio as RADIO } from './game/radio.js';
+import * as MODES from './game/modes.js';
 const TUT = { dt: 0, look: 0, moved: false, walked: false, jumped: false, slid: false, fired: false, aiming: false, reloaded: false, swapped: false, ab0: false, ab1: false, kills: 0, interacting: false };
 
 const Q = new URLSearchParams(location.search);
@@ -479,6 +480,39 @@ function enemyAbility(e, kind) {
   effectOwner = null;
 }
 let firstContactT = -1;
+// ---------- modes: 'daily' (seeded mission, streak bonus) and 'survival' (endless waves, no objective) ----------
+let mode = null, wave = 0, waveT = 0, survBestV = 0;
+function survivalSetup() {
+  for (const d of devices) d.g.visible = false;
+  map.points = []; clock = 1e9;
+  const keep = MODES.survCount(1);
+  for (const e of enemies.slice(keep)) scene.remove(e.root);
+  enemies = enemies.slice(0, keep); wave = 1; waveT = 0; survBestV = MODES.survBest();
+}
+function nextWave() {
+  wave++; waveT = 0;
+  for (const e of enemies) if (!e.alive) scene.remove(e.root);
+  enemies = enemies.filter(e => e.alive);
+  matchXP.wave = (matchXP.wave || 0) + MODES.SURV_XP;
+  player.hp = Math.min(100, player.hp + 35);
+  const spots = map.guards.filter(p => p.distanceTo(player.pos) > 14).sort(() => Math.random() - 0.5);
+  if (!spots.length) spots.push(...map.guards);
+  const types = mission.roster.filter(t => t !== 'warden');
+  for (let i = 0; i < MODES.survCount(wave); i++) {
+    let p = spots[i % spots.length].clone();
+    if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
+    const type = types[(Math.random() * types.length) | 0];
+    const e = new Enemy(type, A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) });
+    scene.add(e.root); enemies.push(e);
+    e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G);
+  }
+  FX.announce(`WAVE ${wave}`, 'start'); sfx.done?.();
+}
+function survivalTick(dt) {
+  for (const e of enemies) if (e.alive) return '';
+  waveT += dt; if (waveT > 3) nextWave();
+  return `WAVE ${wave + 1} INCOMING`;
+}
 function forceContact() {                                                      // nearest patrol + its buddies hunt the player (skipped if already fighting)
   if (enemies.some(e => e.alive && e.state === 'combat')) return;
   let best = null, bd = Infinity;
@@ -806,7 +840,7 @@ function update(dt) {
   if (clock <= 0) { clock = 0; lose(mission.failTimer); return; }
   pollInput(dt);
   updatePlayer(dt);
-  let prompt = updateObjective(dt); prompt = updateInteract(dt, prompt);
+  let prompt = mode === 'survival' ? survivalTick(dt) : updateObjective(dt); prompt = updateInteract(dt, prompt);
   invT = Math.max(0, invT - dt); shakeK = Math.max(0, shakeK - dt * 2.5); sprayCD = Math.max(0, sprayCD - dt);
   updateWeapon(dt);
   for (let i = 0; i < 2; i++) abilityCD[i] = Math.max(0, abilityCD[i] - dt);
@@ -969,8 +1003,9 @@ function updateHud(prompt) {
   else if (objective.extract) { title = 'GET TO EXTRACTION'; prog = 'Green beacon · your start point'; }
   else { const n = map.points.length; let d = 0; for (const x of objective.done) if (x) d++; const v = mission.objective === 'retrieve' ? 'RETRIEVE DRIVES' : 'DEFUSE DEVICES'; title = n > 1 ? `${v} ${d}/${n}` : mission.objective === 'retrieve' ? 'RETRIEVE THE DRIVE' : 'DEFUSE THE DEVICE'; prog = `Hostiles left: ${alive}`; }
   if (intel.length) { let g = 0; for (const i of intel) if (i.got) g++; prog += ` · Intel ${g}/${intel.length}`; }
+  if (mode === 'survival') { title = `SURVIVAL · WAVE ${wave}`; prog = `Hostiles left: ${alive} · Best: wave ${survBestV}`; }
   sT(H.obj, title); sT(H.prog, prog);
-  sT(H.timer, fmt(clock)); sC(H.timer, 'low', clock < 30);
+  sT(H.timer, fmt(mode === 'survival' ? elapsed : clock)); sC(H.timer, 'low', clock < 30);
   // vitals
   sT(H.hp, String(Math.ceil(player.hp))); sS(H.hpf, 'width', `${player.hp}%`);
   sS(H.hpf, 'background', player.hp < 35 ? '#ff3b47' : '#3ddc84');
@@ -1060,19 +1095,25 @@ function startMission(idx = selected, opts = {}) {
 function startMissionNow(idx, opts) {
   const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice() };
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
+  mode = opts.mode || null;
   buildMission(idx, o); xpDoubled = false;
+  if (mode === 'survival') survivalSetup();
   for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
-  dropMentor(); if (idx === 0 && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
+  dropMentor(); if (idx === 0 && mode !== 'survival' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
   if (!tutorial) crazy.armAds();
-  firstContactT = idx === 1 ? 14 : -1;                                          // mission 2: force a first fight within ~15 s
-  radioOnce('start'); music.start(); FX.announce('MISSION START', 'start');
+  firstContactT = idx === 1 && !mode ? 14 : -1;                                          // mission 2: force a first fight within ~15 s
+  if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
   crazy.gameplay(true);
 }
 function endMatch() { tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
-function lose(reason) { if (matchOver) return; endMatch(); showEnd('MISSION FAILED', reason, null, { death: !player.alive }); }
+function lose(reason) {
+  if (matchOver) return; endMatch();
+  if (mode === 'survival') { const rec = MODES.survRecord(wave); survBestV = MODES.survBest(); showEnd('SURVIVAL OVER', `You reached wave ${wave}.` + (rec ? '\n\nNEW BEST!' : `\n\nBest: wave ${survBestV}.`), null, { death: true }); return; }
+  showEnd('MISSION FAILED', reason, null, { death: !player.alive });
+}
 function win() {
   if (matchOver) return; endMatch();
   matchXP.win = META.XP.win;
@@ -1083,7 +1124,9 @@ function win() {
   if (fresh.length) mission = Object.assign({}, mission, { win: { ...mission.win, text: mission.win.text + `\n\nUNLOCKED: ${fresh.join(', ').toUpperCase()}` } });
   const next = MISSIONS[missionIdx + 1];
   crazy.happy();
-  showEnd(mission.win.title, mission.win.text + (next ? `\n\n[ NEXT: "${next.title}" ]` : ''), next ? missionIdx + 1 : null);
+  let daily = '';
+  if (mode === 'daily') { const c = MODES.claimDaily(); if (c) { matchXP.daily = c.bonus; daily = `\n\nDAILY CHALLENGE DONE · STREAK ${c.streak} DAY${c.streak > 1 ? 'S' : ''} · +${c.bonus} XP\nCome back tomorrow for a bigger bonus.`; } }
+  showEnd(mission.win.title, mission.win.text + daily + (next ? `\n\n[ NEXT: "${next.title}" ]` : ''), next ? missionIdx + 1 : null);
 }
 function matchTotal() { return Object.entries(matchXP).reduce((a, [k, v]) => k === 'applied' ? a : a + v, 0); }
 function awardXP() {
@@ -1339,7 +1382,13 @@ function chips() {
   $('coins').textContent = `◎ ${META.profile.coins}`; $('shopCoins').textContent = `◎ ${META.profile.coins}`;
   $('lobbyOp').textContent = `${OPERATIVES[loadout.operative].toUpperCase()} · ${WEAPONS[loadout.primary].name.toUpperCase()} · ${META.CHARMS[META.profile.charm].name.toUpperCase()} CHARM`;
 }
-function openLobby() { only('lobby'); chips(); setPreview(); }
+function openLobby() { only('lobby'); chips(); setPreview(); modeButtons(); }
+function modeButtons() {
+  const d = MODES.dailyToday(progress, MISSIONS.length), st = MODES.dailyState();
+  $('lDaily').textContent = st.done ? `✓ DAILY DONE · ${st.streak}-DAY STREAK` : `📅 DAILY: ${MISSIONS[d.idx].title.toUpperCase()} · +${MODES.dailyBonus(st.next)} XP`;
+  $('lSurv').disabled = progress < 1 && !DEBUG;
+  $('lSurv').textContent = progress < 1 && !DEBUG ? '🔒 SURVIVAL · CLEAR MISSION 1' : `♾ SURVIVAL${MODES.survBest() ? ' · BEST WAVE ' + MODES.survBest() : ''}`;
+}
 function openShop() {
   only('shop'); chips();
   const card = (id, it, vis) => {
@@ -1373,6 +1422,8 @@ $('lPlay').onclick = () => {                                                    
   if (progress === 0 && !onboardingDone() && !tutorialDone()) { try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ } selected = 0; startMission(0); return; }
   openBriefing();
 }; $('lLoadout').onclick = () => { openBriefing('agent'); };
+$('lDaily').onclick = () => { unlockAudio(); const d = MODES.dailyToday(progress, MISSIONS.length); selected = d.idx; startMission(d.idx, { route: MISSIONS[d.idx].routes ? d.route : 'default', abilities: [], mode: 'daily' }); };
+$('lSurv').onclick = () => { unlockAudio(); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
 $('lShop').onclick = openShop; $('lPass').onclick = openPass; $('lProfile').onclick = openProfile; $('lSettings').onclick = settingsUI;
 $('lTutorial').onclick = () => only('tutPick');
 $('tpPlay').onclick = () => window.__replayTutorial?.();

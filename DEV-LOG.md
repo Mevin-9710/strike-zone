@@ -308,3 +308,8 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Quality now defaults to High. A saved 'auto' moves to High once (`qMigrated`).
 - tests/quick_firstrun.cjs: quick check of first-launch auto-start and quality. Measured 5.6 s from page open to gameplay locally (software GL).
 - Known issue: the full suite times out on software GL at High quality. The tests need to pin quality to auto; not done yet.
+
+## 2026-11-15 · Return hooks + action-first preview
+- Lobby: **DAILY** (one seeded mission per UTC day from the missions you can play; win it for +300 XP, +100 per streak day up to 7; streak in `sz_daily`) and **SURVIVAL** (unlocks after mission 1; random cleared map, no objective or timer, waves of 2+n hostiles up to 10, +35 HP and +120 XP per wave, best wave in `sz_surv_best`). Logic in `game/modes.js`.
+- New hover preview `media/clips/preview_highlights_{16x9,2x3,9x16}.mp4`: gunfire from frame 1, five 2 s action cuts, title card last.
+- Tagline now "TACTICAL FPS · DEFUSE THE BOMBS" (cover script).

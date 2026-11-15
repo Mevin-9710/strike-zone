@@ -23,7 +23,7 @@ title() { # $1 w $2 h $3 out ; text sized from height/width
   $FF -i "$COVER_SRC" -vf "scale=$w:$h:force_original_aspect_ratio=increase:flags=lanczos,crop=$w:$h,
     drawbox=x=0:y=ih*0.58:w=iw:h=ih*0.42:color=black@0.45:t=fill,
     drawtext=fontfile=$FONT:text='STRIKE ZONE':fontsize=$fs:fontcolor=0xFFD23C:borderw=$(( fs / 14 )):bordercolor=black:x=(w-tw)/2:y=h*0.64,
-    drawtext=fontfile=$FONT:text='STOP THE MERIDIAN COVENANT':fontsize=$sub:fontcolor=white:borderw=2:bordercolor=black:x=(w-tw)/2:y=h*0.64+$fs*1.12" \
+    drawtext=fontfile=$FONT:text='TACTICAL FPS · DEFUSE THE BOMBS':fontsize=$sub:fontcolor=white:borderw=2:bordercolor=black:x=(w-tw)/2:y=h*0.64+$fs*1.12" \
     -frames:v 1 "$3"
 }
 title 1920 1080 "$S/covers/cover_1920x1080.png"
