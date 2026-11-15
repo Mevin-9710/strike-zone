@@ -10,14 +10,14 @@ async function open(browser, { query = 'test=1', progress = null, profile = null
   const ctx = await browser.newContext({ viewport, hasTouch: touch });
   await ctx.addInitScript(([p, prof, seen]) => {
     if (sessionStorage.getItem('seeded')) return; sessionStorage.setItem('seeded', '1');
-    localStorage.clear(); for (const k of seen) localStorage.setItem(k, '1');
+    localStorage.clear(); for (const k of seen) localStorage.setItem(k, '1'); localStorage.setItem('sz_settings', JSON.stringify({ quality: 'auto', qMigrated: 1 }));   // software GL: High (shadows) is too slow
     if (p !== null) localStorage.setItem('sz_progress', String(p));
     if (prof) localStorage.setItem('sz_profile', JSON.stringify(prof));
   }, [progress, profile, seen]);
   const pg = await ctx.newPage(); pg.errors = [];
   pg.on('pageerror', e => pg.errors.push(String(e))); pg.on('console', m => { if (m.type() === 'error' && !/AudioContext encountered an error/.test(m.text())) pg.errors.push(m.text()); });   // headless has no audio device
   await pg.goto(`${BASE}?${query}`);
-  await pg.waitForFunction(() => window.__game?.ready && (document.getElementById('lobby').classList.contains('show') || document.getElementById('brief').classList.contains('show')), null, { timeout: 90000 });
+  await pg.waitForFunction(() => window.__game?.ready && (document.getElementById('lobby').classList.contains('show') || document.getElementById('brief').classList.contains('show') || __game.state.running), null, { timeout: 90000 });
   return { ctx, pg };
 }
 
@@ -258,17 +258,17 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
   // 9. First launch: no tour, PLAY drops straight into the mission-1 drill; tour still replayable from Settings
   {
     const { ctx, pg } = await open(browser, { query: '', seen: [] });
-    check('first launch shows the lobby without the interface tour', await pg.evaluate(() => !__game.onboard?.active && !document.querySelector('#onb')));
-    await pg.click('#lPlay'); await pg.waitForTimeout(300);
+    check('first launch skips lobby and tour', await pg.evaluate(() => !__game.onboard?.active && !document.getElementById('lobby').classList.contains('show')));
+    await pg.waitForTimeout(300);
     const r1 = await pg.evaluate(() => ({ running: __game.state.running, mission: __game.state.mission, tut: __game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), hl: !!document.querySelector('#tut .ks.tut-hl') }));
-    check('first PLAY starts mission 1 with the guided tutorial + key-hint highlight', r1.running && r1.tut && r1.flag === '1' && r1.hl, JSON.stringify(r1));
+    check('first launch auto-starts mission 1 with the guided tutorial + key-hint highlight', r1.running && r1.tut && r1.flag === '1' && r1.hl, JSON.stringify(r1));
     await pg.evaluate(() => __game.tutorial.skip());
     check('tutorial highlight removed when it ends', await pg.evaluate(() => !document.querySelector('.tut-hl')));
     check('no page errors (first launch)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
   {
-    const { ctx, pg } = await open(browser, { query: 'touch=1', seen: [], viewport: { width: 907, height: 510 }, touch: true });
+    const { ctx, pg } = await open(browser, { query: 'touch=1', seen: ['sz_tutorial_done'], viewport: { width: 907, height: 510 }, touch: true });
     await pg.tap('#lSettings'); await pg.tap('#setTour');
     const r = await pg.evaluate(() => { const b = document.querySelector('#onb .bub').getBoundingClientRect(); return { a: __game.onboard?.active, inView: b.left >= 0 && b.top >= 0 && b.right <= innerWidth && b.bottom <= innerHeight }; });
     check('phone: tour shows with the bubble inside the screen', r.a && r.inView, JSON.stringify(r));

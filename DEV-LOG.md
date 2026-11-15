@@ -301,3 +301,10 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - crazy.js: midgame ads stay off until `armAds()`, which runs at the first non-tutorial mission; the 3-min gap counts from there, not from page load.
 - Mission 2: if no fight has started after 14 s, the nearest non-static enemy and its buddies within 14 m hunt the player (`forceContact`).
 - Tests: test 9 rewritten for the new first launch, and the phone tour test opens the tour from Settings. 78/80 pass; the 2 charm/spray failures also fail without these changes.
+
+## 2026-11-15 — First launch straight into gameplay; quality defaults to High
+- The QA tool's "Load time" runs from page open to the first gameplayStart. It showed 31.7 s because menus came first; the real asset load is about 2.6 s.
+- First launch (no progress, tour and tutorial not done, not ?test): the lobby is skipped and mission 1 (the drill) starts as soon as loading finishes. The first canvas click grabs the mouse and unlocks audio. Returning players still boot into the lobby.
+- Quality now defaults to High. A saved 'auto' moves to High once (`qMigrated`).
+- tests/quick_firstrun.cjs: quick check of first-launch auto-start and quality. Measured 5.6 s from page open to gameplay locally (software GL).
+- Known issue: the full suite times out on software GL at High quality. The tests need to pin quality to auto; not done yet.

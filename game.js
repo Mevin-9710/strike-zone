@@ -127,7 +127,8 @@ let progress = Number(store.get('sz_progress', 0)) || 0;
 const loadout = store.get('sz_loadout', { primary: 'ar7_lance', sidearm: 'vex_p9', abilities: {} });
 loadout.operative ??= 'rhea';
 const OPERATIVES = { rhea: 'Rhea', kade: 'Kade', yuna: 'Yuna', tomas: 'Tomas', amara: 'Amara' };
-const settings = Object.assign({ sens: 1, touchSens: 1, btnSize: 1, btnOpacity: 0.8, fireMode: 'button', aimAssist: true, quality: 'auto' }, store.get('sz_settings', {}));
+const settings = Object.assign({ sens: 1, touchSens: 1, btnSize: 1, btnOpacity: 0.8, fireMode: 'button', aimAssist: true, quality: 'high' }, store.get('sz_settings', {}));
+if (settings.quality === 'auto' && !settings.qMigrated) { settings.quality = 'high'; settings.qMigrated = 1; store.set('sz_settings', settings); }   // default is High; old 'auto' saves move to High once
 const IS_TOUCH = isTouchDevice();
 document.head.insertAdjacentHTML('beforeend', `<style>${TOUCH_CSS}</style>`);
 document.body.insertAdjacentHTML('beforeend', `<div id="rotate"><div>ROTATE YOUR DEVICE<br><small style="font-family:Arial">Strike Zone plays in landscape</small></div></div>`);
@@ -163,7 +164,7 @@ function applyQuality() {
   if (scene && shadowChange) scene.traverse(o => { if (o.isMesh && o.material) o.material.needsUpdate = true; });
   renderer.setSize(innerWidth, innerHeight);
 }
-if (settings.quality === 'auto') qLevel = 1;
+qLevel = settings.quality === 'high' ? 2 : settings.quality === 'low' ? 0 : 1;
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 600);
 const vm = new Viewmodel();
 function resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); vm.setAspect(camera.aspect); renderer.setSize(innerWidth, innerHeight); }
@@ -1468,7 +1469,12 @@ window.__game = {
   if (!DEBUG) { if (!un.weapons.has(loadout.primary)) loadout.primary = 'ar7_lance'; if (!un.weapons.has(loadout.sidearm)) loadout.sidearm = 'vex_p9'; if (!un.operatives.has(loadout.operative)) loadout.operative = 'rhea'; }
   buildMission(Math.min(progress, MISSIONS.length - 1));             // a live backdrop behind the lobby
   running = false;
+  const firstRun = !TEST && !Q.has('brief') && !Q.has('onboard') && progress === 0 && !onboardingDone() && !tutorialDone();
   if (Q.has('brief')) openBriefing(); else openLobby();
   if (Q.has('onboard')) startOnboarding(true);
+  else if (firstRun) {                                                            // first launch: straight into the mission-1 drill, no menus (CG load time = page open -> gameplayStart)
+    try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ }
+    selected = 0; startMission(0);                                               // first click on the canvas grabs the mouse + unlocks audio
+  }
   requestAnimationFrame(frame);
 })();
