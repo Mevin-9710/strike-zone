@@ -140,7 +140,7 @@ if (touch) {
   const goFull = () => {
     if (document.fullscreenElement) return;
     const el = document.documentElement;
-    (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el, { navigationUI: 'hide' })?.then?.(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => {});
+    (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el, { navigationUI: 'hide' }).catch(() => {});
   };
   addEventListener('pointerup', goFull, true);
 }
@@ -168,7 +168,9 @@ function applyQuality() {
 qLevel = settings.quality === 'high' ? 2 : settings.quality === 'low' ? 0 : 1;
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 600);
 const vm = new Viewmodel();
-function resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); vm.setAspect(camera.aspect); renderer.setSize(innerWidth, innerHeight); }
+// portrait phones: widen the vertical FOV so the horizontal view stays ~70 deg (else it is a keyhole)
+let fovK = 1;
+function resize() { camera.aspect = innerWidth / innerHeight; fovK = camera.aspect >= 1 ? 1 : Math.min(1.45, 2 * Math.atan(Math.tan(35 * Math.PI / 180) / camera.aspect) * 180 / Math.PI / 75); camera.updateProjectionMatrix(); vm.setAspect(camera.aspect); renderer.setSize(innerWidth, innerHeight); }
 addEventListener('resize', resize); resize();
 
 // ---------- assets ----------
@@ -279,9 +281,10 @@ function buildMission(idx, opts = {}) {
   // route / roster
   const r = mission.routes ? mission.routes[opts.route || 'stealth'] : { count: mission.count || 8, timer: mission.timer, spawn: 'default' };
   route = { id: opts.route || 'default', ...r };
-  clock = r.timer; elapsed = 0; matchOver = false;
+  if (!mode && (fails[idx] || 0) >= 2) route = { ...route, count: Math.max(3, Math.round(route.count * 0.65)), timer: route.timer + 30, easy: true };   // stuck: fewer hostiles, more time
+  clock = route.timer; elapsed = 0; matchOver = false;
   enemies = [];
-  map.guards.slice(0, r.count).forEach((p, i) => {
+  map.guards.slice(0, route.count).forEach((p, i) => {
     const type = mission.roster[i % mission.roster.length];
     if (type === 'warden') p = map.points[map.points.length - 1].clone().add(V(2.5, 0, 0));      // the boss holds the last device
     if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }   // never spawn inside a wall
@@ -482,6 +485,8 @@ function enemyAbility(e, kind) {
 let firstContactT = -1;
 // ---------- modes: 'daily' (seeded mission, streak bonus) and 'survival' (endless waves, no objective) ----------
 let mode = null, wave = 0, waveT = 0, survBestV = 0;
+let lastStart = { idx: 0, opts: {} }, autoNextT = 0;
+const fails = {};                                   // per-mission fail streak this session: 2+ fails = easier next try
 function survivalSetup() {
   for (const d of devices) d.g.visible = false;
   map.points = []; clock = 1e9;
@@ -767,7 +772,7 @@ function updateWeapon(dt) {
   const adsT = mouse.r && W.reloadT <= 0 && W.drawT <= 0 && objective.active < 0 ? 1 : 0;
   W.ads += (adsT - W.ads) * Math.min(1, dt * 12);
   const spd = Math.hypot(player.vel.x, player.vel.z); FEEL.fovKick += ((FEEL.slideT > 0 ? 9 : spd > CFG.run * 0.9 ? 4 : 0) * (1 - W.ads) - FEEL.fovKick) * Math.min(1, dt * 6);
-  const targetFov = 75 + FEEL.fovKick + (w.zoom - 75) * (w.scope ? (W.ads > 0.9 ? 1 : W.ads * 0.2) : W.ads);
+  const targetFov = (75 + FEEL.fovKick + (w.zoom - 75) * (w.scope ? (W.ads > 0.9 ? 1 : W.ads * 0.2) : W.ads)) * fovK;
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 18); camera.updateProjectionMatrix(); }
   const ev = vm.update(dt, { moving: player.moving, speed: Math.hypot(player.vel.x, player.vel.z), lookDX: lookD.x, lookDY: lookD.y, adsTarget: adsT, sprint: false, onGround: player.onGround, scope: w.scope && W.ads > 0.9 });
   lookD.x = lookD.y = 0;
@@ -799,7 +804,7 @@ function pollInput(dt) {
   const slow = assist && assist.ang < assist.lim * 0.6 ? 0.55 : 1;
   if (touch) {
     const l = touch.takeLook();
-    lookBy(l.x, l.y, 0.0042 * settings.touchSens * slow * (camera.fov / 75));
+    lookBy(l.x, l.y, 0.0042 * settings.touchSens * slow * (camera.fov / 75 / fovK));
     mouse.l = touch.fire; mouse.r = touch.aim;
     if (touch.take('jump')) keys.Space = true, setTimeout(() => { keys.Space = false; }, 80);
     if (touch.take('ab0')) useAbility(0); if (touch.take('ab1')) useAbility(1);
@@ -1095,7 +1100,7 @@ function startMission(idx = selected, opts = {}) {
 function startMissionNow(idx, opts) {
   const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice() };
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
-  mode = opts.mode || null;
+  mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
   if (mode === 'survival') survivalSetup();
   for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
@@ -1111,13 +1116,15 @@ function startMissionNow(idx, opts) {
 function endMatch() { tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
 function lose(reason) {
   if (matchOver) return; endMatch();
-  if (mode === 'survival') { const rec = MODES.survRecord(wave); survBestV = MODES.survBest(); showEnd('SURVIVAL OVER', `You reached wave ${wave}.` + (rec ? '\n\nNEW BEST!' : `\n\nBest: wave ${survBestV}.`), null, { death: true }); return; }
-  showEnd('MISSION FAILED', reason, null, { death: !player.alive });
+  if (mode === 'survival') { const rec = MODES.survRecord(wave); survBestV = MODES.survBest(); showEnd('SURVIVAL OVER', `You reached wave ${wave}.` + (rec ? '\n\nNEW BEST!' : `\n\nBest: wave ${survBestV}.`), null, { death: true, failed: true }); return; }
+  fails[missionIdx] = (fails[missionIdx] || 0) + 1;
+  showEnd('MISSION FAILED', reason + (fails[missionIdx] >= 2 ? '\n\nNext try is easier: fewer hostiles and +30 s.' : ''), null, { death: !player.alive, failed: true });
 }
 function win() {
   if (matchOver) return; endMatch();
   matchXP.win = META.XP.win;
   const before = META.unlocked(progress);
+  fails[missionIdx] = 0;
   if (missionIdx + 1 > progress) { progress = missionIdx + 1; store.set('sz_progress', progress); matchXP.first = META.XP.firstClear; }
   META.profile.totals.wins++; META.profile.upPoints++; META.saveProfile();
   const after = META.unlocked(progress), fresh = [...after.weapons].filter(w => !before.weapons.has(w)).map(w => WEAPONS[w].name).concat([...after.operatives].filter(o => !before.operatives.has(o)).map(o => OPERATIVES[o]));
@@ -1159,7 +1166,7 @@ function revive() {
   if (touch) touch.show(true); else if (!TEST) canvas.requestPointerLock?.();
   radio('VOSS', 'Not done yet.', 2); crazy.gameplay(true);
 }
-function showEnd(title, text, nextIdx, { death = false } = {}) {
+function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   $('hud').classList.remove('on');
   const { add, paid } = awardXP();
   $('endXP').textContent = xpLine(add, paid);
@@ -1172,6 +1179,13 @@ function showEnd(title, text, nextIdx, { death = false } = {}) {
   $('endStats').textContent = `Time ${fmt(elapsed)} · Kills ${stats.kills} · Accuracy ${stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0}% · Headshots ${stats.heads}`;
   RADIO.debrief($('debrief'), mission.id, !title.startsWith('MISSION FAILED'));
   $('next').style.display = nextIdx !== null ? '' : 'none';
+  $('again').textContent = failed ? '↻ RETRY' : 'REPLAY'; $('again').className = failed ? 'go' : '';
+  clearInterval(autoNextT);
+  if (nextIdx !== null && !TEST) {                                              // win: next mission starts by itself unless the player touches anything
+    let n = 6; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('next').click(); } else $('next').textContent = `NEXT MISSION (${n})`; };
+    tick(); autoNextT = setInterval(tick, 1000);
+    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'next') { clearInterval(autoNextT); $('next').textContent = 'NEXT MISSION'; } }, { once: true });
+  } else $('next').textContent = 'NEXT MISSION';
   $('next').onclick = () => { unlockAudio(); selected = nextIdx; const nm = MISSIONS[nextIdx]; const route = !nm.routes ? 'default' : nm.routes[selRoute] ? selRoute : 'stealth'; startMission(nextIdx, { route, abilities: [] }); };   // straight in with the current kit; LOBBY to change it
   $('end').classList.add('show');
 }
@@ -1279,7 +1293,7 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else canvas.requestPointerLock?.(); crazy.gameplay(true); };
-$('again').onclick = () => startMission(missionIdx);
+$('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); startMission(lastStart.idx, lastStart.opts); };
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => { paused = false; openLobby(); };
 
 // ---------- settings ----------

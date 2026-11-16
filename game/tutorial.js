@@ -21,11 +21,9 @@ export const STEPS = [
     say: "Voss, this is Amara. Okonkwo asked me to walk you in. Look around first.", need: (S, m) => (m.a = (m.a || 0) + S.look) > 1.2 },
   { id: 'move', title: 'MOVE', pc: ['W', 'A', 'S', 'D'], touch: ['LEFT STICK'], tx: 'move', say: 'Good. Now move.', need: (S, m) => (m.t = (m.t || 0) + (S.moved ? S.dt : 0)) > 0.8 },
   { id: 'fire', title: 'SHOOT', pc: ['LMB'], touch: ['FIRE'], tx: 'fire at a wall', say: 'Weapons hot. Put a few rounds into that wall.', need: S => S.fired },
-  { id: 'aim', title: 'AIM', pc: ['HOLD RMB'], touch: ['AIM'], tx: 'aim down sights', say: 'Aim down sights. Tighter spread, slower feet.', need: (S, m) => (m.t = S.aiming ? (m.t || 0) + S.dt : 0) > 0.5 },
-  { id: 'reload', title: 'RELOAD', pc: ['R'], touch: ['RELOAD'], tx: 'reload', say: 'Reload before you push, never mid-fight.', need: S => S.reloaded },
-  { id: 'ab0', title: 'ABILITY 1', ab: 0, pc: ['Q'], touch: ['ABILITY 1'], demo: 0, need: S => S.ab0 },
   { id: 'fight', title: 'FIGHT', pc: ['TAKE OUT 2'], touch: ['TAKE OUT 2'], tx: 'hostiles, together', wait: 0.5, timeout: 45,
     say: "Covenant heard us. They're coming. Stay close and shoot what I shoot!", need: S => S.kills >= 2 },
+  { id: 'reload', title: 'RELOAD', pc: ['R'], touch: ['RELOAD'], tx: 'reload', say: 'Nice work. Reload now, while it is quiet.', need: S => S.reloaded },
   { id: 'defuse', title: 'DEFUSE', pc: ['HOLD E'], touch: ['HOLD USE'], tx: 'at the device', wait: 0.5,
     say: 'Follow the marker to the device. Hold E to cut the wires. I have your back.', need: S => S.interacting },
 ];

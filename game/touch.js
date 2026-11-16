@@ -112,5 +112,16 @@ body.touch #brief .help{display:none}
 body.touch #abil{display:none}
 body.touch #prompt{top:auto;bottom:calc(30vh + 110px)}
 #rotate{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:#ffd23b;font-size:28px;text-align:center;padding:20px}
-@media (orientation:portrait){body.touch #rotate{display:flex}}
+/* portrait play: thumbs sit low, buttons stack up the right edge */
+@media (orientation:portrait){
+#tfire{bottom:calc(16vh)}#taim{bottom:calc(16vh + 92px*var(--ts))}#treload{bottom:calc(16vh + 96px*var(--ts))}
+#tjump{bottom:calc(6vh)}#tab0{bottom:calc(30vh + 70px*var(--ts))}#tab1{bottom:calc(30vh + 70px*var(--ts));right:calc(28px + 76px*var(--ts))!important}
+#tab0{right:calc(24px)}#tuse{right:calc(34vw);bottom:calc(34vh)}
+body.touch #prompt{bottom:calc(36vh + 80px)}
+body.touch #mmp{transform:scale(.62);transform-origin:top left}
+body.touch #objp{left:auto!important;right:calc(var(--u)*.6);transform:scale(.85);transform-origin:top right}
+body.touch #tut{top:calc(var(--u)*21)!important;transform:translateX(-50%) scale(.82)}
+body.touch #wep{bottom:auto!important;top:calc(var(--u)*11);transform:scale(.8);transform-origin:top right}
+body.touch #vit{transform:scale(.85);transform-origin:bottom left}
+}
 `;

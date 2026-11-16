@@ -313,3 +313,9 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Lobby: **DAILY** (one seeded mission per UTC day from the missions you can play; win it for +300 XP, +100 per streak day up to 7; streak in `sz_daily`) and **SURVIVAL** (unlocks after mission 1; random cleared map, no objective or timer, waves of 2+n hostiles up to 10, +35 HP and +120 XP per wave, best wave in `sz_surv_best`). Logic in `game/modes.js`.
 - New hover preview `media/clips/preview_highlights_{16x9,2x3,9x16}.mp4`: gunfire from frame 1, five 2 s action cuts, title card last.
 - Tagline now "TACTICAL FPS · DEFUSE THE BOMBS" (cover script).
+
+## 2026-11-16 · Retention pass for the Basic Launch score
+- Phones can play upright: no more "rotate your device" wall; portrait widens the vertical FOV (horizontal view stays ~70°), touch sensitivity compensates, buttons and HUD re-laid out for portrait. No landscape orientation lock.
+- First-run drill: look, move, shoot, then straight into the fight; reload after it, then defuse. Aim and ability demo dropped (6 steps, was 8).
+- Fail screen: big ↻ RETRY replays the same mission/mode/route. After 2 fails on a mission (per session) the next try has 35% fewer hostiles and +30 s.
+- Win screen: next mission starts by itself after a 5 s countdown; touching anything on the end screen cancels it.
