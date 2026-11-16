@@ -322,3 +322,8 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Cloud save fix: progress, loadout, settings and profile are re-read after the CrazyGames data module hydrates localStorage (they were read at import, before the SDK loaded). Daily streak and Survival best now sync too.
 - Every end screen ends with a daily-challenge reminder (today's bonus, or tomorrow's streak bonus).
 - Cleanup: removed unused proxyHolo, isPistol, easeIn and the dead rotate-device overlay; build drops the stray game/project.godot.
+
+## 2026-11-16 · v4: one-tap deploy, hostile pins, longer-range recon
+- PLAY opens a one-screen deploy card: next mission, saved kit, big DEPLOY. CHANGE LOADOUT / OTHER MISSION open the old step flow.
+- HUD pins: red markers with distance over the 3 nearest hostiles (beyond 7 m), clamped to the screen edge when off-screen.
+- Sensor radius 8 → 30 m and reveal 4.6 → 8 s; recon drone radius 12 → 35 m.

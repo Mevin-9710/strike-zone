@@ -233,7 +233,7 @@ export class AbilityFX {
   sensor({ hand, forward }) {
     const pos = V(hand.x, 0, hand.z).addScaledVector(forward, 0.1); pos.y = this.floorAt(V(pos.x, hand.y, pos.z));
     const g = new THREE.Group(); g.position.copy(pos); this.scene.add(g);
-    this.onEvent('sensor', { pos: pos.clone(), radius: 8, life: 4.6 });
+    this.onEvent('sensor', { pos: pos.clone(), radius: 30, life: 8 });
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.05, 8), solid(0x2b2f36)); base.position.y = 0.025;
     const prongs = [];
     for (let i = 0; i < 3; i++) {
@@ -437,7 +437,7 @@ export class AbilityFX {
     cone.geometry.translate(0, -1.6, 0); cone.rotation.x = -0.55; d.add(cone);
     const light = new GlowLight(COL.civic, 3, 4, 2); d.add(light);
     d.position.copy(hand); this.scene.add(d);
-    this.onEvent('drone', { obj: d, radius: 12, life: 6.0 });
+    this.onEvent('drone', { obj: d, radius: 35, life: 6.0 });
     const yaw = Math.atan2(forward.x, forward.z);
     const side = V(Math.cos(yaw), 0, -Math.sin(yaw));
     const LIFE = 6.0, SPEED = 1.7;

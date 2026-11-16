@@ -876,6 +876,7 @@ function update(dt) {
     else map.points.forEach((p, i) => { if (objective.done[i] || (mission.objective === 'plant_hold' && objective.planted && i)) return; const d = p.distanceTo(player.pos); if (d < bd) { bd = d; tgt = p; } });
     if (tgt) { _arrowP.copy(tgt).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; } FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(tgt.distanceTo(player.pos))); }
   }
+  updatePins();
   if (mentor) { mentor.update(dt, MCTX); mfx?.update(dt); }
   if (tutorial?.active) tutorialTick(dt);
   FX.update(dt);
@@ -1053,6 +1054,27 @@ function storyEv(key) { RADIO.event(mission.id, key); }
 
 // ---------- minimap ----------
 let mmBg = null; const MM = { scale: 3, ox: 0, oz: 0 };
+// ---------- hostile pins: red markers over the 3 nearest hostiles (edge-clamped when off-screen) ----------
+const PINS = [], _pinE = [null, null, null], _pinD = [0, 0, 0], _pinP = new THREE.Vector3();
+function updatePins() {
+  if (!PINS.length) for (let i = 0; i < 3; i++) { const d = document.createElement('div'); d.className = 'hpin'; $('hud').append(d); PINS.push(d); }
+  _pinE[0] = _pinE[1] = _pinE[2] = null; _pinD[0] = _pinD[1] = _pinD[2] = Infinity;
+  for (const e of enemies) {
+    if (!e.alive) continue; const d = e.pos.distanceTo(player.pos); if (d < 7) continue;    // close ones are in plain sight
+    for (let k = 0; k < 3; k++) if (d < _pinD[k]) { for (let j = 2; j > k; j--) { _pinD[j] = _pinD[j - 1]; _pinE[j] = _pinE[j - 1]; } _pinD[k] = d; _pinE[k] = e; break; }
+  }
+  for (let i = 0; i < 3; i++) {
+    const el = PINS[i], e = _pinE[i];
+    if (!e || tutorial?.hold) { if (el._on) { el._on = false; el.style.display = 'none'; } continue; }
+    _pinP.copy(e.pos); _pinP.y += 2.2; const sp = toScreen(_pinP);
+    let x = sp.x, y = sp.y; const edge = !sp.on;
+    if (sp.behind) { x = innerWidth - x; y = innerHeight - 90; }
+    x = clamp(x, 28, innerWidth - 28); y = clamp(y, 90, innerHeight - 90);
+    if (!el._on) { el._on = true; el.style.display = 'block'; }
+    el.style.transform = `translate(${x | 0}px,${y | 0}px)`;
+    sT(el, (edge ? '◆ ' : '▼ ') + Math.round(_pinD[i]) + 'm'); el.classList.toggle('edge', edge);
+  }
+}
 function buildMinimap() {
   const b = map.bounds, pad = 10, w = (b.max.x - b.min.x + pad * 2) * MM.scale, h = (b.max.z - b.min.z + pad * 2) * MM.scale;
   MM.ox = b.min.x - pad; MM.oz = b.min.z - pad;
@@ -1101,7 +1123,7 @@ function startMissionNow(idx, opts) {
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
   if (mode === 'survival') survivalSetup();
-  for (const id of ['brief', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
+  for (const id of ['brief', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); if (idx === 0 && mode !== 'survival' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
   if (!tutorial) crazy.armAds();
@@ -1249,7 +1271,7 @@ function openBriefing(step = 'mode') {
   weaponButtons($('primaries'), PRIMARIES, 'primary'); weaponButtons($('sidearms'), SIDEARMS, 'sidearm'); showStats(loadout.primary);
   selectMission(Math.min(selected ?? progress, MISSIONS.length - 1));
   buildChapters(); showChapter(Math.floor(selected / 3));
-  for (const id of ['end', 'pause', 'loading', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
+  for (const id of ['end', 'pause', 'loading', 'lobby', 'quick', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.remove('on'); $('brief').classList.add('show');
   operativeButtons(); setPreview();
   flow.open(step);
@@ -1392,13 +1414,24 @@ function operativeButtons() {
 }
 
 // ---------- lobby / shop / pass / profile ----------
-const PANELS = ['lobby', 'brief', 'shop', 'pass', 'profile', 'tutPick', 'guide', 'end', 'pause', 'loading'];
+const PANELS = ['lobby', 'quick', 'brief', 'shop', 'pass', 'profile', 'tutPick', 'guide', 'end', 'pause', 'loading'];
 function only(id) { for (const p of PANELS) $(p).classList.toggle('show', p === id); $('hud').classList.remove('on'); }
 function chips() {
   $('lvl').firstChild.textContent = `LV ${META.level()} `; $('lvlbar').firstElementChild.style.width = `${META.levelProgress() * 100}%`;
   $('coins').textContent = `◎ ${META.profile.coins}`; $('shopCoins').textContent = `◎ ${META.profile.coins}`;
   $('lobbyOp').textContent = `${OPERATIVES[loadout.operative].toUpperCase()} · ${WEAPONS[loadout.primary].name.toUpperCase()} · ${META.CHARMS[META.profile.charm].name.toUpperCase()} CHARM`;
 }
+// PLAY: one screen, one tap. Next mission with the saved kit; loadout / mission pickers are optional.
+function openQuick() {
+  selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected];
+  only('quick'); setPreview();
+  $('qChapter').textContent = `CHAPTER ${Math.floor(selected / 3) + 1} · MISSION ${selected + 1}`;
+  $('qTitle').textContent = m.title.toUpperCase(); $('qBrief').textContent = m.brief;
+  $('qKit').textContent = `${OPERATIVES[loadout.operative].toUpperCase()} · ${WEAPONS[loadout.primary].name.toUpperCase()} + ${WEAPONS[loadout.sidearm].name.toUpperCase()}`;
+}
+$('qDeploy').onclick = () => { unlockAudio(); const m = MISSIONS[selected]; startMission(selected, { route: !m.routes ? 'default' : m.routes[selRoute] ? selRoute : 'stealth', abilities: [] }); };
+$('qLoadout').onclick = () => openBriefing('agent');
+$('qMission').onclick = () => openBriefing('mission');
 function openLobby() { only('lobby'); chips(); setPreview(); modeButtons(); }
 function modeButtons() {
   const d = MODES.dailyToday(progress, MISSIONS.length), st = MODES.dailyState();
@@ -1437,7 +1470,7 @@ function openProfile() {
 $('lPlay').onclick = () => {                                                       // first launch: PLAY drops straight into the mission-1 drill (tour stays in Settings)
   unlockAudio();
   if (progress === 0 && !onboardingDone() && !tutorialDone()) { try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ } selected = 0; startMission(0); return; }
-  openBriefing();
+  openQuick();
 }; $('lLoadout').onclick = () => { openBriefing('agent'); };
 $('lDaily').onclick = () => { unlockAudio(); const d = MODES.dailyToday(progress, MISSIONS.length); selected = d.idx; startMission(d.idx, { route: MISSIONS[d.idx].routes ? d.route : 'default', abilities: [], mode: 'daily' }); };
 $('lSurv').onclick = () => { unlockAudio(); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };

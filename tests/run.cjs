@@ -47,7 +47,9 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /◎ 0/.test(await pg.textContent('#coins')));
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
     await pg.click('#lPlay');
-    check('Play opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));
+    check('Play opens the one-tap deploy screen', await pg.isVisible('#quick') && await pg.isVisible('#qDeploy') && await pg.isVisible('#qLoadout'));
+    await pg.evaluate(() => __game.openBriefing());
+    check('briefing opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));
     await pg.click('#chapters button >> nth=0');
     check('chapter pick advances to mission step', await pg.isVisible('#stepMission') && !(await pg.isVisible('#stepMode')));
     await pg.keyboard.press('Escape'); check('Esc goes back a step', await pg.isVisible('#stepMode'));
@@ -57,7 +59,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await pg.click('#briefBack'); await pg.click('#briefBack');
     check('Back x2 reaches mode step', await pg.isVisible('#stepMode'));
     await pg.click('#briefBack'); check('Back from mode returns to lobby', await pg.isVisible('#lobby'));
-    await pg.click('#lPlay');
+    await pg.evaluate(() => __game.openBriefing());
     const n = await pg.locator('#missions button').count(), locked = await pg.locator('#missions button:disabled').count();
     check('campaign lists 12 missions', n === 12, `n=${n}`);
     check('new profile: only mission 1 open', locked === 11, `locked=${locked}`);
