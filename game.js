@@ -132,7 +132,6 @@ const settings = Object.assign({ sens: 1, touchSens: 1, btnSize: 1, btnOpacity: 
 if (settings.quality === 'auto' && !settings.qMigrated) { settings.quality = 'high'; settings.qMigrated = 1; store.set('sz_settings', settings); }   // default is High; old 'auto' saves move to High once
 const IS_TOUCH = isTouchDevice();
 document.head.insertAdjacentHTML('beforeend', `<style>${TOUCH_CSS}</style>`);
-document.body.insertAdjacentHTML('beforeend', `<div id="rotate"><div>ROTATE YOUR DEVICE<br><small style="font-family:Arial">Strike Zone plays in landscape</small></div></div>`);
 if (IS_TOUCH) document.body.classList.add('touch');
 const touch = IS_TOUCH ? new TouchControls(document.body, settings) : null;
 // Mobile browsers only allow fullscreen inside a user gesture, so request it on every tap until it sticks.
@@ -221,7 +220,6 @@ let flashK = 0, hurtK = 0, hitmT = 0, laserK = 0, dmgDirs = [], said = {}, repat
 const proxy = new THREE.Object3D();                 // stands in for the player's body for dash/shield fx
 let tracers = [], impacts = [], lasers = new Map();
 let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, matchXP = {}, revived = false, invT = 0, shakeK = 0, sprays = [], sprayCD = 0, xpDoubled = false;
-const proxyHolo = { template: null, clips: null };
 
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
@@ -1175,6 +1173,11 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   $('adRevive').style.display = death && !revived ? '' : 'none';
   upgradeUI();
   $('adRevive').onclick = () => rewardedAd(revive);
+  {                                                                             // every end screen: a reason to come back tomorrow
+    const ds = MODES.dailyState();
+    text += ds.done ? `\n\n📅 Come back tomorrow: day ${ds.streak + 1} of your streak pays +${MODES.dailyBonus(ds.streak + 1)} XP.`
+                    : `\n\n📅 Today's daily challenge is waiting in the lobby: +${MODES.dailyBonus(ds.next)} XP.`;
+  }
   $('endTitle').textContent = title; $('endText').textContent = text;
   $('endStats').textContent = `Time ${fmt(elapsed)} · Kills ${stats.kills} · Accuracy ${stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0}% · Headshots ${stats.heads}`;
   RADIO.debrief($('debrief'), mission.id, !title.startsWith('MISSION FAILED'));
@@ -1524,6 +1527,10 @@ window.__game = {
 (async () => {
   crazy.onAd(on => { audioMute(on); if (on && running) doPause(); });
   await crazy.init(TEST); crazy.loading(true);
+  if (crazy.active) {                                                             // cloud save just hydrated localStorage: re-read what was loaded at import time
+    progress = Number(store.get('sz_progress', progress)) || 0;
+    Object.assign(loadout, store.get('sz_loadout', {})); Object.assign(settings, store.get('sz_settings', {})); Object.assign(META.profile, store.get('sz_profile', {}));
+  }
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   crazy.loading(false);

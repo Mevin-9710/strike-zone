@@ -10,7 +10,6 @@ import * as SkeletonUtils from '../lib/addons/utils/SkeletonUtils.js';
 const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const clamp01 = t => Math.min(1, Math.max(0, t));
 const easeOut = t => 1 - Math.pow(1 - clamp01(t), 3);
-const easeIn = t => Math.pow(clamp01(t), 2);
 const easeOutBack = t => { t = clamp01(t); const c = 1.7; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 const rand = (a, b) => a + Math.random() * (b - a);
 

@@ -17,7 +17,6 @@ export const WEAPONS = {
 };
 export const PRIMARIES = ['ar7_lance', 'kestrel_bp', 'warden_br', 'grinder_lmg', 'hailstorm_mg', 'longshot_bolt', 'javelin_amr'];
 export const SIDEARMS = ['vex_p9', 'harrow_45', 'bulldog_r6'];
-export const isPistol = id => SIDEARMS.includes(id);
 
 // ---------- shared textures ----------
 function starTexture() {

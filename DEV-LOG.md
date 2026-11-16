@@ -319,3 +319,6 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - First-run drill: look, move, shoot, then straight into the fight; reload after it, then defuse. Aim and ability demo dropped (6 steps, was 8).
 - Fail screen: big ↻ RETRY replays the same mission/mode/route. After 2 fails on a mission (per session) the next try has 35% fewer hostiles and +30 s.
 - Win screen: next mission starts by itself after a 5 s countdown; touching anything on the end screen cancels it.
+- Cloud save fix: progress, loadout, settings and profile are re-read after the CrazyGames data module hydrates localStorage (they were read at import, before the SDK loaded). Daily streak and Survival best now sync too.
+- Every end screen ends with a daily-challenge reminder (today's bonus, or tomorrow's streak bonus).
+- Cleanup: removed unused proxyHolo, isPistol, easeIn and the dead rotate-device overlay; build drops the stray game/project.godot.

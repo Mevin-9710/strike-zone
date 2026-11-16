@@ -111,7 +111,6 @@ export const TOUCH_CSS = `
 body.touch #brief .help{display:none}
 body.touch #abil{display:none}
 body.touch #prompt{top:auto;bottom:calc(30vh + 110px)}
-#rotate{position:fixed;inset:0;z-index:50;display:none;align-items:center;justify-content:center;background:#ffd23b;font-size:28px;text-align:center;padding:20px}
 /* portrait play: thumbs sit low, buttons stack up the right edge */
 @media (orientation:portrait){
 #tfire{bottom:calc(16vh)}#taim{bottom:calc(16vh + 92px*var(--ts))}#treload{bottom:calc(16vh + 96px*var(--ts))}
