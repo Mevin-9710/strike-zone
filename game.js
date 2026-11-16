@@ -876,7 +876,6 @@ function update(dt) {
     else map.points.forEach((p, i) => { if (objective.done[i] || (mission.objective === 'plant_hold' && objective.planted && i)) return; const d = p.distanceTo(player.pos); if (d < bd) { bd = d; tgt = p; } });
     if (tgt) { _arrowP.copy(tgt).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; } FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(tgt.distanceTo(player.pos))); }
   }
-  updatePins();
   if (mentor) { mentor.update(dt, MCTX); mfx?.update(dt); }
   if (tutorial?.active) tutorialTick(dt);
   FX.update(dt);
@@ -1054,27 +1053,6 @@ function storyEv(key) { RADIO.event(mission.id, key); }
 
 // ---------- minimap ----------
 let mmBg = null; const MM = { scale: 3, ox: 0, oz: 0 };
-// ---------- hostile pins: red markers over the 3 nearest hostiles (edge-clamped when off-screen) ----------
-const PINS = [], _pinE = [null, null, null], _pinD = [0, 0, 0], _pinP = new THREE.Vector3();
-function updatePins() {
-  if (!PINS.length) for (let i = 0; i < 3; i++) { const d = document.createElement('div'); d.className = 'hpin'; $('hud').append(d); PINS.push(d); }
-  _pinE[0] = _pinE[1] = _pinE[2] = null; _pinD[0] = _pinD[1] = _pinD[2] = Infinity;
-  for (const e of enemies) {
-    if (!e.alive) continue; const d = e.pos.distanceTo(player.pos); if (d < 7) continue;    // close ones are in plain sight
-    for (let k = 0; k < 3; k++) if (d < _pinD[k]) { for (let j = 2; j > k; j--) { _pinD[j] = _pinD[j - 1]; _pinE[j] = _pinE[j - 1]; } _pinD[k] = d; _pinE[k] = e; break; }
-  }
-  for (let i = 0; i < 3; i++) {
-    const el = PINS[i], e = _pinE[i];
-    if (!e || tutorial?.hold) { if (el._on) { el._on = false; el.style.display = 'none'; } continue; }
-    _pinP.copy(e.pos); _pinP.y += 2.2; const sp = toScreen(_pinP);
-    let x = sp.x, y = sp.y; const edge = !sp.on;
-    if (sp.behind) { x = innerWidth - x; y = innerHeight - 90; }
-    x = clamp(x, 28, innerWidth - 28); y = clamp(y, 90, innerHeight - 90);
-    if (!el._on) { el._on = true; el.style.display = 'block'; }
-    el.style.transform = `translate(${x | 0}px,${y | 0}px)`;
-    sT(el, (edge ? '◆ ' : '▼ ') + Math.round(_pinD[i]) + 'm'); el.classList.toggle('edge', edge);
-  }
-}
 function buildMinimap() {
   const b = map.bounds, pad = 10, w = (b.max.x - b.min.x + pad * 2) * MM.scale, h = (b.max.z - b.min.z + pad * 2) * MM.scale;
   MM.ox = b.min.x - pad; MM.oz = b.min.z - pad;
@@ -1104,7 +1082,7 @@ function drawMinimap() {
   for (const it of intel) if (!it.got && it.pos.distanceTo(player.pos) < 22) dot(it.pos.x, it.pos.z, '#b44bff', 3);
   for (const m of medkits) if (m.t <= 0) { const x = (m.pos.x - MM.ox) * MM.scale, y = (m.pos.z - MM.oz) * MM.scale, r = 4 * MM.scale / k; g.fillStyle = '#3ddc84'; g.strokeStyle = '#111'; g.lineWidth = 1.5 * MM.scale / k; g.beginPath(); g.rect(x - r, y - r / 3, r * 2, r * 2 / 3); g.rect(x - r / 3, y - r, r * 2 / 3, r * 2); g.fill(); g.stroke(); }
   if (objective.extract) dot(map.extract.x, map.extract.z, '#3ddc84', 7);
-  for (const e of enemies) if (e.alive && (e.revealT > 0 || (e.state === 'combat' && e.targetKind === 'player'))) dot(e.pos.x, e.pos.z, '#ff3b47', 4.5);
+  for (const e of enemies) if (e.alive) { const hot = e.revealT > 0 || (e.state === 'combat' && e.targetKind === 'player'); dot(e.pos.x, e.pos.z, hot ? '#ff3b47' : '#c0303a', hot ? 4.5 : 3.5); }   // every hostile shows; spotted/revealed ones brighter
   for (const z of zones.smoke) dot(z.pos.x, z.pos.z, 'rgba(200,205,212,.7)', z.radius * k / MM.scale * MM.scale);
   g.restore();
   g.fillStyle = '#5fe6ff'; g.strokeStyle = '#111'; g.lineWidth = 2; g.beginPath(); g.moveTo(W2 / 2, W2 / 2 - 9); g.lineTo(W2 / 2 + 6, W2 / 2 + 6); g.lineTo(W2 / 2 - 6, W2 / 2 + 6); g.closePath(); g.fill(); g.stroke();

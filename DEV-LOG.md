@@ -325,5 +325,5 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 
 ## 2026-11-16 · v4: one-tap deploy, hostile pins, longer-range recon
 - PLAY opens a one-screen deploy card: next mission, saved kit, big DEPLOY. CHANGE LOADOUT / OTHER MISSION open the old step flow.
-- HUD pins: red markers with distance over the 3 nearest hostiles (beyond 7 m), clamped to the screen edge when off-screen.
+- Minimap shows every live hostile (dim red; bright red when spotted or revealed). Floating HUD pins tried and removed.
 - Sensor radius 8 → 30 m and reveal 4.6 → 8 s; recon drone radius 12 → 35 m.
