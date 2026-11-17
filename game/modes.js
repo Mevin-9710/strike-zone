@@ -28,3 +28,14 @@ export function claimDaily() {
 export const SURV_XP = 120, survCount = w => Math.min(10, 2 + w);
 export const survBest = () => get('sz_surv_best', 0);
 export function survRecord(w) { const b = survBest(); if (w > b) put('sz_surv_best', w); return w > b; }
+
+// 7-day login calendar: first lobby visit each UTC day pays coins; missing a day restarts at day 1; day 7 loops
+export const LOGIN_COINS = [100, 150, 200, 250, 300, 400, 600];
+export function loginClaim() {
+  const s = get('sz_login', { last: '', day: 0 }), today = dayKey(), yday = dayKey(Date.now() - 864e5);
+  if (s.last === today) return null;
+  const day = s.last === yday ? (s.day % 7) + 1 : 1;
+  put('sz_login', { last: today, day });
+  return { day, coins: LOGIN_COINS[day - 1], tomorrow: LOGIN_COINS[day % 7] };
+}
+export const loginTomorrow = () => { const s = get('sz_login', { last: '', day: 0 }); return LOGIN_COINS[s.last === dayKey() ? s.day % 7 : 0]; };

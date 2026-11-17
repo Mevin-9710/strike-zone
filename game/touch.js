@@ -32,7 +32,6 @@ export class TouchControls {
   applySettings() {
     this.el.style.setProperty('--ts', this.s.btnSize);
     this.el.style.setProperty('--to', this.s.btnOpacity);
-    this.el.querySelector('#tfire').style.display = this.s.fireMode === 'auto' ? 'none' : '';
   }
   show(on) { this.el.classList.toggle('on', on); if (!on) this.reset(); }
   reset() { this.move.x = this.move.y = 0; this.fire = this.use = false; this.touches.clear(); this.stick.classList.remove('on'); }

@@ -36,7 +36,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.max(0, Math.floor(s % 60))).padStart(2, '0')}`;
 const errors = []; addEventListener('error', e => errors.push(String(e.message)));
 
-const CFG = { retrieve: 2.5, breach: 1.2, fuse: 1.8, eye: 1.6, run: 5.2, walk: 2.6, jump: 7.2, sens: 0.0022, defuse: 5, plant: 3, hold: 30, useR: 2.3, blockR: 7 };
+const CFG = { retrieve: 2.5, breach: 1.2, fuse: 1.8, eye: 1.6, run: 5.2, walk: 2.6, jump: 7.2, sens: 0.0022, defuse: 5, plant: 3, hold: 20, useR: 2.3, blockR: 7 };
 
 const ABILITIES = {
   smoke: { name: 'Smoke', icon: '☁', cd: 18 }, flash: { name: 'Flash', icon: '✸', cd: 14 }, dash: { name: 'Dash', icon: '»', cd: 8 },
@@ -56,7 +56,7 @@ const MISSIONS = [
     win: { title: 'DEVICE DEFUSED', text: 'The tower is clean.\n\nSignature check: the device carried a Civic Shield signal.\n\nOkonkwo ordered that route. Why?' },
     failTimer: 'The device detonated.' },
   { id: 'm2', title: 'Low Tide', build: buildM2, objective: 'plant_hold',
-    brief: 'Morning, harbor district. Get into the flooded vault, plant a counter-charge on the red Covenant server, then hold the area for 30 seconds while it cracks.',
+    brief: 'Morning, harbor district. Get into the flooded vault, plant a counter-charge on the red Covenant server, then hold the area for 20 seconds while it cracks.',
     timer: 170, roster: ['guard', 'heavy', 'guard', 'guard', 'drone', 'guard', 'sniper', 'heavy'],
     pool: ['sensor', 'smoke', 'dash', 'shield', 'decoy', 'flash'],
     radio: { start: [['OKONKWO', 'Vault is under the warehouse. The red server is yours.'], ['VOSS', 'Water is up to the racks. Lovely.']],
@@ -79,7 +79,7 @@ const MISSIONS = [
       { start: [['OKONKWO', 'Two devices up the radio tower. Go vertical, Rhea.'], ['VOSS', 'Since when do you pick the routes yourself?']], contact: [['COVENANT', 'Tower team, she is in the stairwell!']], near: [['OKONKWO', 'Hold E. Quietly.']], device: [['VOSS', 'One down. Going up.']], low: [['OKONKWO', 'Thirty seconds!']] },
       { title: 'TOWER CLEAN', text: 'Both devices are cold. The tower was broadcasting one word on a loop: WARDEN.\n\nVoss saves a copy of the signal. She does not tell Okonkwo.' }, 'The tower burned the city\'s radio band.'],
     ['m5', 'Cold Storage', { seed: 5252, theme: 'harbor', time: 'morning', hub: 'vault', count: 1, hubSign: 'COLD STORE 4' }, 'plant_hold', 200, 10,
-      'Morning, harbor cold stores. The Covenant ledger server is sealed inside a vault building with no doors. Breach a wall (hold E at the hazard panels), plant the counter-charge, and hold for 30 seconds.',
+      'Morning, harbor cold stores. The Covenant ledger server is sealed inside a vault building with no doors. Breach a wall (hold E at the hazard panels), plant the counter-charge, and hold for 20 seconds.',
       ['guard', 'heavy', 'guard', 'sniper', 'guard', 'heavy', 'drone', 'guard', 'commander', 'guard'], ['shield', 'sensor', 'smoke', 'dash', 'decoy'],
       { start: [['OKONKWO', 'Vault is sealed. You will have to make your own door.'], ['VOSS', 'My favourite kind.']], contact: [['COVENANT', 'Breach alarm! Lock it down!']], near: [['OKONKWO', 'Plant it, hold E.']], planted: [['OKONKWO', 'Charge set. Thirty seconds.']], low: [['OKONKWO', 'The tide gates shut in thirty!']] },
       { title: 'LEDGER BURNED', text: 'The ledger lists every Covenant buyer in Halvane.\n\nOne name repeats on every page: a Civic Shield procurement code. Okonkwo\'s.' }, 'The vault flooded with you outside.'],
@@ -128,7 +128,7 @@ let progress = Number(store.get('sz_progress', 0)) || 0;
 const loadout = store.get('sz_loadout', { primary: 'ar7_lance', sidearm: 'vex_p9', abilities: {} });
 loadout.operative ??= 'rhea';
 const OPERATIVES = { rhea: 'Rhea', kade: 'Kade', yuna: 'Yuna', tomas: 'Tomas', amara: 'Amara' };
-const settings = Object.assign({ sens: 1, touchSens: 1, btnSize: 1, btnOpacity: 0.8, fireMode: 'button', aimAssist: true, quality: 'high' }, store.get('sz_settings', {}));
+const settings = Object.assign({ sens: 1, touchSens: 1, btnSize: 1, btnOpacity: 0.8, fireMode: isTouchDevice() ? 'auto' : 'button', aimAssist: true, quality: isTouchDevice() ? 'auto' : 'high', qMigrated: isTouchDevice() ? 1 : 0 }, store.get('sz_settings', {}));
 if (settings.quality === 'auto' && !settings.qMigrated) { settings.quality = 'high'; settings.qMigrated = 1; store.set('sz_settings', settings); }   // default is High; old 'auto' saves move to High once
 const IS_TOUCH = isTouchDevice();
 document.head.insertAdjacentHTML('beforeend', `<style>${TOUCH_CSS}</style>`);
@@ -276,14 +276,26 @@ function buildMission(idx, opts = {}) {
     let h = 7; for (const ch of mission.id) h = (h * 31 + ch.charCodeAt(0)) | 0;
     map.dressCount = dressMap(world, map.kit.root, map, { seed: mission.proc?.seed || h, theme: th }); window.__dress = dressMap.stats; }
   scene.add(camera);
-  // route / roster
+  // short parts: a multi-objective mission is played one objective per part (60-90 s levels), progress saved per part
+  const nPts = map.points.length, parted = !mode && opts.part != null && mission.objective !== 'plant_hold' && nPts > 1;
+  const part = parted ? Math.min(opts.part, nPts - 1) : 0, parts = parted ? nPts : 1;
+  if (parted) map.points = [map.points[part]];
+  // hostiles guard the objective: take the guard spots nearest to the live objective(s), ground level first
+  if (!mode && map.points.length) {
+    const near = p => { let d = Infinity; for (const q of map.points) d = Math.min(d, p.distanceTo(q) + Math.abs(p.y - q.y) * 2); return d; };
+    const keep = mission.roster.includes('warden') ? map.guards : map.guards.slice().sort((a, b) => near(a) - near(b));
+    map.guards = keep;
+  }
   const r = mission.routes ? mission.routes[opts.route || 'stealth'] : { count: mission.count || 8, timer: mission.timer, spawn: 'default' };
-  route = { id: opts.route || 'default', ...r };
+  route = { id: opts.route || 'default', ...r, part, parts };
+  if (parted) route = { ...route, count: Math.max(3, Math.ceil(r.count / parts) + 1), timer: Math.round(clamp(r.timer / parts + 30, 90, 150)) };
+  else if (!mode && !TEST && idx > 0) route = { ...route, count: Math.min(route.count, 7), timer: Math.min(route.timer, 150) };   // single-part missions stay short too
   if (!mode && (fails[idx] || 0) >= 2) route = { ...route, count: Math.max(3, Math.round(route.count * 0.65)), timer: route.timer + 30, easy: true };   // stuck: fewer hostiles, more time
   clock = route.timer; elapsed = 0; matchOver = false;
   enemies = [];
   map.guards.slice(0, route.count).forEach((p, i) => {
-    const type = mission.roster[i % mission.roster.length];
+    let type = mission.roster[i % mission.roster.length];
+    if (type === 'warden' && route.part < route.parts - 1) type = 'commander';     // the boss only waits in the final part
     if (type === 'warden') p = map.points[map.points.length - 1].clone().add(V(2.5, 0, 0));      // the boss holds the last device
     if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }   // never spawn inside a wall
     const e = new Enemy(type, A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) });
@@ -620,7 +632,7 @@ function updateObjective(dt) {
           if (mission.objective === 'retrieve') devices[i].g.children.slice(0, 2).forEach(o => o.visible = false);
           const left = objective.done.filter(d => !d).length;
           if (left) { if (mission.radio.device) radio(...mission.radio.device[0]); else radio('OKONKWO', `Device down. ${left} to go.`); }
-          else if (mission.objective === 'retrieve') { objective.extract = true; radioOnce('extract'); if (extractMark) extractMark.visible = true; for (const e of enemies) e.alert(player.pos, 1); }
+          else if (mission.objective === 'retrieve' && route.part >= route.parts - 1) { objective.extract = true; radioOnce('extract'); if (extractMark) extractMark.visible = true; for (const e of enemies) e.alert(player.pos, 1); }
           else win();
         }
       }
@@ -812,7 +824,7 @@ function pollInput(dt) {
     if (touch.take('reload')) startReload();
     keys.KeyE = touch.use;
     touch.setCooldowns(abilityCD);
-    if (settings.fireMode === 'auto') mouse.l = !!(assist && assist.ang < 0.03 + 0.4 / assist.c.distanceTo(player.pos));
+    if (settings.fireMode === 'auto') mouse.l = touch.fire || !!(assist && assist.ang < 0.03 + 0.4 / assist.c.distanceTo(player.pos));
   }
   // pull toward the target: always on touch, on PC only while firing
   if (assist && (touch || mouse.l)) {
@@ -1096,7 +1108,8 @@ function startMission(idx = selected, opts = {}) {
   crazy.midgame().then(() => { startMission.busy = false; startMissionNow(idx, opts); });
 }
 function startMissionNow(idx, opts) {
-  const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice() };
+  if (opts.part === undefined && !opts.mode && !TEST) opts = { ...opts, part: partOf(idx) };   // resume at the saved part
+  const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice(), part: opts.part };
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
@@ -1105,7 +1118,7 @@ function startMissionNow(idx, opts) {
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); if (idx === 0 && mode !== 'survival' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
   if (!tutorial) crazy.armAds();
-  firstContactT = idx === 1 && !mode ? 14 : -1;                                          // mission 2: force a first fight within ~15 s
+  firstContactT = mode || tutorial ? -1 : idx === 1 ? 14 : TEST ? -1 : 20;                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
   if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) canvas.requestPointerLock?.();
@@ -1118,8 +1131,18 @@ function lose(reason) {
   fails[missionIdx] = (fails[missionIdx] || 0) + 1;
   showEnd('MISSION FAILED', reason + (fails[missionIdx] >= 2 ? '\n\nNext try is easier: fewer hostiles and +30 s.' : ''), null, { death: !player.alive, failed: true });
 }
+const partOf = idx => store.get('sz_parts', {})[MISSIONS[idx].id] || 0;
 function win() {
   if (matchOver) return; endMatch();
+  if (route.parts > 1 && route.part < route.parts - 1) {                       // a part of a longer mission: bank it, go straight to the next part
+    const pp = store.get('sz_parts', {}); pp[mission.id] = route.part + 1; store.set('sz_parts', pp);
+    fails[missionIdx] = 0; matchXP.win = Math.round(META.XP.win / 2);
+    META.profile.coins += 50; META.profile.upPoints++; META.saveProfile(); crazy.happy();
+    showEnd(`PART ${route.part + 1}/${route.parts} CLEARED`, `+50 ◎ · +1 upgrade point\n\n[ NEXT: part ${route.part + 2} of "${mission.title}" ]`, missionIdx);
+    return;
+  }
+  { const pp = store.get('sz_parts', {}); if (pp[mission.id]) { delete pp[mission.id]; store.set('sz_parts', pp); } }
+  if (!mode) META.profile.coins += 100;
   matchXP.win = META.XP.win;
   const before = META.unlocked(progress);
   fails[missionIdx] = 0;
@@ -1177,11 +1200,13 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
     const ds = MODES.dailyState();
     text += ds.done ? `\n\n📅 Come back tomorrow: day ${ds.streak + 1} of your streak pays +${MODES.dailyBonus(ds.streak + 1)} XP.`
                     : `\n\n📅 Today's daily challenge is waiting in the lobby: +${MODES.dailyBonus(ds.next)} XP.`;
+    text += `\n🎁 Log in tomorrow for +${MODES.loginTomorrow()} ◎.`;
   }
   $('endTitle').textContent = title; $('endText').textContent = text;
   $('endStats').textContent = `Time ${fmt(elapsed)} · Kills ${stats.kills} · Accuracy ${stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0}% · Headshots ${stats.heads}`;
   RADIO.debrief($('debrief'), mission.id, !title.startsWith('MISSION FAILED'));
   $('next').style.display = nextIdx !== null ? '' : 'none';
+  $('trySurv').style.display = failed && !mode && (fails[missionIdx] || 0) >= 2 && progress >= 1 ? '' : 'none';
   $('again').textContent = failed ? '↻ RETRY' : 'REPLAY'; $('again').className = failed ? 'go' : '';
   clearInterval(autoNextT);
   if (nextIdx !== null && !TEST) {                                              // win: next mission starts by itself unless the player touches anything
@@ -1296,6 +1321,7 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else canvas.requestPointerLock?.(); crazy.gameplay(true); };
+$('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
 $('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); startMission(lastStart.idx, lastStart.opts); };
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => { paused = false; openLobby(); };
 
@@ -1403,14 +1429,24 @@ function chips() {
 function openQuick() {
   selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected];
   only('quick'); setPreview();
-  $('qChapter').textContent = `CHAPTER ${Math.floor(selected / 3) + 1} · MISSION ${selected + 1}`;
+  { const pt = partOf(selected); $('qChapter').textContent = `CHAPTER ${Math.floor(selected / 3) + 1} · MISSION ${selected + 1}` + (pt ? ` · PART ${pt + 1}` : ''); }
   $('qTitle').textContent = m.title.toUpperCase(); $('qBrief').textContent = m.brief;
   $('qKit').textContent = `${OPERATIVES[loadout.operative].toUpperCase()} · ${WEAPONS[loadout.primary].name.toUpperCase()} + ${WEAPONS[loadout.sidearm].name.toUpperCase()}`;
 }
 $('qDeploy').onclick = () => { unlockAudio(); const m = MISSIONS[selected]; startMission(selected, { route: !m.routes ? 'default' : m.routes[selRoute] ? selRoute : 'stealth', abilities: [] }); };
 $('qLoadout').onclick = () => openBriefing('agent');
 $('qMission').onclick = () => openBriefing('mission');
-function openLobby() { only('lobby'); chips(); setPreview(); modeButtons(); }
+function openLobby() {
+  only('lobby');
+  const lc = TEST ? null : MODES.loginClaim();
+  if (lc) { META.profile.coins += lc.coins; META.saveProfile(); sfx.coin?.(); loginBanner(lc); }
+  chips(); setPreview(); modeButtons();
+}
+function loginBanner(lc) {
+  const d = document.createElement('div'); d.className = 'loginToast';
+  d.innerHTML = `<b>DAY ${lc.day} LOGIN REWARD</b> +${lc.coins} ◎<small>${[1, 2, 3, 4, 5, 6, 7].map(n => n <= lc.day ? '■' : '□').join(' ')} · tomorrow +${lc.tomorrow} ◎</small>`;
+  document.body.append(d); setTimeout(() => d.remove(), 5000);
+}
 function modeButtons() {
   const d = MODES.dailyToday(progress, MISSIONS.length), st = MODES.dailyState();
   $('lDaily').textContent = st.done ? `✓ DAILY DONE · ${st.streak}-DAY STREAK` : `📅 DAILY: ${MISSIONS[d.idx].title.toUpperCase()} · +${MODES.dailyBonus(st.next)} XP`;

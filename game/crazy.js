@@ -1,7 +1,7 @@
 // CrazyGames SDK v3 wrapper. Every call is a safe no-op when the SDK is absent (local dev, ?test=1, blocked script).
 // Hooks: crazy.init(), loading(on), gameplay(on), happy(), midgame(), rewarded(onDone), onAd(cb) for mute/pause.
 const MIN_AD_GAP = 180000;           // midgame ads at most every 3 min (the SDK also enforces its own cooldown)
-const KEYS = ['sz_loadout', 'sz_profile', 'sz_progress', 'sz_settings', 'sz_tutorial_done', 'sz_onboard_done', 'sz_daily', 'sz_surv_best'];
+const KEYS = ['sz_loadout', 'sz_profile', 'sz_progress', 'sz_settings', 'sz_tutorial_done', 'sz_onboard_done', 'sz_daily', 'sz_surv_best', 'sz_parts', 'sz_login'];
 let S = null, lastAd = 0, adsArmed = false, adHook = () => {}, playing = false, inAd = false;
 
 const sdk = () => S;

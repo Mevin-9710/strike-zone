@@ -327,3 +327,10 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - PLAY opens a one-screen deploy card: next mission, saved kit, big DEPLOY. CHANGE LOADOUT / OTHER MISSION open the old step flow.
 - Minimap shows every live hostile (dim red; bright red when spotted or revealed). Floating HUD pins tried and removed.
 - Sensor radius 8 → 30 m and reveal 4.6 → 8 s; recon drone radius 12 → 35 m.
+
+## 2026-11-17 · v5: short levels, hostiles where you are going, D1 hooks
+- Missions with several objectives play as parts (one objective each, timer clamp(t/parts+30, 90..150) s, ceil(count/parts)+1 hostiles). Part progress saved in `sz_parts` (cloud-synced); part clear pays +50 ◎, +1 upgrade point, half win XP; the story ending only after the last part; the boss only in the last part. Single-part missions are capped at 150 s / 7 hostiles; plant-and-hold is 20 s (was 30).
+- Hostile placement: guard spots are taken nearest to the live objective (ground level preferred) instead of anywhere on the map (procgen spread them map-wide incl. rooftops, so players could not find them). With no fight after 20 s, the nearest squad comes to the player (was mission 2 only).
+- Mission win pays +100 ◎. 7-day login calendar (100→600 ◎, `sz_login`), banner on the first lobby visit each day; end screens tease tomorrow's login coins.
+- After 2 fails on a mission the fail screen offers ♾ TRY SURVIVAL.
+- Phones default to auto-fire and Auto quality (PC stays High).
