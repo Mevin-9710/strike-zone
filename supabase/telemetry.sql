@@ -23,3 +23,8 @@ create policy "events insert anon" on public.events for insert to anon, authenti
 --   round(avg((data->>'fps')::numeric) filter (where ev = 'fps'), 1) avg_fps
 -- from events where at > now() - interval '1 day' group by dev;
 -- Where people quit:  select dev, data->>'where' w, count(*) from events where ev = 'quit' group by 1, 2 order by 3 desc;
+
+-- 2026-11-18: allow reading the (anonymous) events with the public key so the dev tooling can run funnel queries.
+-- Only this table becomes readable; ideas/votes/subscribers keep their own policies.
+drop policy if exists "events read anon" on public.events;
+create policy "events read anon" on public.events for select to anon, authenticated using (true);
