@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "note": "Live tuning for Strike Zone. Fetched by every game at boot (game/remote.js). Missing keys keep the built-in values.",
+  "quality": { "desk": null, "touch": null },
+  "touchAutoFire": true,
+  "partTimer": { "extra": 30, "min": 90, "max": 150 },
+  "singleMaxTimer": 150,
+  "singleMaxCount": 7,
+  "holdSeconds": 20,
+  "contactAfter": 20,
+  "easyAfterFails": 2,
+  "easyCountMul": 0.65,
+  "easyExtraTime": 30,
+  "autoNextSeconds": 5,
+  "winCoins": 100,
+  "partCoins": 50,
+  "midgameGapSeconds": 180
+}
