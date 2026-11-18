@@ -334,3 +334,8 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Mission win pays +100 ◎. 7-day login calendar (100→600 ◎, `sz_login`), banner on the first lobby visit each day; end screens tease tomorrow's login coins.
 - After 2 fails on a mission the fail screen offers ♾ TRY SURVIVAL.
 - Phones default to auto-fire and Auto quality (PC stays High).
+
+## 2026-11-18 · v6: telemetry + route guidance
+- Anonymous telemetry (game/telemetry.js -> Supabase `events`, insert-only RLS; schema in supabase/telemetry.sql): ctx (screen, GPU, memory, cores, browser/OS, referrer, returning), boot, start, tut steps, kill1, part/win/fail with per-level stats (shots, accuracy, kills, enemies left, damage, killer type, abilities, pauses, time to first move/shot/fight, time left, fps), fps every 30 s, ads, button clicks, JS errors, quit with a live snapshot. Off in ?test=1.
+- Objective arrow follows the nav route (stairs/fire escapes) to a waypoint ~6 m ahead, with route length as distance; the route is drawn on the minimap in yellow. A straight-line arrow sent players into walls below the m1 roof device.
+- tools/playtest.cjs: autopilot bot (desktop) that plays the first levels, logs drill timing, first contact/kill and outcome, and saves screenshots. Touch runs need stick input (not supported yet).

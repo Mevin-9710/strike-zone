@@ -25,6 +25,7 @@ import { Mentor } from './game/mentor.js';
 import { weaponInfo } from './game/weapons.js';
 import { radio as RADIO } from './game/radio.js';
 import * as MODES from './game/modes.js';
+import { track, at, onQuit } from './game/telemetry.js';
 const TUT = { dt: 0, look: 0, moved: false, walked: false, jumped: false, slid: false, fired: false, aiming: false, reloaded: false, swapped: false, ab0: false, ab1: false, kills: 0, interacting: false };
 
 const Q = new URLSearchParams(location.search);
@@ -216,6 +217,7 @@ const W = { slots: [], cur: 0, state: {}, cd: 0, reloadT: 0, trigger: false, fir
 let picks = [], abilityCD = [0, 0], keys = {}, mouse = { l: false, r: false }, lookD = { x: 0, y: 0 };
 let objective = { prog: [], done: [], planted: false, plantProg: 0, holdProg: 0, active: -1 };
 let stats = { kills: 0, shots: 0, hits: 0, heads: 0 };
+let LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };   // per-level telemetry
 let flashK = 0, hurtK = 0, hitmT = 0, laserK = 0, dmgDirs = [], said = {}, repathBudget = 2, stepT = 0;
 const proxy = new THREE.Object3D();                 // stands in for the player's body for dash/shield fx
 let tracers = [], impacts = [], lasers = new Map();
@@ -426,7 +428,7 @@ function fire() {
     hitMarker(killed, head); sfx.hit(head); addImpact(end, dir.clone().negate(), true);
     if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
     FEEL.combo++; FEEL.comboT = 1.2;
-    if (killed) { stats.kills++; killTick(); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
+    if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
   if (s.mag === 0 && s.reserve > 0) setTimeout(() => { if (running && cur() === w && st().mag === 0) startReload(); }, 250);
@@ -468,12 +470,12 @@ function enemyFired(e, from, to, dmg) {
   sfx.shot(e.S.cls, { dist: d, pan: Math.sin(rel - player.yaw - Math.PI) });
   const n = V().subVectors(from, to).normalize(), hit = world.raycast(from, to.clone().sub(from).normalize(), from.distanceTo(to));
   if (hit && !dmg) addImpact(hit.point, hit.normal, false);
-  if (dmg > 0) damagePlayer(dmg, from);
+  if (dmg > 0) { LS.by = e.type || ''; damagePlayer(dmg, from); }
   else if (!hit && n) { /* whizz-by miss */ }
 }
 function damagePlayer(dmg, from) {
   if (!player.alive || matchOver || invT > 0) return;
-  let x = dmg; if (player.shield > 0) { const a = Math.min(player.shield, x); player.shield -= a; x -= a; }
+  LS.dmg += dmg; let x = dmg; if (player.shield > 0) { const a = Math.min(player.shield, x); player.shield -= a; x -= a; }
   player.hp -= x; hurtK = Math.min(1, hurtK + 0.35 + dmg / 60); sfx.hurt();
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
@@ -555,7 +557,7 @@ function enemyEffect(kind, d) {
 function chosenAbilities() { const saved = loadout.abilities[mission?.id]; return saved && saved.length === 2 ? saved : mission.pool.slice(0, 2); }
 function useAbility(slot) {
   const kind = picks[slot]; if (!kind || !running || abilityCD[slot] > 0 || !player.alive) return false;
-  abilityCD[slot] = ABILITIES[kind].cd; sfx.ability();
+  abilityCD[slot] = ABILITIES[kind].cd; sfx.ability(); LS.ab++;
   const fwd = V(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
   const look = V(); camera.getWorldDirection(look);
   const hand = camera.getWorldPosition(V()).addScaledVector(look, 0.5).add(V(0, -0.25, 0)).addScaledVector(V(-fwd.z, 0, fwd.x), -0.15);
@@ -847,7 +849,8 @@ function update(dt) {
   if (FEEL.hitStop > 0) { FEEL.hitStop -= dt; dt *= 0.12; }               // lethal headshot: world slows for a beat
   FEEL.punchP *= Math.max(0, 1 - dt * 16); FEEL.punchY *= Math.max(0, 1 - dt * 16);
   FEEL.comboT -= dt; if (FEEL.comboT <= 0) FEEL.combo = 0;
-  { const fighting = enemies.some(e => e.alive && e.state === 'combat'); music.setIntensity(fighting ? 1 : clock < 30 ? 0.7 : 0.25); }
+  if (LS.mv < 0 && player.moving) LS.mv = Math.round(elapsed); if (LS.sh < 0 && stats.shots) LS.sh = Math.round(elapsed);
+  { const fighting = enemies.some(e => e.alive && e.state === 'combat'); if (fighting && LS.ct < 0) LS.ct = Math.round(elapsed); music.setIntensity(fighting ? 1 : clock < 30 ? 0.7 : 0.25); }
   for (const e of enemies) if (!e.alive && e._dv && e.deadT < 0.45) { e.pos.addScaledVector(e._dv, dt * (1 - e.deadT / 0.45)); }   // death knockback
   const tutHold = !!tutorial?.hold;                                     // tutorial drills: freeze the timer + hostiles
   elapsed += dt; if (!tutHold) clock -= dt; repathBudget = 2;
@@ -886,7 +889,11 @@ function update(dt) {
     let tgt = null, bd = Infinity, label = 'OBJ';
     if (objective.extract) { tgt = map.extract; label = 'EXTRACT'; }
     else map.points.forEach((p, i) => { if (objective.done[i] || (mission.objective === 'plant_hold' && objective.planted && i)) return; const d = p.distanceTo(player.pos); if (d < bd) { bd = d; tgt = p; } });
-    if (tgt) { _arrowP.copy(tgt).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; } FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(tgt.distanceTo(player.pos))); }
+    if (tgt) {                                                           // follow the walkable route (stairs, ladders), not a straight line through walls
+      guideTo(tgt, dt); const w = GUIDE.wp || tgt;
+      _arrowP.copy(w).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; }
+      FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(GUIDE.len || tgt.distanceTo(player.pos)));
+    } else GUIDE.path = null;
   }
   if (mentor) { mentor.update(dt, MCTX); mfx?.update(dt); }
   if (tutorial?.active) tutorialTick(dt);
@@ -951,6 +958,7 @@ const TUT_HOOKS = {
     mentor.yaw = Math.atan2(_tv.x, _tv.z); mentor.demo(picks[slot]);
   },
   onStep(id) {
+    track('tut', { s: id }); at('tut:' + id);
     if (id === 'reload') { const s = st(); if (s.mag >= cs().mag) { const n = Math.min(s.mag - 1, 6); s.mag -= n; s.reserve += n; } }
     if (id === 'ab0') abilityCD[0] = 0; if (id === 'ab1') abilityCD[1] = 0;
     if (id === 'fight') {
@@ -973,6 +981,18 @@ function tutorialTick(dt) {
 }
 window.__replayTutorial = () => { unlockAudio(); startMission(0, { tutorial: true }); };
 const _arrowP = new THREE.Vector3();
+// route guide: a nav path to the objective refreshed every 0.8 s; the arrow points at a waypoint ~6 m along it
+const GUIDE = { t: 0, path: null, wp: null, len: 0, tgt: null };
+function guideTo(tgt, dt) {
+  if ((GUIDE.t -= dt) > 0 && GUIDE.tgt === tgt) return;
+  GUIDE.t = 0.8; GUIDE.tgt = tgt;
+  const path = world.findPath(player.pos, tgt);
+  if (!path || path.length < 2) { GUIDE.path = null; GUIDE.wp = null; GUIDE.len = 0; return; }
+  path.push(tgt.clone()); GUIDE.path = path;
+  let len = 0, wp = null, acc = 0, prev = player.pos;
+  for (const p of path) { const d = prev.distanceTo(p); len += d; acc += d; if (!wp && acc > 6) wp = p; prev = p; }
+  GUIDE.wp = wp || tgt; GUIDE.len = len;
+}
 function updateCamera() {
   camera.position.set(player.pos.x, player.pos.y + CFG.eye - (FEEL.slideT > 0 ? 0.55 : 0), player.pos.z);
   camera.rotation.set(player.pitch + FEEL.punchP + (shakeK ? rand(-1, 1) * shakeK * 0.03 : 0), player.yaw + FEEL.punchY + (shakeK ? rand(-1, 1) * shakeK * 0.03 : 0), FEEL.slideT > 0 ? 0.04 : 0, 'YXZ');
@@ -1094,6 +1114,7 @@ function drawMinimap() {
   for (const it of intel) if (!it.got && it.pos.distanceTo(player.pos) < 22) dot(it.pos.x, it.pos.z, '#b44bff', 3);
   for (const m of medkits) if (m.t <= 0) { const x = (m.pos.x - MM.ox) * MM.scale, y = (m.pos.z - MM.oz) * MM.scale, r = 4 * MM.scale / k; g.fillStyle = '#3ddc84'; g.strokeStyle = '#111'; g.lineWidth = 1.5 * MM.scale / k; g.beginPath(); g.rect(x - r, y - r / 3, r * 2, r * 2 / 3); g.rect(x - r / 3, y - r, r * 2 / 3, r * 2); g.fill(); g.stroke(); }
   if (objective.extract) dot(map.extract.x, map.extract.z, '#3ddc84', 7);
+  if (GUIDE.path) { g.strokeStyle = '#ffd23b'; g.lineWidth = 2.5 * MM.scale / k; g.beginPath(); GUIDE.path.forEach((p, i) => { const x = (p.x - MM.ox) * MM.scale, y = (p.z - MM.oz) * MM.scale; if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.stroke(); }   // route to the objective
   for (const e of enemies) if (e.alive) { const hot = e.revealT > 0 || (e.state === 'combat' && e.targetKind === 'player'); dot(e.pos.x, e.pos.z, hot ? '#ff3b47' : '#c0303a', hot ? 4.5 : 3.5); }   // every hostile shows; spotted/revealed ones brighter
   for (const z of zones.smoke) dot(z.pos.x, z.pos.z, 'rgba(200,205,212,.7)', z.radius * k / MM.scale * MM.scale);
   g.restore();
@@ -1105,7 +1126,7 @@ function startMission(idx = selected, opts = {}) {
   if (idx > progress && !DEBUG) return;
   if (!crazy.active) { startMissionNow(idx, opts); return; }
   if (startMission.busy) return; startMission.busy = true;                       // midgame ad between missions (rate-limited in crazy.js)
-  crazy.midgame().then(() => { startMission.busy = false; startMissionNow(idx, opts); });
+  track('ad', { k: 'midgame' }); crazy.midgame().then(() => { startMission.busy = false; startMissionNow(idx, opts); });
 }
 function startMissionNow(idx, opts) {
   if (opts.part === undefined && !opts.mode && !TEST) opts = { ...opts, part: partOf(idx) };   // resume at the saved part
@@ -1114,6 +1135,8 @@ function startMissionNow(idx, opts) {
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
   if (mode === 'survival') survivalSetup();
+  LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };
+  startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n }); at(`${mission.id}:${route.part}`);
   for (const id of ['brief', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); if (idx === 0 && mode !== 'survival' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
@@ -1127,13 +1150,21 @@ function startMissionNow(idx, opts) {
 function endMatch() { tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
 function lose(reason) {
   if (matchOver) return; endMatch();
+  track('fail', { m: mission.id, p: route.part, mode: mode || '', why: player.alive ? 'timer' : 'dead', t: Math.round(elapsed), w: wave, n: fails[missionIdx] || 0, ...lvlStats() }); at('fail:' + mission.id);
   if (mode === 'survival') { const rec = MODES.survRecord(wave); survBestV = MODES.survBest(); showEnd('SURVIVAL OVER', `You reached wave ${wave}.` + (rec ? '\n\nNEW BEST!' : `\n\nBest: wave ${survBestV}.`), null, { death: true, failed: true }); return; }
   fails[missionIdx] = (fails[missionIdx] || 0) + 1;
   showEnd('MISSION FAILED', reason + (fails[missionIdx] >= 2 ? '\n\nNext try is easier: fewer hostiles and +30 s.' : ''), null, { death: !player.alive, failed: true });
 }
 const partOf = idx => store.get('sz_parts', {})[MISSIONS[idx].id] || 0;
+function lvlStats() {
+  let alive = 0; for (const e of enemies) if (e.alive) alive++;
+  return { sh: stats.shots, acc: stats.shots ? Math.round(stats.hits / stats.shots * 100) : 0, k: stats.kills, hs: stats.heads, left: alive, of: enemies.length, dmg: Math.round(LS.dmg),
+    ab: LS.ab, pz: LS.pz, mv1: LS.mv, sh1: LS.sh, ct1: LS.ct, by: LS.by, easy: !!route?.easy, tl: Math.round(clock < 1e8 ? clock : 0), fps: Math.round(fps), q: qLevel };
+}
+onQuit(() => running || paused ? { lv: mission?.id, p: route?.part, el: Math.round(elapsed), hp: Math.round(player.hp), step: tutorial?.active ? tutorial.step : '', ...lvlStats() } : {});
 function win() {
   if (matchOver) return; endMatch();
+  track(route.parts > 1 && route.part < route.parts - 1 ? 'part' : 'win', { m: mission.id, p: route.part, mode: mode || '', t: Math.round(elapsed), ...lvlStats() }); at('end:' + mission.id);
   if (route.parts > 1 && route.part < route.parts - 1) {                       // a part of a longer mission: bank it, go straight to the next part
     const pp = store.get('sz_parts', {}); pp[mission.id] = route.part + 1; store.set('sz_parts', pp);
     fails[missionIdx] = 0; matchXP.win = Math.round(META.XP.win / 2);
@@ -1178,7 +1209,7 @@ function upgradeUI() {
   $('upDmg').onclick = () => { if (META.upgrade(id, 'dmg')) { sfx.coin(); upgradeUI(); } };
   $('upAmmo').onclick = () => { if (META.upgrade(id, 'ammo')) { sfx.coin(); upgradeUI(); } };
 }
-function rewardedAd(onDone) { crazy.rewarded(onDone); }
+function rewardedAd(onDone) { track('ad', { k: 'rewarded' }); crazy.rewarded(() => { track('ad', { k: 'rewarded_ok' }); onDone(); }); }
 function audioMute(on) { try { const c = window.__audioCtx; if (c) on ? c.suspend() : c.resume(); } catch (e) { /* none */ } }
 function revive() {
   revived = true; $('end').classList.remove('show'); $('hud').classList.add('on');
@@ -1218,7 +1249,7 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   $('end').classList.add('show');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
-function doPause() { if (!running) return; touch?.show(false); running = false; paused = true; mouse.l = false; $('pause').classList.add('show'); crazy.gameplay(false); }
+function doPause() { if (!running) return; LS.pz++; touch?.show(false); running = false; paused = true; mouse.l = false; $('pause').classList.add('show'); crazy.gameplay(false); }
 
 // ---------- briefing ----------
 let selected = Math.min(progress, MISSIONS.length - 1), selRoute = 'stealth', selAbilities = [];
@@ -1428,7 +1459,7 @@ function chips() {
 // PLAY: one screen, one tap. Next mission with the saved kit; loadout / mission pickers are optional.
 function openQuick() {
   selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected];
-  only('quick'); setPreview();
+  only('quick'); setPreview(); at('deploy');
   { const pt = partOf(selected); $('qChapter').textContent = `CHAPTER ${Math.floor(selected / 3) + 1} · MISSION ${selected + 1}` + (pt ? ` · PART ${pt + 1}` : ''); }
   $('qTitle').textContent = m.title.toUpperCase(); $('qBrief').textContent = m.brief;
   $('qKit').textContent = `${OPERATIVES[loadout.operative].toUpperCase()} · ${WEAPONS[loadout.primary].name.toUpperCase()} + ${WEAPONS[loadout.sidearm].name.toUpperCase()}`;
@@ -1437,7 +1468,7 @@ $('qDeploy').onclick = () => { unlockAudio(); const m = MISSIONS[selected]; star
 $('qLoadout').onclick = () => openBriefing('agent');
 $('qMission').onclick = () => openBriefing('mission');
 function openLobby() {
-  only('lobby');
+  only('lobby'); at('lobby');
   const lc = TEST ? null : MODES.loginClaim();
   if (lc) { META.profile.coins += lc.coins; META.saveProfile(); sfx.coin?.(); loginBanner(lc); }
   chips(); setPreview(); modeButtons();
@@ -1529,6 +1560,7 @@ function frame(now) {
   frames++; fpsT += Math.min((now - (frame.prev ?? now)) / 1000, 1); frame.prev = now;
   if (fpsT >= 0.5) {
     fps = frames / fpsT; frames = 0; fpsT = 0;
+    if (running && (frame.tk = (frame.tk || 0) + 1) % 30 === 0) track('fps', { fps: Math.round(fps), q: qLevel, s: Math.round(dynScale * 100) });
     if (running && !manual && settings.quality === 'auto') {
       const target = IS_TOUCH ? 45 : 58;
       if (fps < target - 3) {
@@ -1567,7 +1599,7 @@ window.__game = {
   get scene() { return scene; }, get renderer() { return renderer; }, get camera() { return camera; },
   setQuality(q) { settings.quality = q; qLevel = q === 'high' ? 2 : 1; applyQuality(); },
   get info() { return { ...renderer.info.render, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, q: qLevel, fps }; },
-  get player() { return player; }, get enemies() { return enemies; }, get world() { return world; }, get map() { return map; },
+  get player() { return player; }, get guide() { return GUIDE; }, get enemies() { return enemies; }, get world() { return world; }, get map() { return map; },
 };
 
 // ---------- boot ----------
@@ -1580,7 +1612,7 @@ window.__game = {
   }
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
-  crazy.loading(false);
+  crazy.loading(false); track('boot', { load: Math.round(performance.now() / 100) / 10, q: settings.quality });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
