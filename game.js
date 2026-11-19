@@ -579,6 +579,7 @@ function dmTick(dt) {
     return 'RESPAWNING…';
   }
   DM.uavT -= dt; DM.odT -= dt;
+  if (RC.dmInfiniteAmmo) for (const id of W.slots) { const s = W.state[id]; if (s && s.reserve < 999) s.reserve = 999; }   // reloads never run dry
   if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
   if (elapsed - DM.hitT > 4 && player.hp < 100) player.hp = Math.min(100, player.hp + 25 * dt);     // out of combat: health comes back
   if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
@@ -1138,7 +1139,7 @@ function updateHud(prompt) {
   sS(H.shb, 'display', player.shield > 0 ? 'block' : 'none'); sS(H.shf, 'width', `${player.shield / 60 * 100}%`);
   // ammo
   const ak = W.reloadT > 0 ? 'R' : `${s.mag}/${s.reserve}`;
-  if (H.ammo._k !== ak) { H.ammo._k = ak; H.ammo.innerHTML = W.reloadT > 0 ? 'RELOAD' : `${s.mag} <small>/ ${s.reserve}</small>`; }
+  if (H.ammo._k !== ak) { H.ammo._k = ak; H.ammo.innerHTML = W.reloadT > 0 ? 'RELOAD' : `${s.mag} <small>/ ${mode === 'dm' && RC.dmInfiniteAmmo ? '∞' : s.reserve}</small>`; }
   sC(H.ammo, 'low', s.mag <= Math.ceil(w.mag * 0.2));
   sS(H.rbar, 'display', W.reloadT > 0 ? 'block' : 'none'); if (W.reloadT > 0) sS(H.rbf, 'width', `${(1 - W.reloadT / w.reload) * 100}%`);
   // abilities

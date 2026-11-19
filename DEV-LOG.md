@@ -362,3 +362,6 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Addiction loop: multi-kills within 4 s (DOUBLE / TRIPLE / RAMPAGE / UNSTOPPABLE); streak rewards 3 = UAV (all bots revealed 12 s), 5 = OVERDRIVE (+60% damage 12 s), 8 = AIRSTRIKE (blasts every live bot); health regenerates after 4 s without damage; end screen rank tier (Bronze→Legend), kills-to-beat-best, auto REMATCH countdown (`dmRematch`, 8 s, cancelled by any touch).
 - Mobile: radio subtitles moved top-center, compact, never a column in portrait; portrait kill bar and kill feed re-placed; spray button dimmed.
 - Visual pass: Deathmatch end screen = animated tier-coloured rank badge + 4 stat tiles (kills, K/D, best streak, coins) + pulsing personal-best line; PLAY picker shows your best Deathmatch score on a pulsing Deathmatch card; multi-kills flash the screen edges gold.
+
+## 2026-11-19 · v11: Deathmatch infinite ammo
+- `dmInfiniteAmmo` (remote, default on): in Deathmatch every weapon's reserve stays topped up (you still reload the magazine); HUD shows ∞ for reserve. Remote config v3.
