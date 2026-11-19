@@ -110,6 +110,8 @@ export const TOUCH_CSS = `
 body.touch #brief .help{display:none}
 body.touch #abil{display:none}
 body.touch #prompt{top:auto;bottom:calc(30vh + 110px)}
+body.touch #radio{bottom:auto;top:calc(var(--u)*9.5);max-width:58vw}body.touch #radio .txt{font-size:calc(var(--u)*.85);flex:1;min-width:0}body.touch #radio .por{display:none}
+body.touch #tspray{opacity:.45}
 /* portrait play: thumbs sit low, buttons stack up the right edge */
 @media (orientation:portrait){
 #tfire{bottom:calc(16vh)}#taim{bottom:calc(16vh + 92px*var(--ts))}#treload{bottom:calc(16vh + 96px*var(--ts))}
@@ -121,5 +123,7 @@ body.touch #objp{left:auto!important;right:calc(var(--u)*.6);transform:scale(.85
 body.touch #tut{top:calc(var(--u)*21)!important;transform:translateX(-50%) scale(.82)}
 body.touch #wep{bottom:auto!important;top:calc(var(--u)*11);transform:scale(.8);transform-origin:top right}
 body.touch #vit{transform:scale(.85);transform-origin:bottom left}
+body.touch #radio{max-width:90vw;top:calc(var(--u)*30)}body.touch #radio .who{display:none}
+body.touch #dmBar{top:26vh;left:56%;transform:translateX(-50%) skewX(-8deg) scale(.72)}body.touch #feed{top:36vh!important;transform:scale(.75);transform-origin:top right}
 }
 `;

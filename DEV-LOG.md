@@ -355,3 +355,9 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - PLAY opens two big buttons: STORY (next mission, starts at once) and DEATHMATCH (starts at once). Loadout stays in the lobby.
 - Solo Deathmatch (`mode: 'dm'`): 5 min, first to 30 kills; 6 bots always on the map, a new one every 2.5 s when short, spawned at the guard spot furthest from the player; idle bots hunt the player. Player death = respawn after 1.5 s at the spot furthest from live bots with 2.5 s protection (no game over). Streaks tracked; end screen shows K/D, best streak, personal best (`sz_dm_best`), +5 ◎ per kill and a big ↻ REMATCH. All numbers in remote config (dmTime, dmKills, dmBots, dmRespawn, dmCoinsPerKill). Telemetry `dm_end`.
 - Design notes from research: near-instant respawn + spawn protection, spawn away from the action, bots come to you, short matches with one-click rematch.
+
+## 2026-11-19 · v10: HUD study + addictive Deathmatch
+- Study: docs/hud-ui-study.md (v9 screenshots on desktop / phone landscape / phone portrait + Fortnite/Apple/HUD-guide research).
+- Deathmatch HUD: big kill counter with progress bar to the target, 🔥 streak and power-up tags; no story radio, no "spotted" badge, "DEATHMATCH · GO!" opener, FINAL 30 SECONDS call-out (+2 bots).
+- Addiction loop: multi-kills within 4 s (DOUBLE / TRIPLE / RAMPAGE / UNSTOPPABLE); streak rewards 3 = UAV (all bots revealed 12 s), 5 = OVERDRIVE (+60% damage 12 s), 8 = AIRSTRIKE (blasts every live bot); health regenerates after 4 s without damage; end screen rank tier (Bronze→Legend), kills-to-beat-best, auto REMATCH countdown (`dmRematch`, 8 s, cancelled by any touch).
+- Mobile: radio subtitles moved top-center, compact, never a column in portrait; portrait kill bar and kill feed re-placed; spray button dimmed.

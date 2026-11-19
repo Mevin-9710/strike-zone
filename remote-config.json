@@ -33,5 +33,6 @@
   "dmKills": 30,
   "dmBots": 6,
   "dmRespawn": 1.5,
-  "dmCoinsPerKill": 5
+  "dmCoinsPerKill": 5,
+  "dmRematch": 8
 }

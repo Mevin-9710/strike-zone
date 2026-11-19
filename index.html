@@ -71,6 +71,10 @@
     /* radio */
     #radio{left:50%;bottom:calc(var(--u)*6);transform:translateX(-50%);max-width:min(70vw,calc(var(--u)*46));display:none}
     #radio.on{display:flex}
+    #dmBar{position:absolute;left:50%;top:calc(var(--u)*7.6);transform:translateX(-50%) skewX(-8deg);display:none;align-items:center;gap:calc(var(--u)*.8);background:#111;border:3px solid #111;box-shadow:4px 4px 0 rgba(0,0,0,.35);padding:4px 12px;pointer-events:none}
+    #dmBar.on{display:flex}#dmBar .k{display:flex;align-items:baseline;gap:6px;color:#ffd23b;font-family:Impact,Arial,sans-serif}#dmBar .k b{font-size:calc(var(--u)*2.4);line-height:1}#dmBar .k span{font-size:calc(var(--u)*.8);color:#fff}
+    #dmBar .bar{width:calc(var(--u)*12);height:10px;background:#333;border:2px solid #ffd23b}#dmBar .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffd23b,#ff3b47);transition:width .25s}
+    #dmBar .tags span{font:bold calc(var(--u)*.9) Impact,Arial,sans-serif;color:#ff8a3b;margin-left:6px}#dmBar .tags span:empty{display:none}
     #radio .who{background:var(--y);border:3px solid var(--ink);padding:2px calc(var(--u)*0.6);font-size:calc(var(--u)*1);transform:skewX(-8deg);white-space:nowrap;align-self:flex-start}
     #radio .txt{background:rgba(17,17,17,.88);color:#fff;font-family:"Trebuchet MS",Arial,sans-serif;font-weight:bold;font-size:calc(var(--u)*1.05);padding:calc(var(--u)*0.4) calc(var(--u)*0.8);border:3px solid var(--ink);margin-left:-3px}
     /* interaction ring */
@@ -231,6 +235,7 @@
 <body>
   <canvas id="gl"></canvas>
   <div id="hud">
+    <div id="dmBar"><div class="k"><b id="dmK">0</b><span>KILLS</span></div><div class="bar"><i id="dmF"></i></div><div class="tags"><span id="dmS"></span><span id="dmP"></span></div></div>
     <div id="whiteout" class="ov"></div>
     <div id="hurt" class="ov"></div>
     <div id="laser" class="ov"></div>

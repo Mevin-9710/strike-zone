@@ -53,7 +53,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       const dm = await dpg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); const n0 = g.enemies.filter(e => e.alive).length; g.killAll(); g.step(4); const n1 = g.enemies.filter(e => e.alive).length;
         g.damage(500); g.step(0.2); const dead = !g.player.alive; g.step(3); return { n0, n1, dead, back: g.player.alive, hud: document.getElementById('obj').textContent, run: g.state.running }; });
       check('deathmatch: bots respawn, player respawns, HUD counts kills', dm.n0 >= 4 && dm.n1 >= 1 && dm.dead && dm.back && /DEATHMATCH/.test(dm.hud) && dm.run, JSON.stringify(dm));
-      await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /TIME UP|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
+      await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /RANK|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
       await dctx.close(); }
     await pg.evaluate(() => __game.openBriefing());
     check('briefing opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));

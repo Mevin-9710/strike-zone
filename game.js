@@ -423,7 +423,7 @@ function fire() {
   if (best) {
     const head = best.h.part === 'head';
     const mult = head ? (best.h.mult || w.head) : best.h.mult;
-    const amount = w.dmg * mult * META.dmgMult(cur());
+    const amount = w.dmg * mult * META.dmgMult(cur()) * (mode === 'dm' && DM.odT > 0 ? 1.6 : 1);
     const killed = best.e.damage(amount, player.pos.clone(), best.h.part);
     { const sp = toScreen(end); if (sp.on) FX.damageNumber(sp.x, sp.y, Math.round(amount), { head, kill: killed }); FX.hitPunch(head ? 1 : 0.5); }
     if (killed) { const n = FX.streakTick(performance.now()); FX.killBanner(head ? 'HEADSHOT' : 'ELIMINATED', { head, streak: n }); FX.xpPop(META.XP.kill + (head ? META.XP.head : 0), head ? 'HEADSHOT' : 'KILL'); }
@@ -431,7 +431,7 @@ function fire() {
     hitMarker(killed, head); sfx.hit(head); addImpact(end, dir.clone().negate(), true);
     if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
     FEEL.combo++; FEEL.comboT = 1.2;
-    if (killed && mode === 'dm') { DM.streak++; DM.best = Math.max(DM.best, DM.streak); }
+    if (killed && mode === 'dm') dmKill();
     if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
@@ -479,7 +479,7 @@ function enemyFired(e, from, to, dmg) {
 }
 function damagePlayer(dmg, from) {
   if (!player.alive || matchOver || invT > 0) return;
-  LS.dmg += dmg; let x = dmg; if (player.shield > 0) { const a = Math.min(player.shield, x); player.shield -= a; x -= a; }
+  LS.dmg += dmg; DM.hitT = elapsed; let x = dmg; if (player.shield > 0) { const a = Math.min(player.shield, x); player.shield -= a; x -= a; }
   player.hp -= x; hurtK = Math.min(1, hurtK + 0.35 + dmg / 60); sfx.hurt();
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
@@ -530,7 +530,20 @@ function nextWave() {
   FX.announce(`WAVE ${wave}`, 'start'); sfx.done?.();
 }
 // ---------- solo deathmatch: bots keep coming, you respawn, first to dmKills or most kills when the clock ends ----------
-const DM = { d: 0, streak: 0, best: 0, k0: 0, spawnT: 0, deadT: 0 };
+const DM = { d: 0, streak: 0, best: 0, k0: 0, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false };
+const MULTI = ['', '', 'DOUBLE KILL', 'TRIPLE KILL', 'RAMPAGE', 'UNSTOPPABLE'];
+function dmKill() {                                                             // multi-kills within 4 s + streak rewards
+  DM.streak++; DM.best = Math.max(DM.best, DM.streak);
+  DM.multi = elapsed - DM.lastK < 4 ? DM.multi + 1 : 1; DM.lastK = elapsed;
+  if (DM.multi >= 2) { FX.announce(MULTI[Math.min(DM.multi, 5)], 'objective'); sfx.coin(); }
+  if (DM.streak === 3) { DM.uavT = 12; FX.announce('UAV ONLINE · 3 STREAK', 'start'); }
+  if (DM.streak === 5) { DM.odT = 12; FX.announce('OVERDRIVE · 5 STREAK', 'start'); }
+  if (DM.streak === 8) { FX.announce('AIRSTRIKE INBOUND · 8 STREAK', 'start'); setTimeout(dmAirstrike, 1500); }
+}
+function dmAirstrike() {
+  if (mode !== 'dm' || matchOver) return; invT = Math.max(invT, 1.5);
+  for (const e of enemies.slice()) if (e.alive) explode(e.pos.clone().add(V(0, 1, 0)), 3.5, 400, 'AIRSTRIKE');
+}
 function dmSpot(far) {
   let best = null, bd = -1;
   for (let i = 0; i < 8; i++) {                                                 // a few random guard spots, keep the one furthest from `far` things
@@ -551,7 +564,7 @@ function dmSetup() {
   for (const d of devices) d.g.visible = false;
   map.points = []; clock = RC.dmTime;
   for (const e of enemies) scene.remove(e.root); enemies = [];
-  Object.assign(DM, { d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0 });
+  Object.assign(DM, { d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
   for (let i = 0; i < RC.dmBots; i++) dmBot();
 }
 function dmTick(dt) {
@@ -565,8 +578,13 @@ function dmTick(dt) {
     }
     return 'RESPAWNING…';
   }
+  DM.uavT -= dt; DM.odT -= dt;
+  if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
+  if (elapsed - DM.hitT > 4 && player.hp < 100) player.hp = Math.min(100, player.hp + 25 * dt);     // out of combat: health comes back
+  if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
+  const want = RC.dmBots + (DM.final ? 2 : 0);
   let alive = 0; for (const e of enemies) if (e.alive) alive++;
-  if (alive < RC.dmBots && (DM.spawnT -= dt) <= 0) {
+  if (alive < want && (DM.spawnT -= dt) <= 0) {
     DM.spawnT = 2.5; dmBot();
     if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) scene.remove(e.root); enemies = enemies.filter(e => !dead.includes(e)); }
   }
@@ -579,7 +597,13 @@ function dmEnd(won) {
   const k = stats.kills - DM.k0, best = store.get('sz_dm_best', 0), rec = k > best; if (rec) store.set('sz_dm_best', k);
   META.profile.coins += k * RC.dmCoinsPerKill; META.saveProfile(); if (won) crazy.happy();
   track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id });
-  showEnd(won ? 'VICTORY' : 'TIME UP', `Kills ${k} · Deaths ${DM.d} · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · Best streak ${DM.best}\n+${k * RC.dmCoinsPerKill} ◎` + (rec ? '\n\nNEW PERSONAL BEST!' : `\n\nBest: ${best} kills`), null, { failed: true });
+  const tier = k >= 30 ? 'LEGEND' : k >= 22 ? 'PLATINUM' : k >= 15 ? 'GOLD' : k >= 8 ? 'SILVER' : 'BRONZE';
+  showEnd(won ? 'VICTORY' : `${tier} RANK`, `${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${k * RC.dmCoinsPerKill} ◎` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
+  if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
+    let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `↻ REMATCH (${n})`; };
+    clearInterval(autoNextT); tick(); autoNextT = setInterval(tick, 1000);
+    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'again') { clearInterval(autoNextT); $('again').textContent = '↻ REMATCH'; } }, { once: true });
+  }
 }
 function survivalTick(dt) {
   for (const e of enemies) if (e.alive) return '';
@@ -1083,7 +1107,7 @@ const sC = (el, cl, on) => { on = !!on; if (el._c !== on || el._cn !== cl) { el.
 let HUD = null, _hudAb = null, _gapK = -1, _dmgKey = '';
 function hudRefs() {
   const g = id => document.getElementById(id);
-  return HUD = { obj: g('obj'), prog: g('prog'), timer: g('timer'), hp: g('hp'), hpf: g('hpb').firstElementChild, shb: g('shb'), shf: g('shb').firstElementChild, ammo: g('ammo'), rbar: g('rbar'), rbf: g('rbar').firstElementChild,
+  return HUD = { dm: g('dmBar'), dmK: g('dmK'), dmF: g('dmF'), dmS: g('dmS'), dmP: g('dmP'), obj: g('obj'), prog: g('prog'), timer: g('timer'), hp: g('hp'), hpf: g('hpb').firstElementChild, shb: g('shb'), shf: g('shb').firstElementChild, ammo: g('ammo'), rbar: g('rbar'), rbf: g('rbar').firstElementChild,
     cross: g('cross'), ci: [...g('cross').children], scope: g('scope'), hitm: g('hitm'), ringw: g('ringw'), ringp: g('ringp'), ringt: g('ringt'), ringl: g('ringl').firstElementChild,
     prompt: g('prompt'), promptt: g('promptt'), spot: g('spot'), whiteout: g('whiteout'), hurt: g('hurt'), laser: g('laser'), dmgdir: g('dmgdir'), mm: g('mm') };
 }
@@ -1096,7 +1120,12 @@ function updateHud(prompt) {
   else if (objective.extract) { title = 'GET TO EXTRACTION'; prog = 'Green beacon · your start point'; }
   else { const n = map.points.length; let d = 0; for (const x of objective.done) if (x) d++; const v = mission.objective === 'retrieve' ? 'RETRIEVE DRIVES' : 'DEFUSE DEVICES'; title = n > 1 ? `${v} ${d}/${n}` : mission.objective === 'retrieve' ? 'RETRIEVE THE DRIVE' : 'DEFUSE THE DEVICE'; prog = `Hostiles left: ${alive}`; }
   if (intel.length) { let g = 0; for (const i of intel) if (i.got) g++; prog += ` · Intel ${g}/${intel.length}`; }
-  if (mode === 'dm') { title = `DEATHMATCH · ${stats.kills - DM.k0}/${RC.dmKills} KILLS`; prog = `Deaths ${DM.d} · Streak ${DM.streak} · Best ${DM.best}`; }
+  if (mode === 'dm') {
+    const k = stats.kills - DM.k0; title = 'DEATHMATCH'; prog = `Deaths ${DM.d} · Best streak ${DM.best}`;
+    sT(H.dmK, String(k)); sS(H.dmF, 'width', `${Math.min(100, k / RC.dmKills * 100)}%`);
+    sT(H.dmS, DM.streak >= 2 ? `🔥 ${DM.streak}` : ''); sT(H.dmP, DM.odT > 0 ? 'OVERDRIVE' : DM.uavT > 0 ? 'UAV' : '');
+  }
+  sC(H.dm, 'on', mode === 'dm');
   if (mode === 'survival') { title = `SURVIVAL · WAVE ${wave}`; prog = `Hostiles left: ${alive} · Best: wave ${survBestV}`; }
   sT(H.obj, title); sT(H.prog, prog);
   sT(H.timer, fmt(mode === 'survival' ? elapsed : clock)); sC(H.timer, 'low', clock < 30);
@@ -1129,7 +1158,7 @@ function updateHud(prompt) {
   if (ringK >= 0) { const rk = clamp(ringK, 0, 1), off = 251.3 * (1 - rk); if (H.ringp._o !== off) { H.ringp._o = off; H.ringp.setAttribute('stroke-dashoffset', off); } sT(H.ringt, `${Math.round(rk * 100)}%`); sT(H.ringl, ringL); }
   sC(H.prompt, 'on', !!prompt && ringK < 0); sT(H.promptt, touch ? prompt.replace('HOLD E · ', 'HOLD ') : prompt);
   if (touch) touch.setUse(/HOLD E/.test(prompt) || ringK >= 0 ? (/BREACH/.test(prompt) || ringL === 'BREACHING' ? 'BREACH' : mission.objective === 'plant_hold' ? 'PLANT' : mission.objective === 'retrieve' ? 'GRAB' : 'DEFUSE') : null);
-  sC(H.spot, 'on', spotted > 0); sT(H.spot, `SPOTTED BY ${spotted}`);
+  sC(H.spot, 'on', spotted > 0 && mode !== 'dm'); sT(H.spot, `SPOTTED BY ${spotted}`);
   // overlays
   sS(H.whiteout, 'opacity', clamp(flashK * 1.4, 0, 1).toFixed(3)); sS(H.hurt, 'opacity', hurtK.toFixed(3)); sS(H.laser, 'opacity', laserK.toFixed(3));
   if (dmgDirs.length || _dmgKey) { const html = dmgDirs.map(d => `<i style="transform:rotate(${(-(d.ang - player.yaw - Math.PI)) * 180 / Math.PI}deg);opacity:${Math.min(1, d.t)}"></i>`).join(''); _dmgKey = html && 'x'; H.dmgdir.innerHTML = html; }
@@ -1137,10 +1166,10 @@ function updateHud(prompt) {
 }
 function hitMarker(kill, head) { hitmT = kill ? 0.45 : 0.2; $('hitm').className = `ov${kill ? ' kill' : head ? ' head' : ''}`; }
 function feed(msg, hs) { const d = document.createElement('div'); d.className = `pnl${hs ? ' hs' : ''}`; d.innerHTML = `<span></span>`; d.firstChild.textContent = msg; $('feed').prepend(d); setTimeout(() => d.remove(), 4000); while ($('feed').children.length > 5) $('feed').lastChild.remove(); }
-function radio(who, text, dur) { RADIO.say(who, text, dur); }
-function radioOnce(key) { if (!mission.radio[key]) return; RADIO.once(mission.id + ':' + key, mission.radio[key]); }
+function radio(who, text, dur) { if (mode === 'dm') return; RADIO.say(who, text, dur); }
+function radioOnce(key) { if (mode === 'dm' || !mission.radio[key]) return; RADIO.once(mission.id + ':' + key, mission.radio[key]); }
 function killTick() { if (matchOver) return; let n = 0; for (const e of enemies) if (e.alive) n++; if (n === 1) storyEv('last'); else if (n > 0 && n * 2 <= enemies.length && enemies.length > 4) storyEv('half'); }
-function storyEv(key) { RADIO.event(mission.id, key); }
+function storyEv(key) { if (mode === 'dm') return; RADIO.event(mission.id, key); }
 
 // ---------- minimap ----------
 let mmBg = null; const MM = { scale: 3, ox: 0, oz: 0 };
@@ -1203,7 +1232,7 @@ function startMissionNow(idx, opts) {
   if (!tutorial) crazy.armAds();
   firstContactT = mode || tutorial || TEST ? -1 : RC.contactAfter;
   if (!TEST && !mode) invT = Math.max(invT, RC.startGrace);                          // a few safe seconds to get bearings                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
-  if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
+  if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? 'DEATHMATCH · GO!' : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) lockMouse();
   crazy.gameplay(true);
