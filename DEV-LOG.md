@@ -344,3 +344,9 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Remote config: game/remote.js fetches remote-config.json from the public GitHub repo (raw CDN, ~5 min cache, 2.5 s timeout, falls back to built-ins) at boot. Tunes quality defaults (desk/touch, unless the player picked one), touch auto-fire, part/single timers and counts, hold time, forced-contact delay, easy-retry rules, auto-next delay, coin rewards, midgame ad gap. Edit + push = live for every player, no CrazyGames upload. Telemetry `boot` carries the config version.
 - Pointer lock: requests are wrapped (no unhandled rejection); when a lock is refused (auto-started level, no user gesture) the game freezes behind a "CLICK TO CONTINUE" card whose click grabs the mouse.
 - Scroll wheel: one weapon per notch in either direction, wrapping round; trackpad deltas are accumulated.
+
+## 2026-11-19 · v8: from the first night of telemetry (190 real sessions)
+- Mission 2 was an ambush: contact 1-9 s after spawn, deaths at 23-47 s (30 fails). Guard spots within `minSpawnDist` (20 m) of any player spawn now go last; the m2-only 14 s forced contact is gone (all missions use `contactAfter`); m2 capped at 5 hostiles (`missions.m2.count`); every level starts with `startGrace` (4 s) of invulnerability.
+- Mission 1 timed out with the area already clear (8 of 26 fails had 0 hostiles left): when every hostile is down the clock stops, with an AREA CLEAR call-out.
+- Remote config v2: easy retry after the first fail, +45 s. New keys: minSpawnDist, startGrace, missions.{id}.{count,timer}.
+- tools/funnel.py prints the per-device funnel, quits, fails, clears, fps, load, errors and button use.

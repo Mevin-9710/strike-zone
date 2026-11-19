@@ -21,5 +21,12 @@
   "autoNextSeconds": 5,
   "winCoins": 100,
   "partCoins": 50,
-  "midgameGapSeconds": 180
+  "midgameGapSeconds": 180,
+  "minSpawnDist": 20,
+  "startGrace": 4,
+  "missions": {
+    "m2": {
+      "count": 5
+    }
+  }
 }

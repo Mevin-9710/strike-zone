@@ -4,6 +4,7 @@ const URL = 'https://raw.githubusercontent.com/Mevin-9710/strike-zone/main/remot
 export const RC = {
   quality: { desk: null, touch: null }, touchAutoFire: true, partTimer: { extra: 30, min: 90, max: 150 }, singleMaxTimer: 150, singleMaxCount: 7,
   holdSeconds: 20, contactAfter: 20, easyAfterFails: 2, easyCountMul: 0.65, easyExtraTime: 30, autoNextSeconds: 5, winCoins: 100, partCoins: 50, midgameGapSeconds: 180,
+  minSpawnDist: 20, startGrace: 4, missions: { m2: { count: 5 } },
   loaded: false,
 };
 export async function loadRemote(skip, ms = 2500) {

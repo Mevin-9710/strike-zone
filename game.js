@@ -286,11 +286,13 @@ function buildMission(idx, opts = {}) {
   // hostiles guard the objective: take the guard spots nearest to the live objective(s), ground level first
   if (!mode && map.points.length) {
     const near = p => { let d = Infinity; for (const q of map.points) d = Math.min(d, p.distanceTo(q) + Math.abs(p.y - q.y) * 2); return d; };
-    const keep = mission.roster.includes('warden') ? map.guards : map.guards.slice().sort((a, b) => near(a) - near(b));
+    const sps = Object.values(map.spawns || {}), farOk = p => sps.every(s => !s || s.distanceTo(p) > RC.minSpawnDist);   // never right on top of the player's spawn
+    const keep = mission.roster.includes('warden') ? map.guards : [...map.guards.filter(farOk).sort((a, b) => near(a) - near(b)), ...map.guards.filter(p => !farOk(p))];
     map.guards = keep;
   }
   const r = mission.routes ? mission.routes[opts.route || 'stealth'] : { count: mission.count || 8, timer: mission.timer, spawn: 'default' };
   route = { id: opts.route || 'default', ...r, part, parts };
+  const ov = !mode && RC.missions?.[mission.id]; if (ov) route = { ...route, ...(ov.count ? { count: Math.min(route.count, ov.count) } : {}), ...(ov.timer ? { timer: ov.timer } : {}) };
   if (parted) route = { ...route, count: Math.max(3, Math.ceil(r.count / parts) + 1), timer: Math.round(clamp(r.timer / parts + RC.partTimer.extra, RC.partTimer.min, RC.partTimer.max)) };
   else if (!mode && !TEST && idx > 0) route = { ...route, count: Math.min(route.count, RC.singleMaxCount), timer: Math.min(route.timer, RC.singleMaxTimer) };   // single-part missions stay short too
   if (!mode && (fails[idx] || 0) >= RC.easyAfterFails) route = { ...route, count: Math.max(3, Math.round(route.count * RC.easyCountMul)), timer: route.timer + RC.easyExtraTime, easy: true };   // stuck: fewer hostiles, more time
@@ -854,7 +856,9 @@ function update(dt) {
   { const fighting = enemies.some(e => e.alive && e.state === 'combat'); if (fighting && LS.ct < 0) LS.ct = Math.round(elapsed); music.setIntensity(fighting ? 1 : clock < 30 ? 0.7 : 0.25); }
   for (const e of enemies) if (!e.alive && e._dv && e.deadT < 0.45) { e.pos.addScaledVector(e._dv, dt * (1 - e.deadT / 0.45)); }   // death knockback
   const tutHold = !!tutorial?.hold;                                     // tutorial drills: freeze the timer + hostiles
-  elapsed += dt; if (!tutHold) clock -= dt; repathBudget = 2;
+  let areaClear = !mode && enemies.length > 0; if (areaClear) for (const e of enemies) if (e.alive) { areaClear = false; break; }
+  if (areaClear && !said.clear) { said.clear = true; FX.announce('AREA CLEAR', 'objective'); radio('OKONKWO', 'Area clear. Timer is off, take your time.', 3); }
+  elapsed += dt; if (!tutHold && !areaClear) clock -= dt; repathBudget = 2;      // all hostiles down: the clock stops
   if (clock <= 30 && clock + dt > 30) radioOnce('low');
   if (clock <= 0) { clock = 0; lose(mission.failTimer); return; }
   pollInput(dt);
@@ -1142,7 +1146,8 @@ function startMissionNow(idx, opts) {
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); if (idx === 0 && mode !== 'survival' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
   if (!tutorial) crazy.armAds();
-  firstContactT = mode || tutorial ? -1 : idx === 1 ? 14 : TEST ? -1 : RC.contactAfter;                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
+  firstContactT = mode || tutorial || TEST ? -1 : RC.contactAfter;
+  if (!TEST && !mode) invT = Math.max(invT, RC.startGrace);                          // a few safe seconds to get bearings                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
   if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
   else if (!TEST) lockMouse();
