@@ -48,7 +48,13 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /◎ 0/.test(await pg.textContent('#coins')));
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
     await pg.click('#lPlay');
-    check('Play opens the one-tap deploy screen', await pg.isVisible('#quick') && await pg.isVisible('#qDeploy') && await pg.isVisible('#qLoadout'));
+    check('Play opens the Story / Deathmatch picker', await pg.isVisible('#pick') && await pg.isVisible('#pStory') && await pg.isVisible('#pDm'));
+    { const { ctx: dctx, pg: dpg } = await open(browser, { query: 'test=1' });
+      const dm = await dpg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); const n0 = g.enemies.filter(e => e.alive).length; g.killAll(); g.step(4); const n1 = g.enemies.filter(e => e.alive).length;
+        g.damage(500); g.step(0.2); const dead = !g.player.alive; g.step(3); return { n0, n1, dead, back: g.player.alive, hud: document.getElementById('obj').textContent, run: g.state.running }; });
+      check('deathmatch: bots respawn, player respawns, HUD counts kills', dm.n0 >= 4 && dm.n1 >= 1 && dm.dead && dm.back && /DEATHMATCH/.test(dm.hud) && dm.run, JSON.stringify(dm));
+      await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /TIME UP|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
+      await dctx.close(); }
     await pg.evaluate(() => __game.openBriefing());
     check('briefing opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));
     await pg.click('#chapters button >> nth=0');

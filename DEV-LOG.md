@@ -350,3 +350,8 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - Mission 1 timed out with the area already clear (8 of 26 fails had 0 hostiles left): when every hostile is down the clock stops, with an AREA CLEAR call-out.
 - Remote config v2: easy retry after the first fail, +45 s. New keys: minSpawnDist, startGrace, missions.{id}.{count,timer}.
 - tools/funnel.py prints the per-device funnel, quits, fails, clears, fps, load, errors and button use.
+
+## 2026-11-19 · v9: solo Deathmatch + Story/Deathmatch picker
+- PLAY opens two big buttons: STORY (next mission, starts at once) and DEATHMATCH (starts at once). Loadout stays in the lobby.
+- Solo Deathmatch (`mode: 'dm'`): 5 min, first to 30 kills; 6 bots always on the map, a new one every 2.5 s when short, spawned at the guard spot furthest from the player; idle bots hunt the player. Player death = respawn after 1.5 s at the spot furthest from live bots with 2.5 s protection (no game over). Streaks tracked; end screen shows K/D, best streak, personal best (`sz_dm_best`), +5 ◎ per kill and a big ↻ REMATCH. All numbers in remote config (dmTime, dmKills, dmBots, dmRespawn, dmCoinsPerKill). Telemetry `dm_end`.
+- Design notes from research: near-instant respawn + spawn protection, spawn away from the action, bots come to you, short matches with one-click rematch.

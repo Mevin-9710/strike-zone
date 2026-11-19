@@ -431,6 +431,7 @@ function fire() {
     hitMarker(killed, head); sfx.hit(head); addImpact(end, dir.clone().negate(), true);
     if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
     FEEL.combo++; FEEL.comboT = 1.2;
+    if (killed && mode === 'dm') { DM.streak++; DM.best = Math.max(DM.best, DM.streak); }
     if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
@@ -483,7 +484,7 @@ function damagePlayer(dmg, from) {
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
   if (player.hp > 0 && player.hp < 35) storyEv('hurt');
-  if (player.hp <= 0) { player.hp = 0; player.alive = false; lose('You were eliminated.'); }
+  if (player.hp <= 0) { player.hp = 0; if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
 }
 
 // ---------- enemy abilities (clip released -> effect + gameplay) ----------
@@ -527,6 +528,58 @@ function nextWave() {
     e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G);
   }
   FX.announce(`WAVE ${wave}`, 'start'); sfx.done?.();
+}
+// ---------- solo deathmatch: bots keep coming, you respawn, first to dmKills or most kills when the clock ends ----------
+const DM = { d: 0, streak: 0, best: 0, k0: 0, spawnT: 0, deadT: 0 };
+function dmSpot(far) {
+  let best = null, bd = -1;
+  for (let i = 0; i < 8; i++) {                                                 // a few random guard spots, keep the one furthest from `far` things
+    const p = map.guards[(Math.random() * map.guards.length) | 0]; let d = Infinity;
+    for (const q of far) d = Math.min(d, q.distanceTo(p));
+    if (d > bd) { bd = d; best = p; }
+  }
+  return best.clone();
+}
+function dmBot() {
+  const types = mission.roster.filter(t => t !== 'warden' && t !== 'turret');
+  const type = types[(Math.random() * types.length) | 0];
+  let p = dmSpot([player.pos]); if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
+  const e = new Enemy(type, A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) }); scene.add(e.root); enemies.push(e);
+  e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G);
+}
+function dmSetup() {
+  for (const d of devices) d.g.visible = false;
+  map.points = []; clock = RC.dmTime;
+  for (const e of enemies) scene.remove(e.root); enemies = [];
+  Object.assign(DM, { d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0 });
+  for (let i = 0; i < RC.dmBots; i++) dmBot();
+}
+function dmTick(dt) {
+  const k = stats.kills - DM.k0;
+  if (k >= RC.dmKills) { dmEnd(true); return ''; }
+  if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
+    if ((DM.deadT -= dt) <= 0) {
+      const p = dmSpot(enemies.filter(e => e.alive).map(e => e.pos)); player.pos.copy(p); player.vel.set(0, 0, 0);
+      player.hp = 100; player.alive = true; invT = 2.5; hurtK = 0; FX.announce('BACK IN', 'start');
+      for (const e of enemies) if (e.alive) e.alert(player.pos, 0.6);
+    }
+    return 'RESPAWNING…';
+  }
+  let alive = 0; for (const e of enemies) if (e.alive) alive++;
+  if (alive < RC.dmBots && (DM.spawnT -= dt) <= 0) {
+    DM.spawnT = 2.5; dmBot();
+    if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) scene.remove(e.root); enemies = enemies.filter(e => !dead.includes(e)); }
+  }
+  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { e.alert(player.pos, 0.5); e.goTo(player.pos, G); }   // bots hunt
+  return '';
+}
+function dmDeath() { DM.d++; DM.streak = 0; DM.deadT = RC.dmRespawn; player.alive = false; FX.announce('ELIMINATED', 'objective'); }
+function dmEnd(won) {
+  if (matchOver) return; endMatch();
+  const k = stats.kills - DM.k0, best = store.get('sz_dm_best', 0), rec = k > best; if (rec) store.set('sz_dm_best', k);
+  META.profile.coins += k * RC.dmCoinsPerKill; META.saveProfile(); if (won) crazy.happy();
+  track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id });
+  showEnd(won ? 'VICTORY' : 'TIME UP', `Kills ${k} · Deaths ${DM.d} · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · Best streak ${DM.best}\n+${k * RC.dmCoinsPerKill} ◎` + (rec ? '\n\nNEW PERSONAL BEST!' : `\n\nBest: ${best} kills`), null, { failed: true });
 }
 function survivalTick(dt) {
   for (const e of enemies) if (e.alive) return '';
@@ -860,10 +913,10 @@ function update(dt) {
   if (areaClear && !said.clear) { said.clear = true; FX.announce('AREA CLEAR', 'objective'); radio('OKONKWO', 'Area clear. Timer is off, take your time.', 3); }
   elapsed += dt; if (!tutHold && !areaClear) clock -= dt; repathBudget = 2;      // all hostiles down: the clock stops
   if (clock <= 30 && clock + dt > 30) radioOnce('low');
-  if (clock <= 0) { clock = 0; lose(mission.failTimer); return; }
+  if (clock <= 0) { clock = 0; if (mode === 'dm') dmEnd(false); else lose(mission.failTimer); return; }
   pollInput(dt);
   updatePlayer(dt);
-  let prompt = mode === 'survival' ? survivalTick(dt) : updateObjective(dt); prompt = updateInteract(dt, prompt);
+  let prompt = mode === 'survival' ? survivalTick(dt) : mode === 'dm' ? dmTick(dt) : updateObjective(dt); prompt = updateInteract(dt, prompt);
   invT = Math.max(0, invT - dt); shakeK = Math.max(0, shakeK - dt * 2.5); sprayCD = Math.max(0, sprayCD - dt);
   updateWeapon(dt);
   for (let i = 0; i < 2; i++) abilityCD[i] = Math.max(0, abilityCD[i] - dt);
@@ -1043,6 +1096,7 @@ function updateHud(prompt) {
   else if (objective.extract) { title = 'GET TO EXTRACTION'; prog = 'Green beacon · your start point'; }
   else { const n = map.points.length; let d = 0; for (const x of objective.done) if (x) d++; const v = mission.objective === 'retrieve' ? 'RETRIEVE DRIVES' : 'DEFUSE DEVICES'; title = n > 1 ? `${v} ${d}/${n}` : mission.objective === 'retrieve' ? 'RETRIEVE THE DRIVE' : 'DEFUSE THE DEVICE'; prog = `Hostiles left: ${alive}`; }
   if (intel.length) { let g = 0; for (const i of intel) if (i.got) g++; prog += ` · Intel ${g}/${intel.length}`; }
+  if (mode === 'dm') { title = `DEATHMATCH · ${stats.kills - DM.k0}/${RC.dmKills} KILLS`; prog = `Deaths ${DM.d} · Streak ${DM.streak} · Best ${DM.best}`; }
   if (mode === 'survival') { title = `SURVIVAL · WAVE ${wave}`; prog = `Hostiles left: ${alive} · Best: wave ${survBestV}`; }
   sT(H.obj, title); sT(H.prog, prog);
   sT(H.timer, fmt(mode === 'survival' ? elapsed : clock)); sC(H.timer, 'low', clock < 30);
@@ -1140,11 +1194,12 @@ function startMissionNow(idx, opts) {
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
   if (mode === 'survival') survivalSetup();
+  if (mode === 'dm') dmSetup();
   LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };
   startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n }); at(`${mission.id}:${route.part}`);
-  for (const id of ['brief', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
+  for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
-  dropMentor(); if (idx === 0 && mode !== 'survival' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
+  dropMentor(); if (idx === 0 && mode !== 'survival' && mode !== 'dm' && (opts.tutorial || (!TEST && !tutorialDone()))) startTutorial(!!opts.tutorial); else { tutorial?.abort(); tutorial = null; }
   if (!tutorial) crazy.armAds();
   firstContactT = mode || tutorial || TEST ? -1 : RC.contactAfter;
   if (!TEST && !mode) invT = Math.max(invT, RC.startGrace);                          // a few safe seconds to get bearings                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
@@ -1244,7 +1299,7 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   RADIO.debrief($('debrief'), mission.id, !title.startsWith('MISSION FAILED'));
   $('next').style.display = nextIdx !== null ? '' : 'none';
   $('trySurv').style.display = failed && !mode && (fails[missionIdx] || 0) >= 2 && progress >= 1 ? '' : 'none';
-  $('again').textContent = failed ? '↻ RETRY' : 'REPLAY'; $('again').className = failed ? 'go' : '';
+  $('again').textContent = mode === 'dm' ? '↻ REMATCH' : failed ? '↻ RETRY' : 'REPLAY'; $('again').className = failed ? 'go' : '';
   clearInterval(autoNextT);
   if (nextIdx !== null && !TEST) {                                              // win: next mission starts by itself unless the player touches anything
     let n = RC.autoNextSeconds + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('next').click(); } else $('next').textContent = `NEXT MISSION (${n})`; };
@@ -1473,7 +1528,7 @@ function operativeButtons() {
 }
 
 // ---------- lobby / shop / pass / profile ----------
-const PANELS = ['lobby', 'quick', 'brief', 'shop', 'pass', 'profile', 'tutPick', 'guide', 'end', 'pause', 'loading'];
+const PANELS = ['lobby', 'pick', 'quick', 'brief', 'shop', 'pass', 'profile', 'tutPick', 'guide', 'end', 'pause', 'loading'];
 function only(id) { for (const p of PANELS) $(p).classList.toggle('show', p === id); $('hud').classList.remove('on'); }
 function chips() {
   $('lvl').firstChild.textContent = `LV ${META.level()} `; $('lvlbar').firstElementChild.style.width = `${META.levelProgress() * 100}%`;
@@ -1481,6 +1536,14 @@ function chips() {
   $('lobbyOp').textContent = `${OPERATIVES[loadout.operative].toUpperCase()} · ${WEAPONS[loadout.primary].name.toUpperCase()} · ${META.CHARMS[META.profile.charm].name.toUpperCase()} CHARM`;
 }
 // PLAY: one screen, one tap. Next mission with the saved kit; loadout / mission pickers are optional.
+// PLAY -> two big choices, each starts immediately
+function openPick() {
+  only('pick'); setPreview(); at('pick');
+  const i = Math.min(progress, MISSIONS.length - 1), pt = partOf(i);
+  $('pStorySub').textContent = `MISSION ${i + 1}` + (pt ? ` · PART ${pt + 1}` : '') + ` · ${MISSIONS[i].title.toUpperCase()}`;
+}
+$('pStory').onclick = () => { unlockAudio(); selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected]; startMission(selected, { route: !m.routes ? 'default' : m.routes[selRoute] ? selRoute : 'stealth', abilities: [] }); };
+$('pDm').onclick = () => { unlockAudio(); const i = (Math.random() * Math.min(Math.max(progress, 1), 3)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm' }); };
 function openQuick() {
   selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected];
   only('quick'); setPreview(); at('deploy');
@@ -1545,7 +1608,7 @@ function openProfile() {
 $('lPlay').onclick = () => {                                                       // first launch: PLAY drops straight into the mission-1 drill (tour stays in Settings)
   unlockAudio();
   if (progress === 0 && !onboardingDone() && !tutorialDone()) { try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ } selected = 0; startMission(0); return; }
-  openQuick();
+  openPick();
 }; $('lLoadout').onclick = () => { openBriefing('agent'); };
 $('lDaily').onclick = () => { unlockAudio(); const d = MODES.dailyToday(progress, MISSIONS.length); selected = d.idx; startMission(d.idx, { route: MISSIONS[d.idx].routes ? d.route : 'default', abilities: [], mode: 'daily' }); };
 $('lSurv').onclick = () => { unlockAudio(); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };

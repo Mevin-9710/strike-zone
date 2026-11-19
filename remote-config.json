@@ -28,5 +28,10 @@
     "m2": {
       "count": 5
     }
-  }
+  },
+  "dmTime": 300,
+  "dmKills": 30,
+  "dmBots": 6,
+  "dmRespawn": 1.5,
+  "dmCoinsPerKill": 5
 }

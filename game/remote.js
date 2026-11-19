@@ -4,6 +4,7 @@ const URL = 'https://raw.githubusercontent.com/Mevin-9710/strike-zone/main/remot
 export const RC = {
   quality: { desk: null, touch: null }, touchAutoFire: true, partTimer: { extra: 30, min: 90, max: 150 }, singleMaxTimer: 150, singleMaxCount: 7,
   holdSeconds: 20, contactAfter: 20, easyAfterFails: 2, easyCountMul: 0.65, easyExtraTime: 30, autoNextSeconds: 5, winCoins: 100, partCoins: 50, midgameGapSeconds: 180,
+  dmTime: 300, dmKills: 30, dmBots: 6, dmRespawn: 1.5, dmCoinsPerKill: 5,
   minSpawnDist: 20, startGrace: 4, missions: { m2: { count: 5 } },
   loaded: false,
 };
