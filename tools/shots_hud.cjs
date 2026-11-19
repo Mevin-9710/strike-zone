@@ -12,6 +12,8 @@ const D = [['desk', { width: 1280, height: 720 }, false], ['phoneL', { width: 84
     await pg.click('#lPlay'); await pg.waitForTimeout(400); await pg.screenshot({ path: `media/raw/hud/${n}_pick.png` });
     await pg.evaluate(() => { __game.start(0, { mode: 'dm' }); __game.step(3); for (let i = 0; i < 25; i++) { const e = __game.enemies.filter(x => x.alive).sort((a, b) => a.pos.distanceTo(__game.player.pos) - b.pos.distanceTo(__game.player.pos))[0]; if (!e) { __game.step(0.5); continue; } __game.teleport(e.pos.x + 3, e.pos.y, e.pos.z + 3); __game.lookAt(e.pos.x, e.pos.y + 1.3, e.pos.z); __game.fire(); __game.step(0.12); } const e = __game.enemies.find(x => x.alive); if (e) __game.lookAt(e.pos.x, e.pos.y + 1.3, e.pos.z); __game.step(0.1); __game.render(); });
     await pg.waitForTimeout(300); await pg.screenshot({ path: `media/raw/hud/${n}_dm.png`, timeout: 120000 });
+    await pg.evaluate(() => { __game.timeout(); __game.step(0.2); }); await pg.waitForTimeout(700); await pg.screenshot({ path: `media/raw/hud/${n}_dmend.png`, timeout: 120000 });
+    await pg.evaluate(() => __game.openLobby()); await pg.click('#lPlay'); await pg.waitForTimeout(400); await pg.screenshot({ path: `media/raw/hud/${n}_pick2.png` });
     await ctx.close();
   }
   await b.close();

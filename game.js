@@ -535,7 +535,7 @@ const MULTI = ['', '', 'DOUBLE KILL', 'TRIPLE KILL', 'RAMPAGE', 'UNSTOPPABLE'];
 function dmKill() {                                                             // multi-kills within 4 s + streak rewards
   DM.streak++; DM.best = Math.max(DM.best, DM.streak);
   DM.multi = elapsed - DM.lastK < 4 ? DM.multi + 1 : 1; DM.lastK = elapsed;
-  if (DM.multi >= 2) { FX.announce(MULTI[Math.min(DM.multi, 5)], 'objective'); sfx.coin(); }
+  if (DM.multi >= 2) { FX.announce(MULTI[Math.min(DM.multi, 5)], 'objective'); sfx.coin(); const f = $('mkFlash'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on'))); }
   if (DM.streak === 3) { DM.uavT = 12; FX.announce('UAV ONLINE · 3 STREAK', 'start'); }
   if (DM.streak === 5) { DM.odT = 12; FX.announce('OVERDRIVE · 5 STREAK', 'start'); }
   if (DM.streak === 8) { FX.announce('AIRSTRIKE INBOUND · 8 STREAK', 'start'); setTimeout(dmAirstrike, 1500); }
@@ -598,6 +598,9 @@ function dmEnd(won) {
   META.profile.coins += k * RC.dmCoinsPerKill; META.saveProfile(); if (won) crazy.happy();
   track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id });
   const tier = k >= 30 ? 'LEGEND' : k >= 22 ? 'PLATINUM' : k >= 15 ? 'GOLD' : k >= 8 ? 'SILVER' : 'BRONZE';
+  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `VICTORY · ${tier}` : `${tier} RANK`;
+  $('tK').textContent = k; $('tKD').textContent = (k / Math.max(1, DM.d)).toFixed(1); $('tSt').textContent = DM.best; $('tC').textContent = k * RC.dmCoinsPerKill;
+  $('beatBest').textContent = rec ? '★ NEW PERSONAL BEST ★' : `${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`; $('beatBest').classList.toggle('rec', rec);
   showEnd(won ? 'VICTORY' : `${tier} RANK`, `${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${k * RC.dmCoinsPerKill} ◎` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
     let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `↻ REMATCH (${n})`; };
@@ -1309,6 +1312,7 @@ function revive() {
   radio('VOSS', 'Not done yet.', 2); crazy.gameplay(true);
 }
 function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
+  if (mode !== 'dm') $('end').classList.remove('dm');
   $('hud').classList.remove('on');
   const { add, paid } = awardXP();
   $('endXP').textContent = xpLine(add, paid);
@@ -1569,6 +1573,7 @@ function chips() {
 function openPick() {
   only('pick'); setPreview(); at('pick');
   const i = Math.min(progress, MISSIONS.length - 1), pt = partOf(i);
+  { const b = store.get('sz_dm_best', 0); $('pDmBest').textContent = b ? `BEST ${b} KILLS` : ''; }
   $('pStorySub').textContent = `MISSION ${i + 1}` + (pt ? ` · PART ${pt + 1}` : '') + ` · ${MISSIONS[i].title.toUpperCase()}`;
 }
 $('pStory').onclick = () => { unlockAudio(); selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected]; startMission(selected, { route: !m.routes ? 'default' : m.routes[selRoute] ? selRoute : 'stealth', abilities: [] }); };
