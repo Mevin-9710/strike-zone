@@ -1237,7 +1237,7 @@ function startMissionNow(idx, opts) {
   firstContactT = mode || tutorial || TEST ? -1 : RC.contactAfter;
   if (!TEST && !mode) invT = Math.max(invT, RC.startGrace);                          // a few safe seconds to get bearings                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
   if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? 'DEATHMATCH · GO!' : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
-  if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); document.documentElement.requestFullscreen?.().catch(() => {}); }
+  if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* iOS: no fullscreen API */ } }
   else if (!TEST) lockMouse();
   crazy.gameplay(true);
 }

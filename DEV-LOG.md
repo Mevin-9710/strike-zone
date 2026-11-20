@@ -365,3 +365,8 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 
 ## 2026-11-19 · v11: Deathmatch infinite ammo
 - `dmInfiniteAmmo` (remote, default on): in Deathmatch every weapon's reserve stays topped up (you still reload the magazine); HUD shows ∞ for reserve. Remote config v3.
+
+## 2026-11-20 · v12: iOS start crash
+- startMissionNow called `document.documentElement.requestFullscreen?.().catch(...)`; on iOS Safari (no Fullscreen API) that threw before `crazy.gameplay(true)`, so phone sessions never reported gameplay start (telemetry: 5× "Cannot read properties of undefined (reading 'catch')" on touch). Now guarded.
+- Remote config v4: Deathmatch target 75 kills (real matches were ending in ~105 s at 30 kills, median 30 kills, all wins).
+- CrazyGames (Jacinda, Technical QA) reset the Basic Launch evaluation on 20 Nov; the scored window is 29 Nov – 5 Dec.
