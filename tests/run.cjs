@@ -285,6 +285,28 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // v16: free-for-all Deathmatch (bots fight bots, bots can win, no regen / medkits)
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game, out = {};
+      g.start(0, { mode: 'dm' }); g.step(0.5);
+      out.medkits = g.medkits.length; out.roster = g.DM.roster.length;
+      g.player.hp = 40; g.step(6); out.noRegen = g.player.hp <= 40;
+      const [a, b] = g.DM.roster; out.rival = !!g.ffaRival(a.e);
+      b.e.damage(9999); g.botKill(a.e, b.e); out.botScore = a.k === 1 && b.d === 1;
+      g.step(3.2); out.respawned = !!(b.e && b.e.alive);
+      a.k = g.RC ? 0 : a.k; a.k = 49; const c = g.DM.roster[2]; c.e.damage(9999); g.botKill(a.e, c.e); g.step(0.2);
+      out.botWon = g.state.matchOver && /OF 7/.test(document.getElementById('endTitle').textContent) && /WINS/.test(document.getElementById('rankBadge').textContent);
+      return out;
+    });
+    check('v16 DM: no medkits, no health regen', r.medkits === 0 && r.noRegen, JSON.stringify(r));
+    check('v16 DM: bots target and frag each other, scores tracked, bots respawn', r.rival && r.botScore && r.respawned, JSON.stringify(r));
+    check('v16 DM: a bot reaching the target wins the match', r.botWon, JSON.stringify(r));
+    check('no page errors (v16)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   // 9. First launch: no tour, PLAY drops straight into the mission-1 drill; tour still replayable from Settings
   {
     const { ctx, pg } = await open(browser, { query: '', seen: [] });

@@ -268,6 +268,14 @@ export class Enemy {
     const seeDecoy = decoy && sees(decoy);
     if (seeDecoy && (!seePlayer || decoy.distanceTo(this.pos) < pTarget.distanceTo(this.pos))) { target = decoy; tgtKind = 'decoy'; }
     else if (seePlayer) { target = pTarget; tgtKind = 'player'; }
+    if (G.ffaRival) {                                       // free-for-all Deathmatch: bots also fight the nearest rival bot
+      if ((this.rivalT = (this.rivalT || 0) - dt) <= 0) { this.rivalT = 0.4; this.rival = G.ffaRival(this); }
+      const r = this.rival;
+      if (r && r.alive) {
+        const rh = (this._rh ??= V()).copy(r.pos); rh.y += (r.A.height || 1.8) * 0.85;
+        if ((!target || rh.distanceTo(this.pos) < target.distanceTo(this.pos) * 0.8) && sees(rh)) { target = rh; tgtKind = 'bot'; }
+      }
+    }
     if (this.blindT > 0) { target = null; tgtKind = null; }
     this.seesTarget = !!target; this.target = target; this.targetKind = tgtKind;
     // accuracy ramp: re-acquiring the player after ~1 s out of sight resets to a fresh (deliberately missed) first shot
@@ -424,6 +432,7 @@ export class Enemy {
       } else if (this.type !== 'sniper') {                                    // strafe while shooting
         this.strafeT -= dt; if (this.strafeT <= 0) { this.strafeT = rand(0.8, 1.8); this.strafeDir = Math.random() < 0.5 ? -1 : 1; if (Math.random() < 0.35) this.strafeDir = 0; }
         const k = this.strafeDir * this.T.walk * 0.8 * this.lockSlow * (this.staggerT > 0 ? 0.3 : 1);
+        if (this.jumper && this.onGround && Math.random() < dt * (this.lastHurtT < 0.6 ? 2.5 : 0.5)) this.vel.y = 7;   // some Deathmatch bots hop to dodge
         this.vel.x = Math.cos(this.yaw) * k; this.vel.z = -Math.sin(this.yaw) * k; moving = this.strafeDir !== 0;
       }
     } else if (this.state === 'search' && this.lastKnown) {
@@ -539,12 +548,12 @@ export class Enemy {
     acc *= 0.65;                                         // global tuning (attack tokens now cap simultaneous shooters)
     const nearMiss = this.targetKind === 'player' && this.firstShot;     // first shot after spotting: a warning crack past the head
     if (this.targetKind === 'player') this.firstShot = false;
-    const hit = !nearMiss && this.targetKind === 'player' && Math.random() < clamp(acc, 0, 0.95);
+    const hit = !nearMiss && (this.targetKind === 'player' ? Math.random() < clamp(acc, 0, 0.95) : this.targetKind === 'bot' && Math.random() < clamp(acc * 1.2, 0, 0.85));
     const to = _to.copy(tgt);
     if (nearMiss) {
       _a.subVectors(tgt, from).setY(0).normalize(); const s = Math.random() < 0.5 ? -1 : 1, m = rand(0.45, 0.7);
       to.x += -_a.z * s * m; to.z += _a.x * s * m; to.y += rand(0.1, 0.35);
     } else if (!hit) { const miss = 0.6 + dist * 0.03; to.x += rand(-miss, miss); to.y += rand(-miss * 0.6, miss * 0.6); to.z += rand(-miss, miss); }
-    G.enemyFired(this, from, to, hit ? Math.round(this.S.dmg * clamp(0.6 + 0.4 * diff, 0.4, 1.8)) : 0);
+    G.enemyFired(this, from, to, hit ? Math.round(this.S.dmg * clamp(0.6 + 0.4 * diff, 0.4, 1.8)) : 0, this.targetKind === 'bot' ? this.rival : null);
   }
 }

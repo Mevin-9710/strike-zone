@@ -400,3 +400,14 @@ Plan: docs/v15-plan.md. Remote config v6.
 - **Minimal mobile HUD**: hidden on touch — spray, weapon name/icon, threat chip, HP label, progress line; Deathmatch also hides minimap + ability buttons; minimap 60% in story; pause top-left; feed max 2; radio one line.
 - **Quests count in Deathmatch**: "Win N matches" (story win or DM victory), new "Finish N matches" and "Reach GOLD rank in Deathmatch"; starter set = 5 kills / finish 1 match / 2 headshots.
 - Tests: 87/89 (2 known charm/spray failures).
+
+## 2026-11-21 · v16: true free-for-all Deathmatch
+Research (Wikipedia "Deathmatch (video games)"): free-for-all, everyone (humans and bots) has the same stats, random spawn points, die at 0 HP and respawn with full health, score = frags, session ends at the frag or time limit and the most frags wins.
+- **Bots fight each other**: each bot also targets the nearest visible rival bot (re-picked every 0.4 s); bot shots hit bots; bot kills show in the feed ("VIPER ▸ ROOK"). Idle bots hunt either the player or a rival.
+- **Persistent bot players**: a roster of 6 named bots with kills/deaths; each respawns 2.5 s after dying somewhere new. Player kills by a bot score for that bot.
+- **Win rule**: first to the kill target (player or bot) ends the match; at time-out the most kills wins (ties go to the player). End screen shows place "#2 OF 7", the winner, and the top-4 standings. HUD scoreboard (top 4 + you) top-left.
+- **No health regen and no medkits in Deathmatch**; health resets only on respawn.
+- **Spawns**: nav pool only (the 8 hand-placed guard spots on m1 were mostly on the terrace); ground level only; hard-rejected in the player's sight, discouraged in bots' sight (with many viewers, the hard rule pushed every spawn onto the hidden terrace); 18-40 m preferred; strong penalty within 14 m of another bot. 90 s sim: all spawns at ground level, nearest other bot 19-34 m.
+- **Jumping bots**: half the bots hop while strafing, more often right after taking a hit.
+- **Hover fix**: translucent lobby buttons turn pale yellow with black text on hover.
+- Tests: 91/93 (2 known charm/spray failures).

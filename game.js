@@ -239,6 +239,7 @@ let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, m
 
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
+  get ffaRival() { return mode === 'dm' ? ffaRival : null; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
   losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
@@ -341,7 +342,7 @@ function buildMission(idx, opts = {}) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.03, 6, 20), new THREE.MeshBasicMaterial({ color: 0xffd23b, transparent: true, opacity: 0.7 })); ring.rotation.x = Math.PI / 2; ring.position.y = 0.05; g.add(ring);
     g.visible = !got; scene.add(g); return { id, g, pos: p.clone(), got };
   });
-  medkits = buildMedkits();
+  medkits = mode === 'dm' ? [] : buildMedkits();                                  // deathmatch: no pickups, health resets only on respawn
   extractMark = null;
   if (mission.objective === 'retrieve') {
     extractMark = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 6, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0x3ddc84, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
@@ -445,7 +446,7 @@ function fire() {
     if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
     FEEL.combo++; FEEL.comboT = 1.2;
     if (killed && mode === 'dm') dmKill();
-    if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(head); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
+    if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(head, best.e); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
   if (s.mag === 0 && s.reserve > 0) setTimeout(() => { if (running && cur() === w && st().mag === 0) startReload(); }, 250);
@@ -480,11 +481,26 @@ function sniperLaser(e, target, k) {
   l.visible = true; l.geometry.setFromPoints([e.muzzle(), target]); l.material.opacity = 0.35 + 0.6 * k;
   if (e.targetKind === 'player') laserK = Math.max(laserK, k);
 }
-function enemyFired(e, from, to, dmg) {
+function ffaRival(e) {                                                             // nearest other live bot within 40 m (LOS is checked by the bot)
+  let best = null, bd = 40;
+  for (const o of enemies) { if (o === e || !o.alive) continue; const d = o.pos.distanceTo(e.pos); if (d < bd) { bd = d; best = o; } }
+  return best;
+}
+function botKill(killer, victim) {                                                 // bot fragged bot: score + feed
+  if (killer.ident) { killer.ident.k++; if (killer.ident.k >= RC.dmKills && !matchOver) dmEnd(false); }
+  if (victim.ident) victim.ident.d++;
+  DM.boardDirty = true; feed(`${killer.callsign || 'BOT'} ▸ ${victim.callsign || 'BOT'}`, false);
+}
+function enemyFired(e, from, to, dmg, victim) {
   addTracer(from, to, e.S.laser ? 0xff8080 : 0xff6b4a);
   const d = from.distanceTo(player.pos);
   const rel = Math.atan2(from.x - player.pos.x, from.z - player.pos.z);
   sfx.shot(e.S.cls, { dist: d, pan: Math.sin(rel - player.yaw - Math.PI) });
+  if (victim) {                                                                   // bot vs bot (free-for-all Deathmatch)
+    if (dmg > 0 && victim.alive && !matchOver) { victim.alert(e.pos, 1); if (victim.damage(dmg, from.clone())) botKill(e, victim); }
+    else { const h = world.raycast(from, to.clone().sub(from).normalize(), from.distanceTo(to)); if (h) addImpact(h.point, h.normal, false); }
+    return;
+  }
   const n = V().subVectors(from, to).normalize(), hit = world.raycast(from, to.clone().sub(from).normalize(), from.distanceTo(to));
   if (hit && !dmg) addImpact(hit.point, hit.normal, false);
   if (dmg > 0 && mode !== 'dm' && RC.hitTimer && !hitReady(d, from)) { dmg = 0; if (hit) addImpact(hit.point, hit.normal, false); }   // v14 fair-fight hit timer: blocked hits become near-misses
@@ -508,7 +524,7 @@ function damagePlayer(dmg, from) {
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
   if (player.hp > 0 && player.hp < 35) storyEv('hurt');
-  if (player.hp <= 0) { player.hp = 0; director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
+  if (player.hp <= 0) { player.hp = 0; director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm' && LS.byE?.ident) { LS.byE.ident.k++; DM.boardDirty = true; if (LS.byE.ident.k >= RC.dmKills) { dmEnd(false); return; } } if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
 }
 
 // ---------- enemy abilities (clip released -> effect + gameplay) ----------
@@ -570,8 +586,8 @@ function dmAirstrike() {
 }
 const _spH = new THREE.Vector3(), _spE = new THREE.Vector3();
 function dmPool() {                                                              // v15: spawn spots spread over the whole map (reachable nav nodes, ~4 m apart)
-  const nav = world.nav, pool = map.guards.map(g => g.clone());
-  if (!nav?.nodes?.length) return pool;
+  const nav = world.nav, pool = [];
+  if (!nav?.nodes?.length) return map.guards.map(g => g.clone());
   const start = world.nearestNode(map.spawns.default || player.pos); if (!start) return pool;
   const seen = new Uint8Array(nav.nodes.length), q = [start]; seen[start.id] = 1; const cell = new Set();
   for (const g of pool) cell.add(`${Math.floor(g.x / 4)},${Math.floor(g.z / 4)},${Math.round(g.y / 2)}`);
@@ -580,9 +596,9 @@ function dmPool() {                                                             
     if (n.links.length >= 6) { const k = `${Math.floor(n.pos.x / 4)},${Math.floor(n.pos.z / 4)},${Math.round(n.pos.y / 2)}`; if (!cell.has(k) && !world.overlaps(n.pos, 0.4, 1.8)) { cell.add(k); pool.push(n.pos.clone()); } }
     for (const l of n.links) { const m = l[0]; if (!seen[m.id]) { seen[m.id] = 1; q.push(m); } }
   }
-  return pool;
+  return pool.length >= 20 ? pool : pool.concat(map.guards.map(g => g.clone()));
 }
-function dmSpot(far, viewers, others) {                                          // spawn scoring: never in sight, 18-40 m from the threat, no clumping, no repeats
+function dmSpot(far, viewers, others, hardAll) {                                          // spawn scoring: never in sight, 18-40 m from the threat, no clumping, no repeats
   const pool = DM.pool?.length ? DM.pool : map.guards;
   if (!RC.dmSpawnScore) {
     let best = null, bd = -1;
@@ -590,27 +606,31 @@ function dmSpot(far, viewers, others) {                                         
     return best.clone();
   }
   let best = null, bs = -Infinity;
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 24; i++) {
     const p = pool[(Math.random() * pool.length) | 0]; let sc = Math.random() * 2;
     let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p));
     sc += d < 9.5 ? -20 : d < 18 ? -(18 - d) * 1.2 : d > 40 ? -(d - 40) * 0.3 : 6;
-    if (others) for (const o of others) if (o.distanceTo(p) < 8) { sc -= 10; break; }
+    if (others) for (const o of others) { const od = o.distanceTo(p); if (od < 14) { sc -= 50 - od * 2; break; } }
+    if (p.y > 2) sc -= 100;                                                        // ground level only (the terrace was a spawn trap)   // keep roofs/terraces rare
     for (const r of DM.recent) if (r.t > elapsed - 10 && Math.abs(r.x - p.x) < 6 && Math.abs(r.z - p.z) < 6) { sc -= 8; break; }
     if (DM.deathPos && elapsed - DM.deathT < 7 && DM.deathPos.distanceTo(p) < 10) sc -= 8 * (1 - (elapsed - DM.deathT) / 7);
-    if (viewers) { _spH.copy(p).y += 1.5; for (const v of viewers) { _spE.copy(v).y += 1.5; if (_spE.distanceTo(_spH) < 45 && world.lineClear(_spE, _spH)) { sc -= 300; break; } } }
+    if (viewers) { _spH.copy(p).y += 1.5; for (let vi = 0; vi < viewers.length; vi++) { const v = viewers[vi]; _spE.copy(v).y += 1.5; if (_spE.distanceTo(_spH) < 45 && world.lineClear(_spE, _spH)) { sc -= hardAll || vi === 0 ? 300 : 40; break; } } }   // in the first viewer's sight: never; others: discouraged
     if (sc > bs) { bs = sc; best = p; }
   }
   const r = DM.recent[DM.recentI = (DM.recentI + 1) % DM.recent.length]; r.x = best.x; r.z = best.z; r.t = elapsed;
   return best.clone();
 }
-function dmBot() {
-  const types = mission.roster.filter(t => t !== 'warden' && t !== 'turret');
-  const type = types[(Math.random() * types.length) | 0];
-  let p = dmSpot([player.pos], [player.pos], enemies.filter(o => o.alive).map(o => o.pos)); if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
-  DM.nameI = (DM.nameI || 0) + 1; const skin = botAssets(type, DM.nameI);
-  const e = new Enemy(type, skin || A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) }); scene.add(e.root); enemies.push(e); e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length]; e.skin = !!skin;
+function dmBot(ident) {
+  const types = mission.roster.filter(t => t !== 'warden' && t !== 'turret' && t !== 'drone');
+  const type = ident?.type || types[(Math.random() * types.length) | 0];
+  const others = enemies.filter(o => o.alive).map(o => o.pos);
+  let p = dmSpot([player.pos, ...others], [player.pos, ...others], others); if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
+  DM.nameI = (DM.nameI || 0) + 1; const skin = botAssets(type, ident ? ident.i : DM.nameI);
+  const e = new Enemy(type, skin || A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) }); scene.add(e.root); enemies.push(e); e.skin = !!skin;
+  if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
+  else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
   toonify(e.root, { rim: 0xff6a5a }); outline(e.root, { thick: 0.022, color: 0x8a0d0d }); nameTag(e);
-  e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G);
+  const r = Math.random() < 0.5 ? null : ffaRival(e); e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
 }
 function nameTag(e) {                                                              // small red callsign above Deathmatch bots (one canvas sprite per bot)
   const c = document.createElement('canvas'); c.width = 256; c.height = 48; const x = c.getContext('2d');
@@ -625,14 +645,17 @@ function dmSetup() {
   for (const e of enemies) scene.remove(e.root); enemies = [];
   Object.assign(DM, { coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
   DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
-  for (let i = 0; i < RC.dmBots; i++) dmBot();
+  const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
+  DM.roster = Array.from({ length: RC.dmBots }, (_, i) => ({ i, name: names[i % names.length], k: 0, d: 0, e: null, respT: null, type: null, jumper: Math.random() < 0.5 }));
+  for (const r of DM.roster) dmBot(r);
+  DM.boardDirty = true;
 }
 function dmTick(dt) {
   const k = stats.kills - DM.k0;
   if (k >= RC.dmKills) { dmEnd(true); return ''; }
   if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
     if ((DM.deadT -= dt) <= 0) {
-      const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live); player.pos.copy(p); player.vel.set(0, 0, 0);
+      const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live, live, true); player.pos.copy(p); player.vel.set(0, 0, 0);
       player.hp = 100; player.alive = true; invT = 2.5; hurtK = 0; FX.announce('BACK IN', 'start'); dmApplyLoadout();
       for (const e of enemies) if (e.alive) e.alert(player.pos, 0.6);
     }
@@ -642,15 +665,17 @@ function dmTick(dt) {
   DM.uavT -= dt; DM.odT -= dt;
   if (RC.dmInfiniteAmmo) for (const id of W.slots) { const s = W.state[id]; if (s && s.reserve < 999) s.reserve = 999; }   // reloads never run dry
   if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
-  if (elapsed - DM.hitT > 4 && player.hp < 100) player.hp = Math.min(100, player.hp + 25 * dt);     // out of combat: health comes back
   if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
-  const want = RC.dmBots + (DM.final ? 2 : 0);
-  let alive = 0; for (const e of enemies) if (e.alive) alive++;
-  if (alive < want && (DM.spawnT -= dt) <= 0) {
-    DM.spawnT = 2.5; dmBot();
+  for (const r of DM.roster) {                                                  // every bot is a persistent player: dies, waits, respawns somewhere new
+    if (r.e && r.e.alive) continue;
+    if (r.respT === null) { r.respT = 2.5; continue; }
+    if ((r.respT -= dt) <= 0) { r.respT = null; dmBot(r); }
+  }
+  if (DM.boardDirty) dmBoard();
+  {
     if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } enemies = enemies.filter(e => !dead.includes(e)); }
   }
-  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { e.alert(player.pos, 0.5); e.goTo(player.pos, G); }   // bots hunt
+  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { const r = Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; e.alert(to, 0.5); e.goTo(to, G); }   // bots hunt the player or a rival
   return '';
 }
 function dmDeath() { DM.deathPos = player.pos.clone(); DM.deathT = elapsed; DM.d++; DM.streak = 0; DM.deadT = RC.deathCard ? Math.max(RC.dmRespawn, 2) : RC.dmRespawn; player.alive = false; if (RC.deathCard) deathCard(); else FX.announce('ELIMINATED', 'objective'); }
@@ -682,17 +707,28 @@ function dmApplyLoadout() {                                                     
   W.slots = [n[0], n[1]]; for (const id of W.slots) if (!W.state[id]) W.state[id] = { mag: WEAPONS[id].mag, reserve: META.reserveFor(id, WEAPONS[id].reserve) };
   equip(0, true);
 }
+function dmRows() {                                                                // scoreboard rows: you + every bot, most kills first (ties: you first)
+  const rows = [{ name: 'YOU', k: stats.kills - DM.k0, d: DM.d, me: true }].concat((DM.roster || []).map(r => ({ name: r.name, k: r.k, d: r.d })));
+  return rows.sort((a, b) => b.k - a.k || (b.me ? 1 : 0) - (a.me ? 1 : 0));
+}
+function dmBoard() {
+  DM.boardDirty = false; const el = $('dmBoard'); if (!el) return;
+  const rows = dmRows(), top = rows.slice(0, 4); if (!top.some(r => r.me)) top[3] = rows.find(r => r.me);
+  el.innerHTML = top.map(r => `<div class="${r.me ? 'me' : ''}"><span>${rows.indexOf(r) + 1}. ${r.name}</span><b>${r.k}</b></div>`).join('');
+}
 function dmEnd(won) {
   if (matchOver) return; endMatch();
+  { const rows = dmRows(); won = rows[0].me; DM.place = rows.findIndex(r => r.me) + 1; DM.winner = rows[0].name; DM.nRows = rows.length; }
   const k = stats.kills - DM.k0, best = store.get('sz_dm_best', 0), rec = k > best; if (rec) store.set('sz_dm_best', k);
   const dmC = Math.round(DM.coins || k * RC.dmCoinsPerKill); META.profile.coins += dmC; matchCoins = dmC; META.saveProfile(); if (won) crazy.happy();
   track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id });
   const tier = k >= 30 ? 'LEGEND' : k >= 22 ? 'PLATINUM' : k >= 15 ? 'GOLD' : k >= 8 ? 'SILVER' : 'BRONZE';
   questP('finish'); if (won) questP('win'); if (k >= 15) questP('rank');
-  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `VICTORY · ${tier}` : `${tier} RANK`;
+  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `VICTORY · ${tier}` : `#${DM.place} · ${DM.winner} WINS`;
   $('tK').textContent = k; $('tKD').textContent = (k / Math.max(1, DM.d)).toFixed(1); $('tSt').textContent = DM.best; $('tC').textContent = dmC;
   $('beatBest').textContent = rec ? '★ NEW PERSONAL BEST ★' : `${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`; $('beatBest').classList.toggle('rec', rec);
-  showEnd(won ? 'VICTORY' : `${tier} RANK`, `${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${dmC} ◎ · peak threat ${Math.round(director.peak * 7)}` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
+  const stand = dmRows().slice(0, 4).map((r, i) => `${i + 1}. ${r.name} ${r.k}`).join('  ·  ');
+  showEnd(won ? 'VICTORY' : `#${DM.place} OF ${DM.nRows} · ${tier} RANK`, `${stand}\n${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${dmC} ◎ · peak threat ${Math.round(director.peak * 7)}` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
     let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `↻ REMATCH (${n})`; };
     clearInterval(autoNextT); tick(); autoNextT = setInterval(tick, 1000);
@@ -904,7 +940,7 @@ function explode(p, r, dmg, label) {
   for (let i = 0; i < 7; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: starTex(), color: i % 2 ? 0xffa040 : 0xffe080, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.position.copy(p).add(V(rand(-1, 1), rand(-0.5, 1.2), rand(-1, 1))); sp.scale.setScalar(rand(2, 3.6)); sp.userData.t = 0.35; sp.userData.spark = true; scene.add(sp); impacts.push(sp); }
   for (const e of enemies) {
     if (!e.alive) continue; const d = e.pos.clone().add(V(0, 1, 0)).distanceTo(p);
-    if (d < r) { const killed = e.damage(dmg * (1 - d / r * 0.6), p.clone()); if (killed) { stats.kills++; killTick(false); matchXP.kills += META.XP.kill; feed(`VOSS ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()} · ${label}`, false); } }
+    if (d < r) { const killed = e.damage(dmg * (1 - d / r * 0.6), p.clone()); if (killed) { stats.kills++; killTick(false, e); matchXP.kills += META.XP.kill; feed(`VOSS ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()} · ${label}`, false); } }
     if (d < 30) e.alert(p, 1);
   }
   const pd = player.pos.clone().add(V(0, 1, 0)).distanceTo(p);
@@ -1286,7 +1322,7 @@ function threatChip(reset) {                                                    
   if (!reset) { void el.offsetWidth; el.className = 'ov up'; }
 }
 director.onRise = t => { if (running && !matchOver) { threatChip(false); if (t >= 3 && t % 2 === 1) FX.announce('ENEMIES ADAPTING', 'objective'); track('thr', { k: 'up', v: t, m: mission?.id }); } };
-function killTick(head) { if (matchOver) return; director.kill(!!head, elapsed); questP('kill'); if (head) questP('head'); if (mode === 'dm') questP('dmkill'); questP('streak', director.state.streak); if (mode === 'dm') DM.coins += RC.dmCoinsPerKill * director.coinMul(); let n = 0; for (const e of enemies) if (e.alive) n++; if (n === 1) storyEv('last'); else if (n > 0 && n * 2 <= enemies.length && enemies.length > 4) storyEv('half'); }
+function killTick(head, victim) { if (matchOver) return; if (mode === 'dm') { if (victim?.ident) victim.ident.d++; DM.boardDirty = true; } director.kill(!!head, elapsed); questP('kill'); if (head) questP('head'); if (mode === 'dm') questP('dmkill'); questP('streak', director.state.streak); if (mode === 'dm') DM.coins += RC.dmCoinsPerKill * director.coinMul(); let n = 0; for (const e of enemies) if (e.alive) n++; if (n === 1) storyEv('last'); else if (n > 0 && n * 2 <= enemies.length && enemies.length > 4) storyEv('half'); }
 function storyEv(key) { if (mode === 'dm') return; RADIO.event(mission.id, key); }
 
 // ---------- minimap ----------
@@ -1905,7 +1941,7 @@ window.__game = {
   teleport(x, y, z) { player.pos.set(x, y, z); player.vel.set(0, 0, 0); },
   key(code, down = true) { keys[code] = down; }, mouse(btn, down = true) { mouse[btn] = down; },
   equip, reload: startReload, ability: useAbility, fire: () => { W.cd = 0; W.firedSemi = false; fire(); },
-  director, QUESTS, dmSpot, killTick, loadBotSkins, get playMode() { return playMode; }, DM, get W() { return W; }, setTrial(id) { trialWeapon = id; }, get trial() { return trialWeapon; }, lobbyV14, win: () => win(),
+  director, QUESTS, dmSpot, killTick, loadBotSkins, botKill, ffaRival, get playMode() { return playMode; }, DM, get W() { return W; }, setTrial(id) { trialWeapon = id; }, get trial() { return trialWeapon; }, lobbyV14, win: () => win(),
   get tutorial() { return tutorial; }, get onboard() { return onboard; }, startOnboarding, get mentor() { return mentor; }, TUT,
   killAll() { for (const e of enemies) if (e.alive) e.damage(9999); },
   peace() { for (const e of enemies) { e.update = function (dt) { this.mixer.update(dt); this.sync(); }; } },

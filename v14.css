@@ -181,3 +181,12 @@ body.touch #objp{min-width:0!important;padding:2px 12px!important}
 body.touch #obj{font-size:calc(var(--u)*.9)}
 body.touch #timer{font-size:calc(var(--u)*1.6)}
 body.touch #prog{display:none}
+
+/* ---------- v16: DM scoreboard, readable hover on translucent buttons ---------- */
+#dmBoard{display:none;left:calc(var(--u)*.9);top:calc(var(--u)*14);min-width:calc(var(--u)*11);background:var(--kp);border:1px solid var(--kl);border-radius:4px;padding:3px 8px;color:#fff;font-weight:700;font-size:calc(var(--u)*.95)}
+body.tdm #dmBoard{display:block}
+#dmBoard div{display:flex;justify-content:space-between;gap:10px}#dmBoard div.me{color:var(--ky)}
+body.touch.tdm #dmBoard{top:calc(var(--u)*4.2);font-size:calc(var(--u)*.8)}
+.kseg:hover,.kmini:hover,#lRail .rail:hover,.wcard:hover,#lobby.v14 button.ico:hover,#lCrate:hover,#dcard .lo button:hover,#dbl:hover{background:#fff6cc!important;color:#111!important}
+.kseg:hover small,.wcard:hover .tr,#lCrate:hover small,#lCrate:hover .ic{color:#5a4600!important}
+.q button:hover{color:#111!important}
