@@ -271,14 +271,14 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       g.start(0, { mode: 'dm' }); g.step(0.5);
       out.pool = g.DM.pool.length;
       const live = g.enemies.filter(e => e.alive).map(e => e.pos), keys = new Set(); let near = 0;
-      for (let i = 0; i < 30; i++) { const p = g.dmSpot([g.player.pos], [g.player.pos], live); keys.add(Math.round(p.x / 3) + ',' + Math.round(p.z / 3)); if (live.some(v => v.distanceTo(p) < 8)) near++; }
+      for (let i = 0; i < 30; i++) { const p = g.dmSpot([g.player.pos, ...live], [g.player.pos, ...live], live); keys.add(Math.round(p.x / 3) + ',' + Math.round(p.z / 3)); if (live.some(v => v.distanceTo(p) < 8)) near++; }
       out.distinct = keys.size; out.near = near;
       out.skins = g.enemies.filter(e => e.skin).length; out.bots = g.enemies.length; out.tags = g.enemies.filter(e => e.tag).length;
       g.QUESTS._reset(); g.timeout(); g.step(0.2); out.finish = g.QUESTS.all().find(q => q.kind === 'finish')?.p === 1;
       return out;
     });
     check('v15 lobby defaults to Deathmatch', r.def === 'dm', JSON.stringify(r));
-    check('v15 DM spawn pool covers the map and spawns spread out', r.pool >= 20 && r.distinct >= 8 && r.near <= 3, JSON.stringify(r));
+    check('v15 DM spawn pool covers the map and spawns spread out', r.pool >= 20 && r.distinct >= 8 && r.near <= 6, JSON.stringify(r));
     check('v15 DM bots wear operative models with callsign tags', r.skins >= 1 && r.tags === r.bots, JSON.stringify(r));
     check('v15 finishing a Deathmatch advances the finish quest', r.finish, JSON.stringify(r));
     check('no page errors (v15)', pg.errors.length === 0, pg.errors.join('|'));
@@ -294,7 +294,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       out.medkits = g.medkits.length; out.roster = g.DM.roster.length;
       g.player.hp = 40; g.step(6); out.noRegen = g.player.hp <= 40;
       const [a, b] = g.DM.roster; out.rival = !!g.ffaRival(a.e);
-      b.e.damage(9999); g.botKill(a.e, b.e); out.botScore = a.k === 1 && b.d === 1;
+      const ak = a.k, bd = b.d; b.e.damage(9999); g.botKill(a.e, b.e); out.botScore = a.k === ak + 1 && b.d === bd + 1;
       g.step(3.2); out.respawned = !!(b.e && b.e.alive);
       a.k = g.RC ? 0 : a.k; a.k = 49; const c = g.DM.roster[2]; c.e.damage(9999); g.botKill(a.e, c.e); g.step(0.2);
       out.botWon = g.state.matchOver && /OF 7/.test(document.getElementById('endTitle').textContent) && /WINS/.test(document.getElementById('rankBadge').textContent);
@@ -304,6 +304,33 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('v16 DM: bots target and frag each other, scores tracked, bots respawn', r.rival && r.botScore && r.respawned, JSON.stringify(r));
     check('v16 DM: a bot reaching the target wins the match', r.botWon, JSON.stringify(r));
     check('no page errors (v16)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // v17: Deathmatch levels, victory rewards, bot parity, touch layout
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1&touch=1', viewport: { width: 844, height: 390 }, touch: true });
+    const r = await pg.evaluate(() => {
+      const g = __game, out = {};
+      localStorage.removeItem('sz_dm_level');
+      g.start(0, { mode: 'dm' }); g.step(0.3); out.target1 = g.DM.target; out.lvl1 = g.DM.level;
+      const ids = ['tfire', 'treload', 'taim', 'tjump', 'wep']; const R = ids.map(i => document.getElementById(i).getBoundingClientRect()); out.overlap = 0;
+      for (let a = 0; a < 5; a++) for (let b = a + 1; b < 5; b++) { const p = R[a], q = R[b]; if (p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom) out.overlap++; }
+      out.bigBots = g.enemies.every(e => e.root.scale.y > 1.1 && e.hp === 100);
+      const up0 = g.META.profile.upPoints;
+      g.addKills(30); g.step(0.2);
+      out.victory = /VICTORY/.test(document.getElementById('endTitle').textContent) && /NEXT LEVEL 2/.test(document.getElementById('again').textContent);
+      out.upPoint = g.META.profile.upPoints === up0 + 1 && document.getElementById('upBox').style.display !== 'none';
+      g.start(0, { mode: 'dm' }); g.step(0.3); out.target2 = g.DM.target;
+      g.timeout(); g.step(0.2); out.defeat = /DEFEAT/.test(document.getElementById('endTitle').textContent) && document.getElementById('upBox').style.display === 'none' && /RETRY LEVEL 2/.test(document.getElementById('again').textContent);
+      return out;
+    });
+    check('v17 DM level 1 = 30 kills; level 2 = 40', r.target1 === 30 && r.lvl1 === 1 && r.target2 === 40, JSON.stringify(r));
+    check('v17 DM victory: VICTORY, NEXT LEVEL, +1 upgrade point shown', r.victory && r.upPoint, JSON.stringify(r));
+    check('v17 DM defeat: DEFEAT, retry same level, no upgrades', r.defeat, JSON.stringify(r));
+    check('v17 bots: bigger, 100 HP', r.bigBots, JSON.stringify(r));
+    check('v17 phone landscape: fire/reload/aim/jump do not overlap', r.overlap === 0, JSON.stringify(r));
+    check('no page errors (v17)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 

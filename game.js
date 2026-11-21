@@ -235,11 +235,12 @@ let LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };   // per-leve
 let flashK = 0, hurtK = 0, hitmT = 0, laserK = 0, dmgDirs = [], said = {}, repathBudget = 2, stepT = 0;
 const proxy = new THREE.Object3D();                 // stands in for the player's body for dash/shield fx
 let tracers = [], impacts = [], lasers = new Map();
-let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, matchXP = {}, revived = false, invT = 0, shakeK = 0, sprays = [], sprayCD = 0, xpDoubled = false, winBonus = 0, matchCoins = 0, dblT = 0, hudLow = false, playMode = 'story', trialWeapon = null;
+let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, matchXP = {}, revived = false, invT = 0, shakeK = 0, sprays = [], sprayCD = 0, xpDoubled = false, winBonus = 0, dmLevel = Math.max(1, Number(store.get('sz_dm_level', 1)) || 1), matchCoins = 0, dblT = 0, hudLow = false, playMode = 'story', trialWeapon = null;
 
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
   get ffaRival() { return mode === 'dm' ? ffaRival : null; },
+  get dmParity() { return mode === 'dm'; }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
   losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
@@ -486,8 +487,9 @@ function ffaRival(e) {                                                          
   for (const o of enemies) { if (o === e || !o.alive) continue; const d = o.pos.distanceTo(e.pos); if (d < bd) { bd = d; best = o; } }
   return best;
 }
+const dmTarget = () => DM.target || Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (dmLevel - 1));
 function botKill(killer, victim) {                                                 // bot fragged bot: score + feed
-  if (killer.ident) { killer.ident.k++; if (killer.ident.k >= RC.dmKills && !matchOver) dmEnd(false); }
+  if (killer.ident) { killer.ident.k++; if (killer.ident.k >= dmTarget() && !matchOver) dmEnd(false); }
   if (victim.ident) victim.ident.d++;
   DM.boardDirty = true; feed(`${killer.callsign || 'BOT'} ▸ ${victim.callsign || 'BOT'}`, false);
 }
@@ -524,7 +526,7 @@ function damagePlayer(dmg, from) {
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
   if (player.hp > 0 && player.hp < 35) storyEv('hurt');
-  if (player.hp <= 0) { player.hp = 0; director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm' && LS.byE?.ident) { LS.byE.ident.k++; DM.boardDirty = true; if (LS.byE.ident.k >= RC.dmKills) { dmEnd(false); return; } } if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
+  if (player.hp <= 0) { player.hp = 0; director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm' && LS.byE?.ident) { LS.byE.ident.k++; DM.boardDirty = true; if (LS.byE.ident.k >= dmTarget()) { dmEnd(false); return; } } if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
 }
 
 // ---------- enemy abilities (clip released -> effect + gameplay) ----------
@@ -573,6 +575,7 @@ function nextWave() {
 const DM = { d: 0, streak: 0, best: 0, k0: 0, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false };
 const MULTI = ['', '', 'DOUBLE KILL', 'TRIPLE KILL', 'RAMPAGE', 'UNSTOPPABLE'];
 function dmKill() {                                                             // multi-kills within 4 s + streak rewards
+  if (DM.rampage) { DM.rampage = false; FX.announce('RAMPAGE BROKEN', 'start'); }
   DM.streak++; DM.best = Math.max(DM.best, DM.streak);
   DM.multi = elapsed - DM.lastK < 4 ? DM.multi + 1 : 1; DM.lastK = elapsed;
   if (DM.multi >= 2) { FX.announce(MULTI[Math.min(DM.multi, 5)], 'objective'); sfx.coin(); const f = $('mkFlash'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on'))); }
@@ -595,6 +598,11 @@ function dmPool() {                                                             
     const n = q.pop();
     if (n.links.length >= 6) { const k = `${Math.floor(n.pos.x / 4)},${Math.floor(n.pos.z / 4)},${Math.round(n.pos.y / 2)}`; if (!cell.has(k) && !world.overlaps(n.pos, 0.4, 1.8)) { cell.add(k); pool.push(n.pos.clone()); } }
     for (const l of n.links) { const m = l[0]; if (!seen[m.id]) { seen[m.id] = 1; q.push(m); } }
+  }
+  if (pool.length >= 40 && RC.dmArea < 1) {                                       // play area ~20% smaller: keep spawns in the central part of the map
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const p of pool) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
+    const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hx = (x1 - x0) / 2 * RC.dmArea, hz = (z1 - z0) / 2 * RC.dmArea;
+    const inner = pool.filter(p => Math.abs(p.x - cx) <= hx && Math.abs(p.z - cz) <= hz); if (inner.length >= 30) { DM.area = { cx, cz, hx, hz }; return inner; }
   }
   return pool.length >= 20 ? pool : pool.concat(map.guards.map(g => g.clone()));
 }
@@ -627,6 +635,7 @@ function dmBot(ident) {
   let p = dmSpot([player.pos, ...others], [player.pos, ...others], others); if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
   DM.nameI = (DM.nameI || 0) + 1; const skin = botAssets(type, ident ? ident.i : DM.nameI);
   const e = new Enemy(type, skin || A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) }); scene.add(e.root); enemies.push(e); e.skin = !!skin;
+  e.hp = 100; e.root.scale.setScalar(RC.dmBotScale);                          // same 100 HP as the player; drawn bigger so they read at range
   if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
   else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
   toonify(e.root, { rim: 0xff6a5a }); outline(e.root, { thick: 0.022, color: 0x8a0d0d }); nameTag(e);
@@ -634,7 +643,7 @@ function dmBot(ident) {
 }
 function nameTag(e) {                                                              // small red callsign above Deathmatch bots (one canvas sprite per bot)
   const c = document.createElement('canvas'); c.width = 256; c.height = 48; const x = c.getContext('2d');
-  x.font = '700 30px Rajdhani, Oswald, sans-serif'; x.textAlign = 'center'; x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,.75)'; x.fillStyle = '#ff5a5a';
+  x.font = 'italic 700 30px Oswald, Impact, sans-serif'; x.textAlign = 'center'; x.lineWidth = 6; x.strokeStyle = 'rgba(0,0,0,.75)'; x.fillStyle = '#ff5a5a';
   x.strokeText(e.callsign, 128, 34); x.fillText(e.callsign, 128, 34);
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(c), depthTest: true, transparent: true }));
   sp.scale.set(1.3, 0.24, 1); sp.position.y = (e.A.height || 1.8) + 0.35; sp.renderOrder = 5; e.root.add(sp); e.tag = sp;
@@ -643,7 +652,8 @@ function dmSetup() {
   for (const d of devices) d.g.visible = false;
   map.points = []; clock = RC.dmTime;
   for (const e of enemies) scene.remove(e.root); enemies = [];
-  Object.assign(DM, { coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
+  DM.target = Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (dmLevel - 1)); DM.level = dmLevel;
+  Object.assign(DM, { rampage: false, alive0: 0, coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
   DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
   const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
   DM.roster = Array.from({ length: RC.dmBots }, (_, i) => ({ i, name: names[i % names.length], k: 0, d: 0, e: null, respT: null, type: null, jumper: Math.random() < 0.5 }));
@@ -652,17 +662,20 @@ function dmSetup() {
 }
 function dmTick(dt) {
   const k = stats.kills - DM.k0;
-  if (k >= RC.dmKills) { dmEnd(true); return ''; }
+  if (k >= dmTarget()) { dmEnd(true); return ''; }
   if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
     if ((DM.deadT -= dt) <= 0) {
       const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live, live, true); player.pos.copy(p); player.vel.set(0, 0, 0);
-      player.hp = 100; player.alive = true; invT = 2.5; hurtK = 0; FX.announce('BACK IN', 'start'); dmApplyLoadout();
+      player.hp = 100; player.alive = true; invT = 2.5; hurtK = 0; FX.announce('BACK IN', 'start'); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
       for (const e of enemies) if (e.alive) e.alert(player.pos, 0.6);
     }
     if ($('dcard').classList.contains('show')) { const t = Math.max(0, Math.ceil(DM.deadT)); if (t !== DM.dcT) { DM.dcT = t; $('dcGo').textContent = `RESPAWN · ${t}${touch ? '' : '  [SPACE]'}`; } }
     return 'RESPAWNING…';
   }
   DM.uavT -= dt; DM.odT -= dt;
+  { const quiet = elapsed - Math.max(DM.lastK, DM.alive0 || 0);                 // stalling: no kill for a while -> the bots go on a rampage
+    if (!DM.rampage && quiet > RC.dmStall) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
+    if (DM.rampage) { director.set(director.threat + 0.01 * dt * 10); if (Math.random() < dt * 0.8) for (const e of enemies) if (e.alive && e.state !== 'combat') { e.alert(player.pos, 1); e.goTo(player.pos, G); } } }
   if (RC.dmInfiniteAmmo) for (const id of W.slots) { const s = W.state[id]; if (s && s.reserve < 999) s.reserve = 999; }   // reloads never run dry
   if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
   if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
@@ -718,21 +731,25 @@ function dmBoard() {
 }
 function dmEnd(won) {
   if (matchOver) return; endMatch();
-  { const rows = dmRows(); won = rows[0].me; DM.place = rows.findIndex(r => r.me) + 1; DM.winner = rows[0].name; DM.nRows = rows.length; }
+  { const rows = dmRows(); won = rows[0].me && rows[0].k > 0; DM.place = rows.findIndex(r => r.me) + 1; DM.winner = rows[0].name; DM.nRows = rows.length; }
   const k = stats.kills - DM.k0, best = store.get('sz_dm_best', 0), rec = k > best; if (rec) store.set('sz_dm_best', k);
   const dmC = Math.round(DM.coins || k * RC.dmCoinsPerKill); META.profile.coins += dmC; matchCoins = dmC; META.saveProfile(); if (won) crazy.happy();
   track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id });
   const tier = k >= 30 ? 'LEGEND' : k >= 22 ? 'PLATINUM' : k >= 15 ? 'GOLD' : k >= 8 ? 'SILVER' : 'BRONZE';
   questP('finish'); if (won) questP('win'); if (k >= 15) questP('rank');
-  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `VICTORY · ${tier}` : `#${DM.place} · ${DM.winner} WINS`;
+  const lvl = dmLevel; if (won) { dmLevel++; store.set('sz_dm_level', dmLevel); META.profile.upPoints++; META.saveProfile(); } track('dm', { k: 'level', l: lvl, won });
+  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `LEVEL ${lvl} CLEARED · ${tier}` : `#${DM.place} · ${DM.winner} WINS`;
   $('tK').textContent = k; $('tKD').textContent = (k / Math.max(1, DM.d)).toFixed(1); $('tSt').textContent = DM.best; $('tC').textContent = dmC;
   $('beatBest').textContent = rec ? '★ NEW PERSONAL BEST ★' : `${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`; $('beatBest').classList.toggle('rec', rec);
   const stand = dmRows().slice(0, 4).map((r, i) => `${i + 1}. ${r.name} ${r.k}`).join('  ·  ');
-  showEnd(won ? 'VICTORY' : `#${DM.place} OF ${DM.nRows} · ${tier} RANK`, `${stand}\n${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${dmC} ◎ · peak threat ${Math.round(director.peak * 7)}` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
+  showEnd(won ? `VICTORY · LEVEL ${lvl}` : `DEFEAT · #${DM.place} OF ${DM.nRows} · ${tier} RANK`, `${stand}\n${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${dmC} ◎ · peak threat ${Math.round(director.peak * 7)}` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
+  const againLbl = won ? `▶ NEXT LEVEL ${dmLevel} · ${Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (dmLevel - 1))} KILLS` : `↻ RETRY LEVEL ${dmLevel} (REMATCH)`;
+  $('again').textContent = againLbl; $('again').className = 'go';
+  if (!won) $('upBox').style.display = 'none';                                   // weapon upgrades are a victory reward
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
-    let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `↻ REMATCH (${n})`; };
+    let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `${againLbl} (${n})`; };
     clearInterval(autoNextT); tick(); autoNextT = setInterval(tick, 1000);
-    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'again') { clearInterval(autoNextT); $('again').textContent = '↻ REMATCH'; } }, { once: true });
+    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'again') { clearInterval(autoNextT); $('again').textContent = againLbl; } }, { once: true });
   }
 }
 function survivalTick(dt) {
@@ -1185,7 +1202,7 @@ function deadCount() { let n = 0; for (const e of enemies) if (!e.alive) n++; re
 function controlsCard() {                                                            // v13: 4 s controls card in place of the drill
   try { localStorage.setItem('sz_tutorial_done', '1'); } catch { /* blocked */ }
   let el = $('ctlCard'); if (!el) { el = document.createElement('div'); el.id = 'ctlCard'; document.body.appendChild(el); }
-  const goal = mode === 'dm' ? `Deathmatch: first to ${RC.dmKills} kills wins` : 'Follow the arrow to the objective';
+  const goal = mode === 'dm' ? `Deathmatch: first to ${dmTarget()} kills wins` : 'Follow the arrow to the objective';
   el.innerHTML = (touch ? '<b>LEFT STICK</b> move · <b>DRAG</b> aim · <b>FIRE</b> shoot' : '<b>WASD</b> move · <b>MOUSE</b> aim · <b>CLICK</b> shoot · <b>R</b> reload') + '<br>' + goal;
   el.className = 'show'; clearTimeout(controlsCard.t); controlsCard.t = setTimeout(() => el.className = '', 5000);
 }
@@ -1259,8 +1276,8 @@ function updateHud(prompt) {
   else { const n = map.points.length; let d = 0; for (const x of objective.done) if (x) d++; const v = mission.objective === 'retrieve' ? 'RETRIEVE DRIVES' : 'DEFUSE DEVICES'; title = n > 1 ? `${v} ${d}/${n}` : mission.objective === 'retrieve' ? 'RETRIEVE THE DRIVE' : 'DEFUSE THE DEVICE'; prog = `Hostiles left: ${alive}`; }
   if (intel.length) { let g = 0; for (const i of intel) if (i.got) g++; prog += ` · Intel ${g}/${intel.length}`; }
   if (mode === 'dm') {
-    const k = stats.kills - DM.k0; title = 'DEATHMATCH'; prog = `Deaths ${DM.d} · Best streak ${DM.best}`;
-    sT(H.dmK, String(k)); sS(H.dmF, 'width', `${Math.min(100, k / RC.dmKills * 100)}%`);
+    const k = stats.kills - DM.k0; title = `DEATHMATCH · LV ${DM.level || 1}`; prog = `First to ${dmTarget()} · deaths ${DM.d}${DM.rampage ? ' · RAMPAGE!' : ''}`;
+    sT(H.dmK, String(k)); sS(H.dmF, 'width', `${Math.min(100, k / dmTarget() * 100)}%`);
     sT(H.dmS, DM.streak >= 2 ? `🔥 ${DM.streak}` : ''); sT(H.dmP, DM.odT > 0 ? 'OVERDRIVE' : DM.uavT > 0 ? 'UAV' : '');
   }
   sC(H.dm, 'on', mode === 'dm');
@@ -1381,7 +1398,7 @@ function startMissionNow(idx, opts) {
   if (mode === 'dm') dmSetup();
   questP('match'); matchCoins = 0;
   document.body.classList.toggle('tdm', mode === 'dm');
-  director.start({ mode, level: META.level(), firstMission: (idx === 0 && progress === 0 && !mode) || (mode === 'dm' && progress === 0 && !store.get('sz_dm_best', 0)), easy: !!route.easy, on: !!RC.adaptive }); hitNextT = 0; threatChip(true);
+  director.start({ mode, level: META.level(), firstMission: idx === 0 && progress === 0 && !mode, base: mode === 'dm' ? Math.min(0.75, RC.dmBaseThreat + 0.06 * (dmLevel - 1)) : null, easy: !!route.easy, on: !!RC.adaptive }); hitNextT = 0; threatChip(true);
   LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };
   startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n, def: opts.def ? 1 : 0 }); at(`${mission.id}:${route.part}`);
   for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
@@ -1785,7 +1802,7 @@ function lobbyDaylight() {                                                      
 const WICON = { pistol: 'pistol', revolver: 'pistol', assault: 'assault-rifle', 'machine gun': 'assault-rifle', sniper: 'sniper-rifle' };
 function lobbyV14() {
   const i = Math.min(progress, MISSIONS.length - 1), pt = partOf(i);
-  $('lMission').textContent = playMode === 'dm' ? 'DEATHMATCH · SOLO VS BOTS' : `LEVEL ${i + 1}${pt ? ' · PART ' + (pt + 1) : ''} · ${MISSIONS[i].title.toUpperCase()}`;
+  $('lMission').textContent = playMode === 'dm' ? `DEATHMATCH · LEVEL ${dmLevel} · FIRST TO ${Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (dmLevel - 1))}` : `LEVEL ${i + 1}${pt ? ' · PART ' + (pt + 1) : ''} · ${MISSIONS[i].title.toUpperCase()}`;
   $('lPlay').innerHTML = `<span>${icon('play')} PLAY</span>`;
   { const b = store.get('sz_dm_best', 0); $('mStory').innerHTML = `${icon('flag')} STORY<small></small>`; $('mDm').innerHTML = `${icon('skull')} DEATHMATCH<small>${b ? 'BEST ' + b : ''}</small>`; }
   $('mStory').classList.toggle('on', playMode !== 'dm'); $('mDm').classList.toggle('on', playMode === 'dm');
@@ -1941,6 +1958,7 @@ window.__game = {
   teleport(x, y, z) { player.pos.set(x, y, z); player.vel.set(0, 0, 0); },
   key(code, down = true) { keys[code] = down; }, mouse(btn, down = true) { mouse[btn] = down; },
   equip, reload: startReload, ability: useAbility, fire: () => { W.cd = 0; W.firedSemi = false; fire(); },
+  addKills(n) { stats.kills += n; },
   director, QUESTS, dmSpot, killTick, loadBotSkins, botKill, ffaRival, get playMode() { return playMode; }, DM, get W() { return W; }, setTrial(id) { trialWeapon = id; }, get trial() { return trialWeapon; }, lobbyV14, win: () => win(),
   get tutorial() { return tutorial; }, get onboard() { return onboard; }, startOnboarding, get mentor() { return mentor; }, TUT,
   killAll() { for (const e of enemies) if (e.alive) e.damage(9999); },

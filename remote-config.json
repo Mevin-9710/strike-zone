@@ -1,5 +1,5 @@
 {
-  "v": 6,
+  "v": 7,
   "note": "Live tuning for Strike Zone. Fetched by every game at boot (game/remote.js). Missing keys keep the built-in values.",
   "quality": {
     "desk": null,
@@ -30,7 +30,6 @@
     }
   },
   "dmTime": 240,
-  "dmKills": 50,
   "dmBots": 6,
   "dmRespawn": 1.5,
   "dmCoinsPerKill": 5,
@@ -44,5 +43,12 @@
   "hitTimer": true,
   "dmSpawnScore": true,
   "trialCost": 150,
-  "defaultMode": "dm"
+  "defaultMode": "dm",
+  "dmBotScale": 1.2,
+  "dmArea": 0.82,
+  "dmStall": 20,
+  "dmLevelKills": 30,
+  "dmLevelStep": 10,
+  "dmMaxKills": 80,
+  "dmBaseThreat": 0.4
 }

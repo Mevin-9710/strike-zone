@@ -56,8 +56,11 @@ export const UNLOCKS = [            // index = mission completed
   { weapons: ['grinder_lmg'] }, { operatives: ['tomas'] }, { weapons: ['longshot_bolt'] }, { weapons: ['hailstorm_mg'] },
   { operatives: ['amara'] }, { weapons: ['javelin_amr'] }, {}, {}, {},
 ];
+// v17: XP levels unlock weapons too (Deathmatch players progress without the campaign)
+export const LEVEL_WEAPONS = [[3, 'harrow_45'], [4, 'warden_br'], [6, 'bulldog_r6'], [8, 'grinder_lmg'], [10, 'longshot_bolt'], [12, 'hailstorm_mg'], [15, 'javelin_amr']];
 export function unlocked(progress) {
   const w = new Set(BASE_UNLOCKS.weapons), o = new Set(BASE_UNLOCKS.operatives);
+  for (const [lv, id] of LEVEL_WEAPONS) if (level() >= lv) w.add(id);
   for (let i = 0; i < progress && i < UNLOCKS.length; i++) { (UNLOCKS[i].weapons || []).forEach(x => w.add(x)); (UNLOCKS[i].operatives || []).forEach(x => o.add(x)); }
   return { weapons: w, operatives: o };
 }

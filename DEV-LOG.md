@@ -411,3 +411,14 @@ Research (Wikipedia "Deathmatch (video games)"): free-for-all, everyone (humans 
 - **Jumping bots**: half the bots hop while strafing, more often right after taking a hit.
 - **Hover fix**: translucent lobby buttons turn pale yellow with black text on hover.
 - Tests: 91/93 (2 known charm/spray failures).
+
+## 2026-11-21 · v17: Deathmatch levels, bots at player strength, old font back
+- **Font**: every screen back to the original bold italic look (Oswald 700 italic); Rajdhani removed.
+- **Smaller arena, bigger bots**: Deathmatch spawns limited to the central ~82% of the map (`dmArea`); bots drawn 1.2x (`dmBotScale`) with matching hit shapes.
+- **Bot strength from level 1** (`G.dmParity`): 100 HP like the player; per-hit damage on the player's scale (assault 22, MG 17, sniper 70: ~4-6 hits to kill); no story nerfs (no 0.65 accuracy cut, no warning shot, no attack tokens). Threat baseline 0.4 at level 1.
+- **Rampage**: no player kill for 20 s (`dmStall`) -> "BOTS ON A RAMPAGE": every bot hunts the player, +30% accuracy, +20% damage, threat climbs until the player scores.
+- **Deathmatch levels** (`sz_dm_level`): level 1 = 30 kills, +10 per level (cap 80), threat baseline +0.06 per level; time limit = `dmTime` (remote). End screen: VICTORY · LEVEL n / DEFEAT · #place; coins collected; weapon upgrade (+1 point) only after a victory; NEXT LEVEL / RETRY LEVEL buttons (auto-continue).
+- **XP unlocks weapons** (meta.js `LEVEL_WEAPONS`): Harrow L3, Warden L4, Bulldog L6, Grinder L8, Longshot L10, Hailstorm L12, Javelin L15 (story unlocks still apply).
+- **Phone landscape layout**: fixed thumb cluster (jump, fire, reload left of fire, aim above), ammo moved clear of the buttons; no overlaps from 667x375 to 1024x768.
+- **Website**: site/build.mjs never copied v14.css to /play, so the Vercel build had no v14+ styling; added.
+- Tests 97/99 (2 known charm/spray failures). Remote config v7.

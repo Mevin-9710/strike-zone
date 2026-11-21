@@ -1,9 +1,9 @@
-/* v14 "kit" theme: Stylized FPS UI Lite look (dark glass panels, slanted yellow/grey buttons, Rajdhani) + daylight lobby.
+/* v14 "kit" theme: Stylized FPS UI Lite look (dark glass panels, slanted yellow/grey buttons) + daylight lobby.
    Loaded after index.html styles + menu.css; restyles existing ids so game.js keeps working. */
-@font-face{font-family:"Rajdhani";src:url(fonts/Rajdhani-Medium.woff2) format("woff2");font-weight:500;font-display:swap}
-@font-face{font-family:"Rajdhani";src:url(fonts/Rajdhani-Bold.woff2) format("woff2");font-weight:600 800;font-display:swap}
 :root{--ky:#f7e04a;--ky2:#f2c23a;--kg:#0f1418;--kp:rgba(16,22,26,.78);--kl:rgba(255,255,255,.16);--kt:#b8c2c8;--kr:#ff5a5a;--kgr:#7be07f}
-html,body,button{font-family:"Rajdhani","Oswald","Arial Narrow",sans-serif;letter-spacing:.04em}
+/* v17: back to the original bold italic look (Oswald, bold, italic) on every screen */
+html,body,button,input,select{font-family:"Oswald",Impact,"Arial Narrow Bold",sans-serif!important;font-weight:700;font-style:italic;letter-spacing:.02em}
+body *{font-style:italic}
 .ic{width:1.15em;height:1.15em;vertical-align:-.18em;flex:none}
 
 /* ---------- kit primitives ---------- */
@@ -78,9 +78,9 @@ html,body,button{font-family:"Rajdhani","Oswald","Arial Narrow",sans-serif;lette
 .questToast{position:fixed;right:calc(var(--u)*1);top:30%;z-index:45;display:flex;align-items:center;gap:8px;background:rgba(34,110,64,.94);border-left:4px solid var(--kgr);color:#fff;padding:8px 14px;font-weight:800;font-size:calc(var(--u)*1.1);pointer-events:none;animation:qtIn .35s cubic-bezier(.2,1.3,.4,1)}
 .questToast span{font-weight:600;color:#d8f5dc;font-size:calc(var(--u)*.9)}
 @keyframes qtIn{from{transform:translateX(120%)}}
-.loginToast{background:var(--kp)!important;color:#fff!important;border:2px solid var(--ky)!important;box-shadow:none!important;font-family:"Rajdhani",sans-serif!important;border-radius:6px}
+.loginToast{background:var(--kp)!important;color:#fff!important;border:2px solid var(--ky)!important;box-shadow:none!important;font-family:"Oswald",Impact,sans-serif!important;border-radius:6px}
 .loginToast .ic{color:var(--ky);width:1.6em;height:1.6em}
-.loginToast small{font-family:"Rajdhani",sans-serif!important;color:var(--kt)}
+.loginToast small{font-family:"Oswald",Impact,sans-serif!important;color:var(--kt)}
 
 /* ---------- HUD (kit) ---------- */
 #hud .pnl{background:var(--kp);border:1px solid var(--kl);box-shadow:none;color:#fff}
@@ -139,16 +139,16 @@ html,body,button{font-family:"Rajdhani","Oswald","Arial Narrow",sans-serif;lette
 
 /* ---------- kill feedback (feel.js elements, kit look) ---------- */
 body .sz-banner{background:var(--kp);border:1px solid var(--kl);box-shadow:none;border-radius:5px;transform:translateX(-50%)}
-body .sz-banner .sz-bt{color:#fff;font-family:"Rajdhani",sans-serif;font-weight:800;letter-spacing:.2em;transform:none}
-body .sz-banner .sz-bs{background:var(--ky);color:#2a2200;transform:none;border-radius:3px;font-family:"Rajdhani",sans-serif;font-weight:800}
+body .sz-banner .sz-bt{color:#fff;font-family:"Oswald",Impact,sans-serif;font-weight:800;letter-spacing:.2em;transform:none}
+body .sz-banner .sz-bs{background:var(--ky);color:#2a2200;transform:none;border-radius:3px;font-family:"Oswald",Impact,sans-serif;font-weight:800}
 body .sz-banner.head{background:rgba(150,24,24,.9);border-color:#ff8a8a}
 body .sz-banner.head .sz-bt{text-shadow:none}
 body .sz-xp{background:var(--kp);border:1px solid var(--kl);box-shadow:none;border-radius:3px;transform:translate3d(var(--x,0px),var(--y,0px),0) translate(0,-50%)}
-body .sz-xp .sz-xpi{color:var(--ky);transform:none;font-family:"Rajdhani",sans-serif;font-weight:800}
-body .sz-ann{font-family:"Rajdhani",sans-serif!important;letter-spacing:.18em}
+body .sz-xp .sz-xpi{color:var(--ky);transform:none;font-family:"Oswald",Impact,sans-serif;font-weight:800}
+body .sz-ann{font-family:"Oswald",Impact,sans-serif!important;letter-spacing:.18em}
 
 /* ---------- touch controls (kit) ---------- */
-#touch .tb{background:rgba(16,22,26,.62);color:#fff;border:2px solid rgba(255,255,255,.35);box-shadow:none;font-family:"Rajdhani",sans-serif;font-weight:800}
+#touch .tb{background:rgba(16,22,26,.62);color:#fff;border:2px solid rgba(255,255,255,.35);box-shadow:none;font-family:"Oswald",Impact,sans-serif;font-weight:800}
 #touch .tb .tic{width:46%;height:46%;vertical-align:middle}
 #touch #tfire{background:linear-gradient(135deg,var(--ky),var(--ky2));color:#2a2200;border:3px solid #222}
 #touch .tb.down{background:#fff;color:#111}
@@ -190,3 +190,13 @@ body.touch.tdm #dmBoard{top:calc(var(--u)*4.2);font-size:calc(var(--u)*.8)}
 .kseg:hover,.kmini:hover,#lRail .rail:hover,.wcard:hover,#lobby.v14 button.ico:hover,#lCrate:hover,#dcard .lo button:hover,#dbl:hover{background:#fff6cc!important;color:#111!important}
 .kseg:hover small,.wcard:hover .tr,#lCrate:hover small,#lCrate:hover .ic{color:#5a4600!important}
 .q button:hover{color:#111!important}
+/* ---------- v17 landscape touch layout: fixed thumb cluster, nothing overlaps ---------- */
+@media (orientation:landscape){
+  body.touch #touch #tjump{right:calc(16px*var(--ts))!important;bottom:calc(16px*var(--ts))!important;left:auto!important;top:auto!important;width:calc(60px*var(--ts))!important;height:calc(60px*var(--ts))!important}
+  body.touch #touch #tfire{right:calc(92px*var(--ts))!important;bottom:calc(70px*var(--ts))!important;left:auto!important;top:auto!important;width:calc(84px*var(--ts))!important;height:calc(84px*var(--ts))!important}
+  body.touch #touch #treload{right:calc(190px*var(--ts))!important;bottom:calc(74px*var(--ts))!important;left:auto!important;top:auto!important;width:calc(56px*var(--ts))!important;height:calc(56px*var(--ts))!important}
+  body.touch #touch #taim{right:calc(106px*var(--ts))!important;bottom:calc(168px*var(--ts))!important;left:auto!important;top:auto!important;width:calc(56px*var(--ts))!important;height:calc(56px*var(--ts))!important}
+  body.touch #touch #tab0{right:calc(190px*var(--ts))!important;bottom:calc(144px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch #touch #tab1{right:calc(256px*var(--ts))!important;bottom:calc(84px*var(--ts))!important;left:auto!important;top:auto!important}
+}
+@media (orientation:landscape){ body.touch #wep{right:268px!important;bottom:14px!important;left:auto!important;top:auto!important} }

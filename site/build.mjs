@@ -30,7 +30,7 @@ for (const f of ['index.html', 'style.css', 'app.js', 'site.config.js', 'manifes
 
 // 2. game -> /play/
 const PLAY = path.join(OUT, 'play');
-for (const f of ['index.html', 'game.js', 'menu.css', 'game', 'world', 'fx', 'fonts', 'sfx']) cp(path.join(ROOT, f), path.join(PLAY, f));
+for (const f of ['index.html', 'game.js', 'menu.css', 'v14.css', 'game', 'world', 'fx', 'fonts', 'sfx']) cp(path.join(ROOT, f), path.join(PLAY, f));
 for (const f of ['three.module.js', 'three.core.js', 'addons/loaders/GLTFLoader.js',
   'addons/utils/BufferGeometryUtils.js', 'addons/utils/SkeletonUtils.js']) cp(path.join(ROOT, 'lib', f), path.join(PLAY, 'lib', f));
 for (const d of ['kenney', 'props', 'rigged', 'weapons']) {

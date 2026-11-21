@@ -11,10 +11,10 @@ export const director = {
   get tier() { return S.tier; },                      // 0..7 display / DM bot skill tier
   set onRise(fn) { S.onRise = fn; },
   // mode: null|'daily'|'survival'|'dm'; level: player level; firstMission: true on mission 1 before any kill; easy: route marked easy
-  start({ mode = null, level = 1, firstMission = false, easy = false, on = true } = {}) {
+  start({ mode = null, level = 1, firstMission = false, easy = false, on = true, base = null } = {}) {
     S.on = on; S.cap = mode === 'dm' ? 1 : 0.85;
-    S.base = clamp(0.15 + 0.03 * (level - 1), 0.1, 0.5) - (easy ? 0.15 : 0);
-    S.base = clamp(S.base, 0.05, 0.5);
+    S.base = base ?? clamp(0.15 + 0.03 * (level - 1), 0.1, 0.5) - (easy ? 0.15 : 0);
+    S.base = clamp(S.base, 0.05, mode === 'dm' ? 0.8 : 0.5);
     S.pinned = firstMission; S.firstKill = false;
     S.threat = S.peak = S.pinned ? Math.min(S.base, 0.2) : S.base;
     S.streak = 0; S.lastKill = 0; S.acc = 0; S.lowHpT = 0; S.tier = Math.round(S.threat * 7);

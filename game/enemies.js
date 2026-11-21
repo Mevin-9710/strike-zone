@@ -56,6 +56,8 @@ function glowMat() {
 }
 
 // burst: shots per burst; rof: seconds between shots; pause: seconds between bursts; acc: base hit chance at 10 m
+// Deathmatch damage per hit on the player's scale (player AR-7 does 28): ~4-6 hits to kill from 100 HP
+const DM_DMG = { assault: 22, 'machine gun': 17, sniper: 70, pistol: 18 };
 export const ENEMY_TYPES = {
   guard:     { model: 'enemy_guard', weapon: 'ar7_lance', cls: 'assault', name: 'Guard', hp: 100, walk: 1.7, run: 3.8, dmg: 8, burst: [3, 5], rof: 0.11, pause: [0.7, 1.3], acc: 0.5, range: 42, react: 0.6, fov: 0.6 },
   heavy:     { model: 'enemy_heavy', weapon: 'grinder_lmg', cls: 'machine gun', name: 'Heavy', hp: 230, walk: 1.3, run: 2.7, dmg: 6, burst: [7, 11], rof: 0.09, pause: [1.0, 1.6], acc: 0.4, range: 36, react: 0.7, fov: 0.55 },
@@ -203,10 +205,11 @@ export class Enemy {
       test(rayCapsule(o, d, this.pos.clone().add(V(0, 0.1, 0)), this.pos.clone().add(V(0, 0.6, 0)), 0.45), 'body', 1);
       return best;
     }
-    const head = wp(this.bones.head, V(0, 0.2, 0));
-    const chest = wp(this.bones.chest, V(0, 0.22, 0)), hips = wp(this.bones.hips, V(0, -0.05, 0));
-    test(raySphere(o, d, head, 0.22), 'head', 0);
-    test(rayCapsule(o, d, hips, chest, 0.3), 'body', 1);
+    const k = this.root.scale.y || 1;                   // Deathmatch bots are drawn bigger: grow the hit shapes with them
+    const head = wp(this.bones.head, V(0, 0.2 * k, 0));
+    const chest = wp(this.bones.chest, V(0, 0.22 * k, 0)), hips = wp(this.bones.hips, V(0, -0.05 * k, 0));
+    test(raySphere(o, d, head, 0.22 * k), 'head', 0);
+    test(rayCapsule(o, d, hips, chest, 0.3 * k), 'body', 1);
     const fl = wp(this.bones.footL), fr = wp(this.bones.footR);
     test(rayCapsule(o, d, hips.clone().add(V(0.1, 0, 0)), fl, 0.14), 'legs', 0.75);
     test(rayCapsule(o, d, hips.clone().add(V(-0.1, 0, 0)), fr, 0.14), 'legs', 0.75);
@@ -512,7 +515,7 @@ export class Enemy {
     this.shotT -= dt; this.reactT -= dt;
     const canShoot = this.state === 'combat' && this.target && this.blindT <= 0 && this.reactT <= 0 && this.staggerT <= 0;
     if (this.S.laser) {                                     // sniper: visible laser wind-up, then one heavy shot
-      if (canShoot && this.shotT <= 0 && this.laserT <= 0 && this.targetKind === 'player' && !claimToken(this, 'heavy', diffOf(G))) { this.shotT = rand(0.4, 0.8); return; }
+      if (canShoot && this.shotT <= 0 && this.laserT <= 0 && this.targetKind === 'player' && !G.dmParity && !claimToken(this, 'heavy', diffOf(G))) { this.shotT = rand(0.4, 0.8); return; }
       if (canShoot && this.shotT <= 0) {
         this.laserT += dt; G.sniperLaser(this, this.target, this.laserT / this.S.laser);
         if (this.laserT >= this.S.laser) { this.laserT = 0; this.fire(G); releaseToken(this); this.shotT = rand(...this.S.pause); }
@@ -524,7 +527,7 @@ export class Enemy {
     if (this.burstLeft <= 0 && this.shotT <= 0) {              // readable tell: raise the gun + muzzle glow, then fire
       if (this.aimT <= 0) {
         // claim before committing to the wind-up; decoys don't need a token
-        if (this.targetKind === 'player' && !claimToken(this, 'ranged', diffOf(G))) { this.shotT = rand(0.25, 0.6); return; }
+        if (this.targetKind === 'player' && !G.dmParity && !claimToken(this, 'ranged', diffOf(G))) { this.shotT = rand(0.25, 0.6); return; }
         this.aimT = AIM_TELL; return;
       }
       this.aimT -= dt; if (this.aimT > 0) return;
@@ -545,8 +548,10 @@ export class Enemy {
     acc *= clamp(0.55 + 0.45 * diff, 0.3, 1.6);
     acc *= G.player.moving ? 0.7 : 1; acc *= this.lockSlow < 1 ? 0.35 : 1; acc *= this.flinch > 0.3 ? 0.5 : 1;
     if (!G.player.onGround) acc *= 0.6;
-    acc *= 0.65;                                         // global tuning (attack tokens now cap simultaneous shooters)
-    const nearMiss = this.targetKind === 'player' && this.firstShot;     // first shot after spotting: a warning crack past the head
+    const dm = !!G.dmParity;                             // Deathmatch: bots play by the player's rules (no global nerf, no warning shot)
+    if (!dm) acc *= 0.65;                                // global tuning (attack tokens now cap simultaneous shooters)
+    else { acc *= 1.05; if (G.rampage) acc *= 1.3; }
+    const nearMiss = !dm && this.targetKind === 'player' && this.firstShot;     // first shot after spotting: a warning crack past the head
     if (this.targetKind === 'player') this.firstShot = false;
     const hit = !nearMiss && (this.targetKind === 'player' ? Math.random() < clamp(acc, 0, 0.95) : this.targetKind === 'bot' && Math.random() < clamp(acc * 1.2, 0, 0.85));
     const to = _to.copy(tgt);
@@ -554,6 +559,7 @@ export class Enemy {
       _a.subVectors(tgt, from).setY(0).normalize(); const s = Math.random() < 0.5 ? -1 : 1, m = rand(0.45, 0.7);
       to.x += -_a.z * s * m; to.z += _a.x * s * m; to.y += rand(0.1, 0.35);
     } else if (!hit) { const miss = 0.6 + dist * 0.03; to.x += rand(-miss, miss); to.y += rand(-miss * 0.6, miss * 0.6); to.z += rand(-miss, miss); }
-    G.enemyFired(this, from, to, hit ? Math.round(this.S.dmg * clamp(0.6 + 0.4 * diff, 0.4, 1.8)) : 0, this.targetKind === 'bot' ? this.rival : null);
+    const dmg = dm ? (DM_DMG[this.S.cls] || 22) * clamp(0.75 + 0.25 * diff, 0.7, 1.4) * (G.rampage ? 1.2 : 1) : this.S.dmg * clamp(0.6 + 0.4 * diff, 0.4, 1.8);
+    G.enemyFired(this, from, to, hit ? Math.round(dmg) : 0, this.targetKind === 'bot' ? this.rival : null);
   }
 }
