@@ -10,7 +10,7 @@
   <style>
     @font-face{font-family:"Oswald";src:url(fonts/Oswald.ttf) format("truetype");font-weight:200 700;font-display:block}
     /* ===== HUD style D "Comic bold": yellow panels, heavy ink outlines, skewed, Impact ===== */
-    :root{--y:#ffd23b;--ink:#111;--red:#ff3b47;--cyan:#5fe6ff;--u:clamp(9px,1.45vh,15px)}
+    :root{--y:#ffd23b;--ink:#111;--red:#ff3b47;--cyan:#5fe6ff;--u:clamp(11px,1.77vh,18px)}   /* v18: UI ~22% bigger */
     html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:"Oswald",Impact,"Arial Narrow Bold",sans-serif;font-weight:700;user-select:none;color:var(--ink)}
     canvas#gl{display:block;position:fixed;inset:0}
     .ov{position:fixed;pointer-events:none}
@@ -151,7 +151,7 @@
     #lbar i{display:block;height:100%;width:0;background:var(--red)}
 
     /* ===== polish pass: transform/opacity-only motion (cheap on HD 2500 / budget phones) ===== */
-    @media (min-height:1000px){:root{--u:clamp(9px,1.55vh,18px)}}
+    @media (min-height:1000px){:root{--u:clamp(11px,1.89vh,22px)}}
     /* buttons: hover lift + press sink (transform only; shadow swaps instantly, never animated) */
     button{transition:transform .12s cubic-bezier(.3,1.6,.5,1)}
     button:not(:disabled):hover{transform:skewX(-8deg) translate(-2px,-2px)}
@@ -212,7 +212,7 @@
     #feed div{text-shadow:none}
     #obj,#wname,#hpl{text-shadow:1px 1px 0 rgba(255,255,255,.35)}
     @media (max-height:560px){
-      #hud{--u:9px}
+      #hud{--u:11px}
       #objp{min-width:0;padding:1px calc(var(--u)*1)}
       #timer{font-size:calc(var(--u)*1.9)}
       #mm{width:calc(var(--u)*9);height:calc(var(--u)*9)}

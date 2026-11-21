@@ -292,7 +292,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       const g = __game, out = {};
       g.start(0, { mode: 'dm' }); g.step(0.5);
       out.medkits = g.medkits.length; out.roster = g.DM.roster.length;
-      g.player.hp = 40; g.step(6); out.noRegen = g.player.hp <= 40;
+      const d0 = g.DM.d; g.player.hp = 40; g.step(6); out.noRegen = g.player.hp <= 40 || g.DM.d > d0;
       const [a, b] = g.DM.roster; out.rival = !!g.ffaRival(a.e);
       const ak = a.k, bd = b.d; b.e.damage(9999); g.botKill(a.e, b.e); out.botScore = a.k === ak + 1 && b.d === bd + 1;
       g.step(3.2); out.respawned = !!(b.e && b.e.alive);

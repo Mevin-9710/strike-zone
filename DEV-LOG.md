@@ -422,3 +422,10 @@ Research (Wikipedia "Deathmatch (video games)"): free-for-all, everyone (humans 
 - **Phone landscape layout**: fixed thumb cluster (jump, fire, reload left of fire, aim above), ammo moved clear of the buttons; no overlaps from 667x375 to 1024x768.
 - **Website**: site/build.mjs never copied v14.css to /play, so the Vercel build had no v14+ styling; added.
 - Tests 97/99 (2 known charm/spray failures). Remote config v7.
+
+## 2026-11-21 · v18: easier Deathmatch start, random maps, bigger UI
+- **Easier level 1**: `dmPower` 0.62 (+0.06 per level, max 1) scales bot kill speed in Deathmatch, split as sqrt(power) on accuracy and on damage -> level 1 bots kill ~38% slower than v17; level 7+ is back to full strength. Remote-tunable.
+- **Random maps**: every Deathmatch (first launch, PLAY, rematch, next level) picks a random map from the first 5 (`dmMaps`), never the same twice in a row; Deathmatch may use maps not yet unlocked in story.
+- **UI ~22% bigger**: `--u` scale raised (11-18 px, 22 px on tall screens); touch buttons x1.2. Phone thumb cluster re-laid out for landscape and portrait (no overlaps from 360x740 to 1024x768); scoreboard moved under the objective in portrait.
+- Spawn spacing: stronger penalty for spots near other bots.
+- Tests 97/99 (2 known charm/spray failures). Remote config v8.

@@ -550,7 +550,8 @@ export class Enemy {
     if (!G.player.onGround) acc *= 0.6;
     const dm = !!G.dmParity;                             // Deathmatch: bots play by the player's rules (no global nerf, no warning shot)
     if (!dm) acc *= 0.65;                                // global tuning (attack tokens now cap simultaneous shooters)
-    else { acc *= 1.05; if (G.rampage) acc *= 1.3; }
+    const pw = dm ? Math.sqrt(G.dmPower || 1) : 1;      // DM level power: kill speed scales by dmPower (split between accuracy and damage)
+    if (dm) { acc *= 1.05 * pw; if (G.rampage) acc *= 1.3; }
     const nearMiss = !dm && this.targetKind === 'player' && this.firstShot;     // first shot after spotting: a warning crack past the head
     if (this.targetKind === 'player') this.firstShot = false;
     const hit = !nearMiss && (this.targetKind === 'player' ? Math.random() < clamp(acc, 0, 0.95) : this.targetKind === 'bot' && Math.random() < clamp(acc * 1.2, 0, 0.85));
@@ -559,7 +560,7 @@ export class Enemy {
       _a.subVectors(tgt, from).setY(0).normalize(); const s = Math.random() < 0.5 ? -1 : 1, m = rand(0.45, 0.7);
       to.x += -_a.z * s * m; to.z += _a.x * s * m; to.y += rand(0.1, 0.35);
     } else if (!hit) { const miss = 0.6 + dist * 0.03; to.x += rand(-miss, miss); to.y += rand(-miss * 0.6, miss * 0.6); to.z += rand(-miss, miss); }
-    const dmg = dm ? (DM_DMG[this.S.cls] || 22) * clamp(0.75 + 0.25 * diff, 0.7, 1.4) * (G.rampage ? 1.2 : 1) : this.S.dmg * clamp(0.6 + 0.4 * diff, 0.4, 1.8);
+    const dmg = dm ? (DM_DMG[this.S.cls] || 22) * pw * clamp(0.75 + 0.25 * diff, 0.7, 1.4) * (G.rampage ? 1.2 : 1) : this.S.dmg * clamp(0.6 + 0.4 * diff, 0.4, 1.8);
     G.enemyFired(this, from, to, hit ? Math.round(dmg) : 0, this.targetKind === 'bot' ? this.rival : null);
   }
 }

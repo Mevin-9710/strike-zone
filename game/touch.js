@@ -30,7 +30,7 @@ export class TouchControls {
     this.applySettings();
   }
   applySettings() {
-    this.el.style.setProperty('--ts', this.s.btnSize);
+    this.el.style.setProperty('--ts', this.s.btnSize * 1.2);   // v18: touch buttons 20% bigger
     this.el.style.setProperty('--to', this.s.btnOpacity);
   }
   show(on) { this.el.classList.toggle('on', on); if (!on) this.reset(); }

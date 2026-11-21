@@ -199,4 +199,14 @@ body.touch.tdm #dmBoard{top:calc(var(--u)*4.2);font-size:calc(var(--u)*.8)}
   body.touch #touch #tab0{right:calc(190px*var(--ts))!important;bottom:calc(144px*var(--ts))!important;left:auto!important;top:auto!important}
   body.touch #touch #tab1{right:calc(256px*var(--ts))!important;bottom:calc(84px*var(--ts))!important;left:auto!important;top:auto!important}
 }
-@media (orientation:landscape){ body.touch #wep{right:268px!important;bottom:14px!important;left:auto!important;top:auto!important} }
+@media (orientation:landscape){ body.touch #wep{right:330px!important;bottom:14px!important;left:auto!important;top:auto!important} }
+/* v18 portrait thumb cluster (buttons are 20% bigger now) + scoreboard under the objective */
+@media (orientation:portrait){
+  body.touch #touch #tjump{right:calc(14px*var(--ts))!important;bottom:calc(18px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch #touch #tfire{right:calc(84px*var(--ts))!important;bottom:calc(92px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch #touch #treload{right:calc(190px*var(--ts))!important;bottom:calc(104px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch #touch #taim{right:calc(98px*var(--ts))!important;bottom:calc(190px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch #touch #tab0{right:calc(190px*var(--ts))!important;bottom:calc(178px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch #touch #tab1{right:calc(256px*var(--ts))!important;bottom:calc(112px*var(--ts))!important;left:auto!important;top:auto!important}
+  body.touch.tdm #dmBoard{top:calc(var(--u)*10.5)}
+}

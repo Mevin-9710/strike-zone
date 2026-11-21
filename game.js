@@ -240,7 +240,7 @@ let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, m
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
   get ffaRival() { return mode === 'dm' ? ffaRival : null; },
-  get dmParity() { return mode === 'dm'; }, get rampage() { return mode === 'dm' && DM.rampage; },
+  get dmParity() { return mode === 'dm'; }, get dmPower() { return Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
   losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
@@ -487,6 +487,12 @@ function ffaRival(e) {                                                          
   for (const o of enemies) { if (o === e || !o.alive) continue; const d = o.pos.distanceTo(e.pos); if (d < bd) { bd = d; best = o; } }
   return best;
 }
+function dmMap() {                                                                  // a different random map each Deathmatch (never the same twice in a row)
+  const n = Math.max(1, Math.min(MISSIONS.length, RC.dmMaps)); let i = (Math.random() * n) | 0;
+  if (n > 1 && i === dmMap.last) i = (i + 1 + ((Math.random() * (n - 1)) | 0)) % n;
+  return (dmMap.last = i);
+}
+function dmStart(def) { unlockAudio(); const i = dmMap(); selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm', def: def ? 1 : 0 }); }
 const dmTarget = () => DM.target || Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (dmLevel - 1));
 function botKill(killer, victim) {                                                 // bot fragged bot: score + feed
   if (killer.ident) { killer.ident.k++; if (killer.ident.k >= dmTarget() && !matchOver) dmEnd(false); }
@@ -618,7 +624,7 @@ function dmSpot(far, viewers, others, hardAll) {                                
     const p = pool[(Math.random() * pool.length) | 0]; let sc = Math.random() * 2;
     let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p));
     sc += d < 9.5 ? -20 : d < 18 ? -(18 - d) * 1.2 : d > 40 ? -(d - 40) * 0.3 : 6;
-    if (others) for (const o of others) { const od = o.distanceTo(p); if (od < 14) { sc -= 50 - od * 2; break; } }
+    if (others) for (const o of others) { const od = o.distanceTo(p); if (od < 14) { sc -= 90 - od * 3; break; } }
     if (p.y > 2) sc -= 100;                                                        // ground level only (the terrace was a spawn trap)   // keep roofs/terraces rare
     for (const r of DM.recent) if (r.t > elapsed - 10 && Math.abs(r.x - p.x) < 6 && Math.abs(r.z - p.z) < 6) { sc -= 8; break; }
     if (DM.deathPos && elapsed - DM.deathT < 7 && DM.deathPos.distanceTo(p) < 10) sc -= 8 * (1 - (elapsed - DM.deathT) / 7);
@@ -1382,7 +1388,7 @@ function drawMinimap() {
 
 // ---------- flow ----------
 function startMission(idx = selected, opts = {}) {
-  if (idx > progress && !DEBUG) return;
+  if (idx > progress && !DEBUG && opts.mode !== 'dm') return;                     // Deathmatch may use any map
   if (!crazy.active) { startMissionNow(idx, opts); return; }
   if (startMission.busy) return; startMission.busy = true;                       // midgame ad between missions (rate-limited in crazy.js)
   track('ad', { k: 'midgame' }); crazy.midgame().then(() => { startMission.busy = false; startMissionNow(idx, opts); });
@@ -1657,7 +1663,7 @@ $('clickGo').addEventListener('mousedown', e => { e.preventDefault(); $('clickGo
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
-$('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); startMission(lastStart.idx, lastStart.opts); };
+$('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => { paused = false; openLobby(); };
 
 // ---------- settings ----------
@@ -1770,7 +1776,7 @@ function openPick() {
   $('pStorySub').textContent = `MISSION ${i + 1}` + (pt ? ` · PART ${pt + 1}` : '') + ` · ${MISSIONS[i].title.toUpperCase()}`;
 }
 $('pStory').onclick = () => { unlockAudio(); selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected]; startMission(selected, { route: !m.routes ? 'default' : m.routes[selRoute] ? selRoute : 'stealth', abilities: [] }); };
-$('pDm').onclick = () => { unlockAudio(); const i = (Math.random() * Math.min(Math.max(progress, 1), 3)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm' }); };
+$('pDm').onclick = () => { unlockAudio(); dmStart(false); };
 function openQuick() {
   selected = Math.min(progress, MISSIONS.length - 1); const m = MISSIONS[selected];
   only('quick'); setPreview(); at('deploy');
@@ -1876,7 +1882,7 @@ $('lPlay').onclick = () => {                                                    
   unlockAudio();
   if (progress === 0 && !onboardingDone() && !tutorialDone()) { try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ } selected = 0; startMission(0); return; }
   track('lobby', { k: 'play', m: playMode });
-  if (playMode === 'dm') { unlockAudio(); const i = (Math.random() * Math.min(Math.max(progress, 1), 3)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm', def: store.get('sz_mode', null) ? 0 : 1 }); } else $('pStory').click();              // v14: mode is picked on the lobby toggle, PLAY starts at once
+  if (playMode === 'dm') { dmStart(!store.get('sz_mode', null)); } else $('pStory').click();              // v14: mode is picked on the lobby toggle, PLAY starts at once
 }; $('mStory').onclick = () => { playMode = 'story'; store.set('sz_mode', playMode); lobbyV14(); }; $('mDm').onclick = () => { playMode = 'dm'; store.set('sz_mode', playMode); lobbyV14(); };
 $('lCrate').onclick = () => { if (!startMissionNow.n) { unlockAudio(); $('lPlay').click(); } };
 { const R = { lShop: ['cart', 'SHOP'], lLoadout: ['backpack', 'LOADOUT'], lPass: ['star', 'PASS'], lProfile: ['rank', 'PROFILE'] };
@@ -1997,7 +2003,7 @@ window.__game = {
   else if (firstRun) {                                                            // first launch: straight into the mission-1 drill, no menus (CG load time = page open -> gameplayStart)
     try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ }
     selected = 0;                                                                // first click on the canvas grabs the mouse + unlocks audio
-    if (playMode === 'dm') startMission(0, { route: MISSIONS[0].routes ? 'assault' : 'default', abilities: [], mode: 'dm', def: 1 });   // v15: first launch = Deathmatch
+    if (playMode === 'dm') dmStart(true);   // v15: first launch = Deathmatch
     else startMission(0);
   }
   requestAnimationFrame(frame);
