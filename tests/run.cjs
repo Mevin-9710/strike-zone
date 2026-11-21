@@ -191,8 +191,9 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const { ctx, pg } = await open(browser, { query: 'test=1&touch=1', viewport: vp, touch: true, progress: 12 });
     const r = await pg.evaluate(() => {
       __game.start(3); __game.step(0.3);
-      const ids = ['obj', 'hp', 'ammo', 'mm', 'tfire', 'tjump', 'tab0', 'tpause', 'tspray'];
+      const ids = ['obj', 'hp', 'ammo', 'mm', 'tfire', 'tjump', 'tab0', 'tpause', 'treload', 'taim'];
       const out = {};
+      out.sprayHidden = getComputedStyle(document.getElementById('tspray')).display === 'none';
       for (const id of ids) { const e = document.getElementById(id); const b = e.getBoundingClientRect(); out[id] = b.width > 0 && b.right <= innerWidth + 1 && b.bottom <= innerHeight + 1 && b.left >= -1 && b.top >= -1; }
       return out;
     });
@@ -260,6 +261,30 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // v15: Deathmatch default, map-wide spawns, operative bots, DM quests
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    await pg.evaluate(() => __game.loadBotSkins());
+    await pg.waitForTimeout(4000);
+    const r = await pg.evaluate(() => {
+      const g = __game, out = { def: g.playMode };
+      g.start(0, { mode: 'dm' }); g.step(0.5);
+      out.pool = g.DM.pool.length;
+      const live = g.enemies.filter(e => e.alive).map(e => e.pos), keys = new Set(); let near = 0;
+      for (let i = 0; i < 30; i++) { const p = g.dmSpot([g.player.pos], [g.player.pos], live); keys.add(Math.round(p.x / 3) + ',' + Math.round(p.z / 3)); if (live.some(v => v.distanceTo(p) < 8)) near++; }
+      out.distinct = keys.size; out.near = near;
+      out.skins = g.enemies.filter(e => e.skin).length; out.bots = g.enemies.length; out.tags = g.enemies.filter(e => e.tag).length;
+      g.QUESTS._reset(); g.timeout(); g.step(0.2); out.finish = g.QUESTS.all().find(q => q.kind === 'finish')?.p === 1;
+      return out;
+    });
+    check('v15 lobby defaults to Deathmatch', r.def === 'dm', JSON.stringify(r));
+    check('v15 DM spawn pool covers the map and spawns spread out', r.pool >= 20 && r.distinct >= 8 && r.near <= 3, JSON.stringify(r));
+    check('v15 DM bots wear operative models with callsign tags', r.skins >= 1 && r.tags === r.bots, JSON.stringify(r));
+    check('v15 finishing a Deathmatch advances the finish quest', r.finish, JSON.stringify(r));
+    check('no page errors (v15)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   // 9. First launch: no tour, PLAY drops straight into the mission-1 drill; tour still replayable from Settings
   {
     const { ctx, pg } = await open(browser, { query: '', seen: [] });
@@ -267,6 +292,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await pg.waitForTimeout(300);
     const r1 = await pg.evaluate(() => ({ running: __game.state.running, tut: !!__game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), card: document.getElementById('ctlCard')?.classList.contains('show') }));
     check('first launch drops straight into mission 1: no drill, controls card shown', r1.running && !r1.tut && r1.flag === '1' && r1.card, JSON.stringify(r1));
+    check('v15 first launch is a Deathmatch', await pg.evaluate(() => __game.state.mode === 'dm' || /DEATHMATCH/.test(document.getElementById('obj').textContent)));
     check('no page errors (first launch)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }

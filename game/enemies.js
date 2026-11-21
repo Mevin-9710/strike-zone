@@ -93,6 +93,14 @@ export async function loadEnemyAssets(loader, weaponScenes) {
   const out = {};
   await Promise.all(Object.entries(ENEMY_TYPES).map(async ([type, T]) => {
     const g = await loader.loadAsync(`models/rigged/${T.model}.glb`);
+    out[type] = buildCharAssets(g, type, weaponScenes);
+  }));
+  return out;
+}
+// asset bundle for one enemy type on any humanoid rig (enemy or operative model share the same bones + clips)
+export function buildCharAssets(g, type, weaponScenes) {
+  const T = ENEMY_TYPES[type];
+  {
     g.scene.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
     const a = { gltf: g, clips: Object.fromEntries(g.animations.map(c => [c.name, c])) };
     if (T.weapon) {
@@ -102,9 +110,8 @@ export async function loadEnemyAssets(loader, weaponScenes) {
       if (type === 'sniper') { a.pistolOffset = calibrateGun(g, 'shoot_pistol'); a.pistol = weaponScenes.vex_p9; a.pistolInfo = weaponInfo(a.pistol); }
     }
     const box = new THREE.Box3().setFromObject(g.scene); a.height = box.max.y; a.box = box;
-    out[type] = a;
-  }));
-  return out;
+    return a;
+  }
 }
 
 let NEXT_ID = 1;

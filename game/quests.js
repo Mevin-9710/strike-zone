@@ -4,18 +4,20 @@ const KEY = 'sz_quests';
 const POOL = [
   { kind: 'kill', n: 30, coins: 60, xp: 150, t: 'Get {n} kills' },
   { kind: 'head', n: 8, coins: 60, xp: 150, t: 'Land {n} headshots' },
-  { kind: 'win', n: 2, coins: 80, xp: 200, t: 'Win {n} missions' },
+  { kind: 'win', n: 2, coins: 80, xp: 200, t: 'Win {n} matches' },
+  { kind: 'finish', n: 3, coins: 60, xp: 150, t: 'Finish {n} matches' },
+  { kind: 'rank', n: 1, coins: 90, xp: 220, t: 'Reach GOLD rank in Deathmatch' },
   { kind: 'dmkill', n: 25, coins: 70, xp: 180, t: 'Get {n} kills in Deathmatch' },
   { kind: 'match', n: 4, coins: 50, xp: 120, t: 'Play {n} matches' },
   { kind: 'streak', n: 5, coins: 70, xp: 160, t: 'Get a {n}-kill streak' },
 ];
 const STARTER = [                                                    // a brand-new player's first set: doable in session 1
   { kind: 'kill', n: 5, coins: 40, xp: 100, t: 'Get {n} kills' },
-  { kind: 'win', n: 1, coins: 60, xp: 150, t: 'Win {n} mission' },
+  { kind: 'finish', n: 1, coins: 60, xp: 150, t: 'Finish {n} match' },
   { kind: 'head', n: 2, coins: 40, xp: 100, t: 'Land {n} headshots' },
 ];
 const WEEKLY = [
-  { kind: 'win', n: 10, coins: 300, xp: 600, t: 'Win {n} missions this week' },
+  { kind: 'win', n: 10, coins: 300, xp: 600, t: 'Win {n} matches this week' },
   { kind: 'kill', n: 250, coins: 300, xp: 600, t: 'Get {n} kills this week' },
 ];
 const dayKey = (d = new Date()) => d.toISOString().slice(0, 10);
@@ -45,7 +47,7 @@ export function refresh(now = new Date()) {
 }
 export const all = () => { refresh(); return [...S.daily, S.weekly]; };
 export const unclaimed = () => all().filter(q => q.done && !q.claimed).length;
-// kind: kill | head | win | dmkill | match | streak (streak: n = current streak, keeps the max)
+// kind: kill | head | win (story win or DM victory) | finish | rank (DM GOLD+) | dmkill | match | streak (streak: n = current streak, keeps the max)
 export function progress(kind, n = 1) {
   refresh(); const out = [];
   for (const q of all()) {

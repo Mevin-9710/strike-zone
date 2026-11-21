@@ -390,3 +390,13 @@ Plan + review: docs/v14-plan.md. Every new system has a remote-config kill switc
 - **End screen**: compact, coin count-up, 5 s DOUBLE COINS + XP rewarded offer, quest bars.
 - **Login crate** now opens after the first match (not on boot). Drill removed (see earlier entry).
 - Telemetry: quest, trial, dbl, dcard, thr, lobby events.
+
+## 2026-11-21 · v15: Deathmatch-first
+Plan: docs/v15-plan.md. Remote config v6.
+- **Deathmatch is the default** (`RC.defaultMode`, remote switch): first launch drops straight into a Deathmatch (controls card, threat pinned low until the first kill); lobby toggle defaults to Deathmatch, a Story pick is remembered. `start` telemetry has `def`.
+- **Target 50 kills / 4 min** (history: 30 kills ended in ~2 min, all wins; 75 was never reached and players never died. v14 adaptive threat now makes bots dangerous).
+- **Map-wide spawns**: spawn pool = guard spots + reachable open nav nodes ~4 m apart (~500 on m1, was 8); scoring prefers 18-40 m, rejects bot/player sight, penalises clumping near live bots and spots used in the last 10 s.
+- **Operative bots**: Deathmatch bots wear kade/tomas/yuna/amara/rhea (same rig + clips as enemies; `buildCharAssets` in enemies.js), red outline + red callsign tag; falls back to enemy models until loaded. No download change.
+- **Minimal mobile HUD**: hidden on touch — spray, weapon name/icon, threat chip, HP label, progress line; Deathmatch also hides minimap + ability buttons; minimap 60% in story; pause top-left; feed max 2; radio one line.
+- **Quests count in Deathmatch**: "Win N matches" (story win or DM victory), new "Finish N matches" and "Reach GOLD rank in Deathmatch"; starter set = 5 kills / finish 1 match / 2 headshots.
+- Tests: 87/89 (2 known charm/spray failures).
