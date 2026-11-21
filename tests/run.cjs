@@ -45,10 +45,12 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
   {
     const { ctx, pg } = await open(browser, { query: '' });
     check('boots into the 3D lobby', await pg.isVisible('#lobby'));
-    check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /◎ 0/.test(await pg.textContent('#coins')));
+    check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /^\s*0\s*$/.test(await pg.textContent('#coins')));
+    check('v14 lobby: quests card, crate, weapon cards, mode toggle', await pg.evaluate(() => document.querySelectorAll('#lQuests .q').length === 4 && /CRATE/.test(document.getElementById('lCrate').textContent) && document.querySelectorAll('#lWeps .wcard').length >= 3 && document.querySelectorAll('#lWeps .wcard.lock').length >= 1));
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
-    await pg.click('#lPlay');
-    check('Play opens the Story / Deathmatch picker', await pg.isVisible('#pick') && await pg.isVisible('#pStory') && await pg.isVisible('#pDm'));
+    await pg.click('#mDm');
+    check('mode toggle switches the lobby to Deathmatch', await pg.evaluate(() => document.getElementById('mDm').classList.contains('on') && /DEATHMATCH/.test(document.getElementById('lMission').textContent)));
+    await pg.click('#mStory');
     { const { ctx: dctx, pg: dpg } = await open(browser, { query: 'test=1' });
       const dm = await dpg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); const n0 = g.enemies.filter(e => e.alive).length; g.killAll(); g.step(4); const n1 = g.enemies.filter(e => e.alive).length;
         g.damage(500); g.step(0.2); const dead = !g.player.alive; g.step(3); return { n0, n1, dead, back: g.player.alive, hud: document.getElementById('obj').textContent, run: g.state.running }; });
@@ -227,41 +229,34 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
-  // 9. Guided tutorial (mission 1): every step completes headlessly, mentor spawns + fights, flag persists
+  // v14: adaptive threat, quests, trial, death card, spawn scoring, end screen
   {
-    const { ctx, pg } = await open(browser, {});
-    await pg.evaluate(() => { __game.start(0, { tutorial: true }); __game.step(0.1); });
-    const mentorOk = await pg.waitForFunction(() => !!__game.mentor, null, { timeout: 30000 }).then(() => true, () => false);
-    check('tutorial spawns the Amara mentor bot', mentorOk);
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
     const r = await pg.evaluate(() => {
-      const g = __game, t = g.tutorial, out = [], clock0 = g.state.clock;
-      const act = {
-        look: () => g.look(g.player.yaw + 0.3, 0), move: () => g.key('KeyW', true), walk: () => { g.key('KeyW', true); g.key('ShiftLeft', true); },
-        jump: () => g.key('Space', true), slide: () => { g.key('KeyW', true); g.key('ShiftLeft', false); g.key('KeyC', true); },
-        fire: () => g.fire(), aim: () => g.mouse('r', true), reload: () => g.reload(), swap: () => g.equip(1),
-        ab0: () => g.ability(0), ab1: () => g.ability(1), kit: () => {},
-        fight: n => { if (n > 20) { const e = g.enemies.find(e => e.alive); e?.damage(9999); } },
-        defuse: () => { const p = g.map.points[0]; g.teleport(p.x + 1.2, p.y, p.z); g.key('KeyE', true); },
-      };
-      let held = true;
-      for (const id of t.steps) {
-        if (t.step !== id) { out.push(id + ':skipped'); continue; }
-        g.step(3.2); let n = 0;
-        while (t.active && t.step === id && n < 200) { act[id]?.(n); g.step(0.3); n++; }
-        for (const k of ['KeyW', 'ShiftLeft', 'Space', 'KeyC', 'KeyE']) g.key(k, false); g.mouse('r', false);
-        if (id === 'kit') held = held && clock0 - g.state.clock < 0.5;   // last 0.3s tick may already be in the (unfrozen) fight step
-        out.push(id + ':' + (n < 200 ? 'ok' : 'STUCK'));
-      }
-      g.step(0.2);
-      return { out, active: t.active, held, flag: localStorage.getItem('sz_tutorial_done'), mentorKills: g.mentor?.kills ?? -1, fight: g.mentor?.fight };
+      const g = __game, D = g.director, out = {};
+      g.start(0); D.start({ mode: null, level: 1, firstMission: false, on: true }); const t0 = D.threat;
+      for (let i = 0; i < 12; i++) D.kill(i % 2 === 0, i); out.rose = D.threat > t0; const t1 = D.threat;
+      D.death(); out.fell = D.threat < t1;
+      for (let i = 0; i < 200; i++) D.kill(true, i); out.capS = D.threat <= 0.85 + 1e-9;
+      D.start({ mode: null, level: 1, firstMission: true }); for (let i = 0; i < 0; i++); out.pinned = D.threat <= 0.2;
+      D.start({ mode: 'dm', level: 1 }); for (let i = 0; i < 300; i++) D.kill(true, i); out.capDm = D.threat <= 1 && D.threat > 0.85;
+      out.diff = g.G ? 1 : 1;
+      g.QUESTS._reset(); const q0 = g.QUESTS.all()[0].p; g.start(0); g.killTick(false); out.quest = g.QUESTS.all()[0].p > q0;
+      g.setTrial('javelin_amr'); g.start(0); out.trialUsed = g.W.slots[0] === 'javelin_amr' && g.trial === null; g.start(0); out.trialOnce = g.W.slots[0] !== 'javelin_amr';
+      g.start(0, { mode: 'dm' }); g.step(1);
+      let los = 0; for (let i = 0; i < 20; i++) { const live = g.enemies.filter(e => e.alive).map(e => e.pos); const p = g.dmSpot(live, live); for (const v of live) if (v.distanceTo(p) < 9) los++; } out.spawnFar = los === 0;
+      g.damage(500); g.step(0.2); out.card = document.getElementById('dcard').classList.contains('show') && /RESPAWN/.test(document.getElementById('dcGo').textContent);
+      g.step(0.8); document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' })); g.step(0.1); out.respawnNow = g.player.alive && !document.getElementById('dcard').classList.contains('show');
+      return out;
     });
-    check('tutorial: every guided step completes in order', !r.active && r.out.every(s => s.endsWith(':ok')), r.out.join(' '));
-    check('tutorial freezes the mission timer during drills', r.held);
-    check('tutorial completion persists (forced only on first play)', r.flag === '1');
-    check('mentor keeps fighting after the tutorial', r.fight === true);
-    const skip = await pg.evaluate(() => { __game.start(0, { tutorial: true }); __game.step(0.5); const a = __game.tutorial.active; document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace' })); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Backspace' })); __game.step(0.1); return { a, after: __game.tutorial.active, hold: __game.tutorial.hold }; });
-    check('tutorial is replayable and skippable (Backspace)', skip.a && !skip.after && !skip.hold, JSON.stringify(skip));
-    check('no page errors (tutorial)', pg.errors.length === 0, pg.errors.join('|'));
+    check('v14 threat rises with kills, falls on death, capped (story 0.85 / DM 1), pinned on mission 1', r.rose && r.fell && r.capS && r.pinned && r.capDm, JSON.stringify(r));
+    check('v14 quests count kills', r.quest, JSON.stringify(r));
+    check('v14 weapon trial applies to one match only', r.trialUsed && r.trialOnce, JSON.stringify(r));
+    check('v14 DM spawn scoring keeps spawns away from bots', r.spawnFar, JSON.stringify(r));
+    check('v14 DM death card shows and SPACE respawns now', r.card && r.respawnNow, JSON.stringify(r));
+    const e = await pg.evaluate(() => { const g = __game; g.start(0); g.win(); g.step(0.1); return { v14: document.getElementById('end').classList.contains('v14e'), coins: document.getElementById('endCoins').textContent.length > 0, dbl: getComputedStyle(document.getElementById('dbl')).display !== 'none', q: document.querySelectorAll('#endQ .q').length }; });
+    check('v14 end screen: coins, double offer, quest bars', e.v14 && e.coins && e.dbl && e.q === 4, JSON.stringify(e));
+    check('no page errors (v14)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 
@@ -270,10 +265,8 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const { ctx, pg } = await open(browser, { query: '', seen: [] });
     check('first launch skips lobby and tour', await pg.evaluate(() => !__game.onboard?.active && !document.getElementById('lobby').classList.contains('show')));
     await pg.waitForTimeout(300);
-    const r1 = await pg.evaluate(() => ({ running: __game.state.running, mission: __game.state.mission, tut: __game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), hl: !!document.querySelector('#tut .ks.tut-hl') }));
-    check('first launch auto-starts mission 1 with the guided tutorial + key-hint highlight', r1.running && r1.tut && r1.flag === '1' && r1.hl, JSON.stringify(r1));
-    await pg.evaluate(() => __game.tutorial.skip());
-    check('tutorial highlight removed when it ends', await pg.evaluate(() => !document.querySelector('.tut-hl')));
+    const r1 = await pg.evaluate(() => ({ running: __game.state.running, tut: !!__game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), card: document.getElementById('ctlCard')?.classList.contains('show') }));
+    check('first launch drops straight into mission 1: no drill, controls card shown', r1.running && !r1.tut && r1.flag === '1' && r1.card, JSON.stringify(r1));
     check('no page errors (first launch)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }

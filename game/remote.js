@@ -6,6 +6,7 @@ export const RC = {
   holdSeconds: 20, contactAfter: 20, easyAfterFails: 2, easyCountMul: 0.65, easyExtraTime: 30, autoNextSeconds: 5, winCoins: 100, partCoins: 50, midgameGapSeconds: 180,
   dmTime: 300, dmKills: 30, dmBots: 6, dmRespawn: 1.5, dmCoinsPerKill: 5, dmRematch: 8, dmInfiniteAmmo: true,
   minSpawnDist: 20, startGrace: 4, missions: { m2: { count: 5 } },
+  v14ui: true, quests: true, trials: true, deathCard: true, adaptive: true, hitTimer: true, dmSpawnScore: true, trialCost: 150,
   loaded: false,
 };
 export async function loadRemote(skip, ms = 2500) {

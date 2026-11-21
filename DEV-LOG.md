@@ -370,3 +370,23 @@ Play now runs Mode (+chapter) → Mission (briefing, route) → Agent (skipped i
 - startMissionNow called `document.documentElement.requestFullscreen?.().catch(...)`; on iOS Safari (no Fullscreen API) that threw before `crazy.gameplay(true)`, so phone sessions never reported gameplay start (telemetry: 5× "Cannot read properties of undefined (reading 'catch')" on touch). Now guarded.
 - Remote config v4: Deathmatch target 75 kills (real matches were ending in ~105 s at 30 kills, median 30 kills, all wins).
 - CrazyGames (Jacinda, Technical QA) reset the Basic Launch evaluation on 20 Nov; the scored window is 29 Nov – 5 Dec.
+
+## 2026-11-21 · v13 (in progress): drill removed
+- Mission-1 guided drill no longer starts (first-run or PLAY). Every start goes straight into play; first mission shows a 5 s controls card (#ctlCard, desktop/touch text) and sets sz_tutorial_done.
+- Lobby TUTORIAL button is now CONTROLS (opens the guide). game/tutorial.js kept but unused.
+- Why: telemetry, last 24 h: desktop players quit during the first drill steps; only 54% got a kill (touch 74%).
+- Tests: 73/75 (the 2 known charm/spray failures).
+
+## 2026-11-21 · v14: kit UI, daylight lobby, quests, adaptive bots
+Plan + review: docs/v14-plan.md. Every new system has a remote-config kill switch (remote-config.json v5).
+- **UI kit look** (Stylized FPS UI Lite, itch.io, free; Rajdhani OFL): v14.css restyles lobby, HUD, kill banners, end screen, touch buttons. Rajdhani subset woff2 (28 KB). Line icons in game/icons.js (FPS Icon Kit); supply-crate icon for crates/rewards.
+- **Daylight lobby**: midday light on the live map; top bar (level, coins, settings), icon rail (Shop/Loadout/Pass/Profile), quests card, free daily crate, big PLAY + Story/Deathmatch toggle (replaces the picker step), Daily/Survival/Controls tiles, weapon cards.
+- **Quests** (game/quests.js, `sz_quests`, cloud-saved): 3 daily + 1 weekly; first set finishable in session 1; mid-match toast; claim in lobby (coins + pass XP).
+- **Weapon trials**: locked weapon for one match via rewarded ad or 150 coins.
+- **Adaptive threat** (game/director.js): one 0..1 value owns G.difficulty; +kills/headshots/streaks, -death/low HP, drifts to a level baseline; pinned low on mission 1; caps story 0.85 / DM 1. HUD "THREAT n" chip + "ENEMIES ADAPTING"; coins x(1+threat).
+- **Fair-fight hit timer** (story): blocked enemy hits become near-misses; spacing scales with distance, facing, charging, threat.
+- **DM spawn scoring**: no spawns in a bot's sight, away from fights and recent deaths.
+- **DM death card**: killer callsign, weapon + distance, 4 loadouts (Assault/Heavy/Marksman/Rush, unlocked only), RESPAWN countdown, SPACE/tap respawns now.
+- **End screen**: compact, coin count-up, 5 s DOUBLE COINS + XP rewarded offer, quest bars.
+- **Login crate** now opens after the first match (not on boot). Drill removed (see earlier entry).
+- Telemetry: quest, trial, dbl, dcard, thr, lobby events.

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <link rel="icon" href="data:,">
+  <link rel="preload" href="fonts/Rajdhani-Bold.woff2" as="font" type="font/woff2" crossorigin>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Strike Zone: Season 1</title>
   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js" async onerror="window.__noSDK=true"></script>
@@ -230,7 +231,8 @@
       *,*::before,*::after{animation:none!important;transition:none!important}
       #lobbyTop .logo::after{display:none}
     }
-  </style>
+  #ctlCard{position:fixed;left:50%;top:22%;transform:translate(-50%,-10px);background:rgba(10,14,24,.8);color:#fff;font:500 18px/1.6 system-ui,sans-serif;padding:12px 22px;border-radius:10px;text-align:center;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;z-index:40}#ctlCard.show{opacity:1;transform:translate(-50%,0)}#ctlCard b{color:#FFC633}
+</style>
 </head>
 <body>
   <canvas id="gl"></canvas>
@@ -245,6 +247,7 @@
     <div id="dmgdir" class="ov"></div>
     <div id="objp" class="ov pnl"><div><div id="obj">OBJECTIVE</div><div id="timer">0:00</div><div id="prog"></div></div></div>
     <div id="spot" class="ov">SPOTTED</div>
+    <div id="thr" class="ov"><span>THREAT 1</span><i>▲</i></div>
     <div id="mmp" class="ov pnl"><div><canvas id="mm" width="220" height="220"></canvas><div id="mmlabel">HALVANE</div></div></div>
     <div id="feed" class="ov"></div>
     <div id="vit" class="ov pnl"><div><div class="row1"><span id="hp">100</span><span id="hpl">HEALTH</span></div><div class="bar" id="hpb"><i></i></div><div class="bar" id="shb"><i></i></div></div></div>
@@ -258,21 +261,22 @@
   <div id="loading" class="panel show"><div class="card"><h1>STRIKE ZONE</h1><p id="ltext">Loading Halvane…</p><div id="lbar"><i></i></div></div></div>
 
 
-  <div id="lobby" class="panel">
-    <div id="lobbyTop"><span class="logo">STRIKE ZONE</span><span class="chip" id="lvl">LV 1<span id="lvlbar"><i></i></span></span><span class="chip" id="coins">◎ 0</span></div>
-    <div id="lobbyNav">
-      <button id="lPlay" class="go">▶ PLAY</button>
-      <button id="lDaily">📅 DAILY</button>
-      <button id="lSurv">♾ SURVIVAL</button>
-      <div class="sub">
-        <button id="lLoadout">LOADOUT</button>
-        <button id="lShop">SHOP</button>
-        <button id="lPass">BATTLE PASS</button>
-        <button id="lProfile">PROFILE</button>
-      </div>
-      <button id="lSettings" class="small">⚙ SETTINGS</button>
-      <button id="lTutorial" class="small">🎓 TUTORIAL</button>
+  <div id="lobby" class="panel v14">
+    <div id="lobbyTop"><span class="logo">STRIKE ZONE</span><span class="sp"></span><span class="chip" id="lvl">LV 1<span id="lvlbar"><i></i></span></span><span class="chip" id="coins">0</span><button id="lSettings" class="ico" aria-label="Settings"></button></div>
+    <div id="lRail">
+      <button id="lShop" class="rail"></button><button id="lLoadout" class="rail"></button><button id="lPass" class="rail"></button><button id="lProfile" class="rail"></button>
     </div>
+    <div id="lSide">
+      <div id="lQuests" class="kpanel"></div>
+      <button id="lCrate" class="kpanel crate"></button>
+    </div>
+    <div id="lMain">
+      <div id="lMission">LEVEL 1 · MISSION</div>
+      <button id="lPlay" class="go kbtn">PLAY</button>
+      <div id="lMode"><button id="mStory" class="kseg on"></button><button id="mDm" class="kseg"></button></div>
+      <div id="lExtra"><button id="lDaily" class="kmini"></button><button id="lSurv" class="kmini"></button><button id="lTutorial" class="kmini">CONTROLS</button></div>
+    </div>
+    <div id="lWeps"></div>
     <div id="lobbyOp" class="chip"></div>
   </div>
   <style>.loginToast{position:fixed;left:50%;top:14%;transform:translateX(-50%) skewX(-8deg);z-index:60;background:#ffd23b;border:3px solid #111;box-shadow:5px 5px 0 #111;padding:10px 22px;font:bold 20px/1.3 Impact,Arial,sans-serif;text-align:center;pointer-events:none}.loginToast small{display:block;font:bold 13px Arial,sans-serif}</style>
@@ -292,6 +296,7 @@
   @media (prefers-reduced-motion:reduce){#rankBadge,.pickBtn.dm,#beatBest.rec{animation:none}}
   </style>
   <div id="mkFlash"></div>
+  <div id="dcard"><div class="box"><div class="by">ELIMINATED BY</div><div class="who" id="dcWho">BOT</div><div class="how" id="dcHow"></div><div class="lo" id="dcLo"></div><button id="dcGo" class="kbtn">RESPAWN</button></div></div>
   <div id="pick" class="panel"><div class="pickRow">
     <button id="pStory" class="pickBtn"><b>STORY</b><small id="pStorySub">MISSION 1</small></button>
     <button id="pDm" class="pickBtn dm"><b>DEATHMATCH</b><small>SOLO VS BOTS · 5 MIN</small><span class="best" id="pDmBest"></span></button>
@@ -370,10 +375,11 @@
   <div id="end" class="panel"><div class="card" style="max-width:min(720px,94vw)">
     <div id="dmEnd"><div id="rankBadge"></div><div class="tiles"><div><b id="tK">0</b><span>KILLS</span></div><div><b id="tKD">0</b><span>K/D</span></div><div><b id="tSt">0</b><span>BEST STREAK</span></div><div><b id="tC">0</b><span>◎ EARNED</span></div></div><div id="beatBest"></div></div>
     <h1 id="endTitle"></h1><div id="debrief"></div><p id="endText"></p><p id="endStats" class="help"></p><p id="endXP"></p><div id="upBox" style="display:none"><h3 id="upTitle"></h3><div class="row"><button id="upDmg">+ DAMAGE</button><button id="upAmmo">+ AMMO</button></div></div>
-    <div class="row"><button id="next" class="go">NEXT MISSION</button><button id="again">REPLAY</button><button id="trySurv" style="display:none">♾ TRY SURVIVAL</button><button id="menuBtn">LOBBY</button></div><div class="row"><button id="adXP">▶ WATCH AD · DOUBLE XP</button><button id="adRevive" class="go">▶ WATCH AD · REVIVE</button></div>
+    <div id="endCoins"></div><button id="dbl" style="display:none"></button><div id="endQ"></div><div class="row"><button id="next" class="go">NEXT MISSION</button><button id="again">REPLAY</button><button id="trySurv" style="display:none">♾ TRY SURVIVAL</button><button id="menuBtn">LOBBY</button></div><div class="row"><button id="adXP">▶ WATCH AD · DOUBLE XP</button><button id="adRevive" class="go">▶ WATCH AD · REVIVE</button></div>
   </div></div>
 
   <link rel="stylesheet" href="menu.css">
+  <link rel="stylesheet" href="v14.css">
   <script type="module" src="game.js"></script>
 </body>
 </html>
