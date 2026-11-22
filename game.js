@@ -26,7 +26,7 @@ import { weaponInfo } from './game/weapons.js';
 import { radio as RADIO } from './game/radio.js';
 import * as MODES from './game/modes.js';
 import { RC, loadRemote } from './game/remote.js';
-import { track, at, onQuit } from './game/telemetry.js';
+import { track, at, onQuit, stage } from './game/telemetry.js';
 import { director } from './game/director.js';
 import * as QUESTS from './game/quests.js';
 import { icon } from './game/icons.js';
@@ -139,6 +139,7 @@ const IS_TOUCH = isTouchDevice();
 document.head.insertAdjacentHTML('beforeend', `<style>${TOUCH_CSS}</style>`);
 if (IS_TOUCH) document.body.classList.add('touch');
 const touch = IS_TOUCH ? new TouchControls(document.body, settings) : null;
+if (touch) document.getElementById('touch')?.addEventListener('touchstart', () => noteInput('touch'), { passive: true });
 if (touch) for (const [id, ic] of [['tfire', 'crosshair'], ['taim', 'ads'], ['tjump', 'extraction'], ['treload', 'reload']]) { const b = document.getElementById(id); if (b) b.innerHTML = icon(ic, 'ic tic'); }   // v14 kit icons
 // Mobile browsers only allow fullscreen inside a user gesture, so request it on every tap until it sticks.
 if (touch) {
@@ -183,7 +184,7 @@ const loader = new GLTFLoader();
 const A = { weapons: {}, icons: {}, props: {}, enemies: null, rhea: null };
 async function loadAll() {
   const ids = Object.keys(WEAPONS), total = ids.length + 2 + 8 + 5 + 1 + Object.keys(ENEMY_TYPES).length; let done = 0;   // weapons + props + kenney kits + arch kits + operative + enemies
-  const bar = $('lbar').firstElementChild, tick = () => { done++; bar.style.width = `${Math.min(99, Math.round(done / total * 100))}%`; };
+  const bar = $('lbar').firstElementChild, ldSent = {}, tick = () => { done++; const pc = Math.min(99, Math.round(done / total * 100)); bar.style.width = `${pc}%`; for (const m of [25, 50, 75]) if (pc >= m && !ldSent[m]) { ldSent[m] = 1; track('ld', { p: m }); } };
   const origLoad = loader.loadAsync.bind(loader);   // every GLB (weapons, kenney kits, arch, enemies, operative) advances the bar
   loader.loadAsync = async u => { try { return await origLoad(u); } finally { tick(); } };
   await Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); }));
@@ -1396,6 +1397,8 @@ function startMission(idx = selected, opts = {}) {
   if (startMission.busy) return; startMission.busy = true;                       // midgame ad between missions (rate-limited in crazy.js)
   track('ad', { k: 'midgame' }); crazy.midgame().then(() => { startMission.busy = false; startMissionNow(idx, opts); });
 }
+let firstInput = false;
+function noteInput(kind) { if (firstInput || !running) return; firstInput = true; stage('play'); track('input', { k: kind, el: Math.round(elapsed * 10) / 10 }); }
 function startMissionNow(idx, opts) {
   if (opts.part === undefined && !opts.mode && !TEST) opts = { ...opts, part: partOf(idx) };   // resume at the saved part
   if (trialWeapon && !opts.primary) { opts = { ...opts, primary: trialWeapon }; track('trial', { k: 'use', w: trialWeapon }); trialWeapon = null; }
@@ -1409,7 +1412,7 @@ function startMissionNow(idx, opts) {
   document.body.classList.toggle('tdm', mode === 'dm');
   director.start({ mode, level: META.level(), firstMission: idx === 0 && progress === 0 && !mode, base: mode === 'dm' ? Math.min(0.75, RC.dmBaseThreat + 0.06 * (dmLevel - 1)) : null, easy: !!route.easy, on: !!RC.adaptive }); hitNextT = 0; threatChip(true);
   LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };
-  startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n, def: opts.def ? 1 : 0 }); at(`${mission.id}:${route.part}`);
+  stage('match'); startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n, def: opts.def ? 1 : 0 }); at(`${mission.id}:${route.part}`);
   for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); tutorial?.abort(); tutorial = null;                                  // v13: drill removed, every start is straight into play
@@ -1621,7 +1624,7 @@ const flow = createFlow({ $, skip: id => id === 'agent' && [...META.unlocked(pro
 // ---------- input ----------
 const isMenu = () => !running;
 document.addEventListener('keydown', e => {
-  keys[e.code] = true; unlockAudio();
+  keys[e.code] = true; unlockAudio(); noteInput('key');
   if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
   if (isMenu()) return;
   if ($('dcard').classList.contains('show')) { if (e.code === 'Space') dcRespawnNow(); const d = +e.code.replace('Digit', ''); if (d >= 1 && d <= 4) dcPick(d - 1); return; }
@@ -1637,7 +1640,7 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
-canvas.addEventListener('mousedown', e => { unlockAudio(); if (!running) return; if (!document.pointerLockElement && !TEST) { lockMouse(); return; } if (e.button === 0) mouse.l = true; if (e.button === 2) mouse.r = true; });
+canvas.addEventListener('mousedown', e => { unlockAudio(); noteInput('mouse'); if (!running) return; if (!document.pointerLockElement && !TEST) { lockMouse(); return; } if (e.button === 0) mouse.l = true; if (e.button === 2) mouse.r = true; });
 document.addEventListener('mouseup', e => { if (e.button === 0) mouse.l = false; if (e.button === 2) mouse.r = false; });
 document.addEventListener('contextmenu', e => e.preventDefault());
 let wheelT = 0, wheelAcc = 0;                                                    // one weapon per notch, either direction, wrapping round
@@ -1658,11 +1661,12 @@ document.addEventListener('mousemove', e => {
 function lockMouse() { try { const r = canvas.requestPointerLock?.(); r?.catch?.(() => setTimeout(lockHint, 50)); } catch (e) { /* refused */ } setTimeout(lockHint, 250); }
 function lockHint() {                                                           // lock refused while playing: freeze + ask for a click
   if (!running || touch || TEST || document.pointerLockElement || matchOver) return;
+  track('lock', { k: 'hint' });
   running = false; paused = true; mouse.l = false; $('clickGo').classList.add('show'); crazy.gameplay(false);
 }
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
-document.addEventListener('pointerlockerror', () => setTimeout(lockHint, 50));
-$('clickGo').addEventListener('mousedown', e => { e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
+document.addEventListener('pointerlockerror', () => { track('lock', { k: 'err' }); setTimeout(lockHint, 50); });
+$('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
@@ -1797,7 +1801,7 @@ function applyRemote() {                                                        
   if (touch && !settings.fUser) settings.fireMode = RC.touchAutoFire ? 'auto' : 'button';
 }
 function openLobby() {
-  only('lobby'); at('lobby');
+  only('lobby'); at('lobby'); stage('lobby');
   const lc = TEST || !startMissionNow.n ? null : MODES.loginClaim();             // v14: login reward lands after the first match, not on boot
   if (lc) { META.profile.coins += lc.coins; META.saveProfile(); sfx.coin?.(); loginBanner(lc); track('ui', { k: 'login', d: lc.day }); }
   lobbyDaylight(); chips(); setPreview(); modeButtons(); lobbyV14(); loadBotSkins();
@@ -1991,7 +1995,7 @@ window.__game = {
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); track('boot', { load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

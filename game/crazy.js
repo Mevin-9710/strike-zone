@@ -2,7 +2,8 @@
 // Hooks: crazy.init(), loading(on), gameplay(on), happy(), midgame(), rewarded(onDone), onAd(cb) for mute/pause.
 let MIN_AD_GAP = 180000;           // midgame ads at most every 3 min (the SDK also enforces its own cooldown)
 const KEYS = ['sz_loadout', 'sz_profile', 'sz_progress', 'sz_settings', 'sz_tutorial_done', 'sz_onboard_done', 'sz_daily', 'sz_surv_best', 'sz_parts', 'sz_login', 'sz_quests', 'sz_dm_best', 'sz_dm_played', 'sz_dm_level', 'sz_mode'];
-let S = null, lastAd = 0, adsArmed = false, adHook = () => {}, playing = false, inAd = false;
+import { track } from './telemetry.js';
+let S = null, lastAd = 0, gsSent = false, adsArmed = false, adHook = () => {}, playing = false, inAd = false;
 
 const sdk = () => S;
 const safe = fn => { try { return fn(S); } catch (e) { /* SDK hiccup: never break the game */ } };
@@ -29,12 +30,12 @@ export const crazy = {
     try {
       const sd = await waitForScript(4000); if (!sd) return false;
       await Promise.race([sd.init(), new Promise((_, rej) => setTimeout(() => rej(new Error('sdk init timeout')), 5000))]);
-      S = sd; mirrorData(); return true;
-    } catch (e) { S = null; return false; }
+      S = sd; mirrorData(); track('sdk', { ok: 1 }); return true;
+    } catch (e) { S = null; track('sdk', { ok: 0, m: String(e?.message || e).slice(0, 60) }); return false; }
   },
   onAd(cb) { adHook = cb; },                         // cb(true) ad started -> mute+pause; cb(false) ended
   loading(on) { safe(s => on ? s.game.loadingStart() : s.game.loadingStop()); },
-  gameplay(on) { if (on === playing) return; playing = on; safe(s => on ? s.game.gameplayStart() : s.game.gameplayStop()); },
+  gameplay(on) { if (on === playing) return; playing = on; if (on && !gsSent) { gsSent = true; track('gs', { sdk: !!S }); } safe(s => on ? s.game.gameplayStart() : s.game.gameplayStop()); },
   setAdGap(ms) { if (ms >= 60000) MIN_AD_GAP = ms; },
   armAds() { if (!adsArmed) { adsArmed = true; lastAd = Date.now(); } },   // ad clock starts at the first real (non-drill) mission
   happy() { safe(s => s.game.happytime()); },

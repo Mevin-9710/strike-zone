@@ -437,3 +437,14 @@ Why: since v17-18, 28 of 52 sessions under 2 min (22 Nov 06:00+ UTC) got a kill,
 - Cloud save also mirrors sz_dm_played, sz_dm_level, sz_mode.
 - `tools/vsplit.py`: per-build funnel from telemetry (builds split by first-seen time on CrazyGames).
 - Tests 99/101 (2 known charm/spray failures).
+
+## 2026-11-22 · v20: full conversion-funnel telemetry
+Funnel 18-21 Nov (our telemetry starts 18 Nov 14:32 UTC; 15-17 Nov has none), sessions where our script ran:
+desktop 485 -> 88% loaded (load median 2.9 s, p90 10.4 s) -> 85% started a match -> 63% played 60 s+; mobile 427 -> 94% -> 93% -> 75%.
+Once loaded, 94-100% start at any load time. CrazyGames shows 66% (desktop) / 41% (mobile): the gap is before our game code runs (CrazyGames loader/preroll, our page and three.js download), which we could not see.
+New events to find the leak:
+- `page`: inline `<head>` beacon before any game code downloads; `quit0 {stage}` if the tab closes before the game code runs. telemetry.js reuses the same session id.
+- `ctx.js`: seconds from page open to game code running; `t` is now seconds since page open.
+- `sdk {ok}`: CrazyGames SDK init; `ld {p}`: 25/50/75% of assets; `gs`: first gameplayStart sent; `input {k, el}`: first key/mouse/touch in a match.
+- `lock {k: hint|click|err}`: mouse-capture "click to continue" shown / clicked / refused.
+- `tools/convfunnel.py FROM TO`: step-by-step funnel (page -> code -> assets -> start -> gameplayStart -> input -> kill).

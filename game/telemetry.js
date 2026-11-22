@@ -4,9 +4,12 @@
 const CFG = Object.assign({ url: 'https://tzpebjsikktsqlzqlemb.supabase.co',   // public anon key: insert-only table, RLS blocks reads
   key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6cGVianNpa2t0c3FsenFsZW1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0ODk2MTcsImV4cCI6MjExMDA2NTYxN30.tRAsW47PooyFklDqvLQCKEQ-jSof7htupS3BZLOe5Ws' }, window.SZ_TELEMETRY || {});
 const ON = !!(CFG.url && CFG.key) && !/[?&]test=1/.test(location.search);
-const sid = Math.random().toString(36).slice(2, 10);
-const t0 = performance.now();
-const dev = (matchMedia('(pointer:coarse)').matches ? 'touch' : 'desk') + (innerWidth < innerHeight ? '-p' : '-l');
+const T = window.__szT || {};                       // set by the inline <head> script: same session id as the 'page' event
+const sid = T.sid || Math.random().toString(36).slice(2, 10);
+const t0 = 0, jsAt = performance.now();               // t = seconds since page open (navigation start)
+const dev = T.dev || ((matchMedia('(pointer:coarse)').matches ? 'touch' : 'desk') + (innerWidth < innerHeight ? '-p' : '-l'));
+T.js = true; T.stage = 'js';
+export const stage = s => { T.stage = s; };
 let q = [], where = 'boot';
 export const at = w => { where = w; };
 let quitInfo = () => ({});
@@ -30,7 +33,7 @@ if (ON) {
     const ua = navigator.userAgent, br = /Edg\//.test(ua) ? 'edge' : /OPR|Opera/.test(ua) ? 'opera' : /Firefox/.test(ua) ? 'firefox' : /CriOS|Chrome/.test(ua) ? 'chrome' : /Safari/.test(ua) ? 'safari' : 'other';
     const os = /Android/.test(ua) ? 'android' : /iPhone|iPad|iPod/.test(ua) ? 'ios' : /Windows/.test(ua) ? 'windows' : /Mac/.test(ua) ? 'mac' : /CrOS/.test(ua) ? 'chromeos' : /Linux/.test(ua) ? 'linux' : 'other';
     let ref = ''; try { ref = document.referrer ? new URL(document.referrer).hostname : ''; } catch (e) { /* none */ }
-    track('ctx', { w: innerWidth, h: innerHeight, dpr: devicePixelRatio, gpu, mem: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, br, os,
+    track('ctx', { js: Math.round(jsAt / 100) / 10, w: innerWidth, h: innerHeight, dpr: devicePixelRatio, gpu, mem: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, br, os,
       lang: navigator.language, ref, iframe: window !== top, first, ret: first !== new Date().toISOString().slice(0, 10), prog: +(localStorage.getItem('sz_progress') || 0) });
   });
   // JS errors (first 5) and which buttons get pressed (first 80)
