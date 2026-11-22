@@ -240,7 +240,8 @@ let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, m
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
   get ffaRival() { return mode === 'dm' ? ffaRival : null; },
-  get dmParity() { return mode === 'dm'; }, get dmPower() { return Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); }, get rampage() { return mode === 'dm' && DM.rampage; },
+  get dmParity() { return mode === 'dm'; }, get dmPower() { return DM.grace ? RC.dmGracePower : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); },
+  get ignorePlayer() { return mode === 'dm' && DM.grace && elapsed < RC.dmGraceCalm; }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
   losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
@@ -645,7 +646,7 @@ function dmBot(ident) {
   if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
   else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
   toonify(e.root, { rim: 0xff6a5a }); outline(e.root, { thick: 0.022, color: 0x8a0d0d }); nameTag(e);
-  const r = Math.random() < 0.5 ? null : ffaRival(e); e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
+  const r = G.ignorePlayer || Math.random() >= 0.5 ? ffaRival(e) : null; e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
 }
 function nameTag(e) {                                                              // small red callsign above Deathmatch bots (one canvas sprite per bot)
   const c = document.createElement('canvas'); c.width = 256; c.height = 48; const x = c.getContext('2d');
@@ -659,6 +660,7 @@ function dmSetup() {
   map.points = []; clock = RC.dmTime;
   for (const e of enemies) scene.remove(e.root); enemies = [];
   DM.target = Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (dmLevel - 1)); DM.level = dmLevel;
+  { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
   Object.assign(DM, { rampage: false, alive0: 0, coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
   DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
   const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
@@ -680,7 +682,7 @@ function dmTick(dt) {
   }
   DM.uavT -= dt; DM.odT -= dt;
   { const quiet = elapsed - Math.max(DM.lastK, DM.alive0 || 0);                 // stalling: no kill for a while -> the bots go on a rampage
-    if (!DM.rampage && quiet > RC.dmStall) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
+    if (!DM.rampage && quiet > RC.dmStall * (DM.grace ? 1.5 : 1)) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
     if (DM.rampage) { director.set(director.threat + 0.01 * dt * 10); if (Math.random() < dt * 0.8) for (const e of enemies) if (e.alive && e.state !== 'combat') { e.alert(player.pos, 1); e.goTo(player.pos, G); } } }
   if (RC.dmInfiniteAmmo) for (const id of W.slots) { const s = W.state[id]; if (s && s.reserve < 999) s.reserve = 999; }   // reloads never run dry
   if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
@@ -694,7 +696,7 @@ function dmTick(dt) {
   {
     if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } enemies = enemies.filter(e => !dead.includes(e)); }
   }
-  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { const r = Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; e.alert(to, 0.5); e.goTo(to, G); }   // bots hunt the player or a rival
+  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { const calm = G.ignorePlayer, r = calm || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(to, G); }   // bots hunt the player or a rival
   return '';
 }
 function dmDeath() { DM.deathPos = player.pos.clone(); DM.deathT = elapsed; DM.d++; DM.streak = 0; DM.deadT = RC.deathCard ? Math.max(RC.dmRespawn, 2) : RC.dmRespawn; player.alive = false; if (RC.deathCard) deathCard(); else FX.announce('ELIMINATED', 'objective'); }
@@ -705,6 +707,7 @@ function deathCard() {
   const e = LS.byE;
   $('dcWho').textContent = e?.callsign || (e ? ENEMY_TYPES[e.type].name.toUpperCase() : 'UNKNOWN');
   $('dcHow').textContent = e ? `${(e.S.cls || 'rifle').toUpperCase()} · ${Math.round(e.pos.distanceTo(player.pos))} M` : '';
+  if (DM.grace && DM.d <= 2) { const k = stats.kills - DM.k0; $('dcHow').textContent = k > 0 ? `You have ${k} kill${k > 1 ? 's' : ''}. Keep going: first to ${dmTarget()} wins!` : `Everyone respawns. First to ${dmTarget()} kills wins!`; }
   const cur = W.slots[0], el = $('dcLo'); el.innerHTML = '';
   DM_LOADOUTS.forEach(([name, p], i) => {
     if (!dcOk(p)) return;
@@ -1964,7 +1967,7 @@ window.__game = {
   teleport(x, y, z) { player.pos.set(x, y, z); player.vel.set(0, 0, 0); },
   key(code, down = true) { keys[code] = down; }, mouse(btn, down = true) { mouse[btn] = down; },
   equip, reload: startReload, ability: useAbility, fire: () => { W.cd = 0; W.firedSemi = false; fire(); },
-  addKills(n) { stats.kills += n; },
+  addKills(n) { stats.kills += n; }, get ignorePlayer() { return G.ignorePlayer; }, get dmPower() { return G.dmPower; },
   director, QUESTS, dmSpot, killTick, loadBotSkins, botKill, ffaRival, get playMode() { return playMode; }, DM, get W() { return W; }, setTrial(id) { trialWeapon = id; }, get trial() { return trialWeapon; }, lobbyV14, win: () => win(),
   get tutorial() { return tutorial; }, get onboard() { return onboard; }, startOnboarding, get mentor() { return mentor; }, TUT,
   killAll() { for (const e of enemies) if (e.alive) e.damage(9999); },

@@ -1,5 +1,5 @@
 {
-  "v": 8,
+  "v": 9,
   "note": "Live tuning for Strike Zone. Fetched by every game at boot (game/remote.js). Missing keys keep the built-in values.",
   "quality": {
     "desk": null,
@@ -51,7 +51,10 @@
   "dmLevelStep": 10,
   "dmMaxKills": 80,
   "dmBaseThreat": 0.4,
-  "dmPower": 0.62,
+  "dmPower": 0.56,
   "dmPowerStep": 0.06,
-  "dmMaps": 5
+  "dmMaps": 5,
+  "dmGraceMatches": 2,
+  "dmGracePower": 0.45,
+  "dmGraceCalm": 20
 }

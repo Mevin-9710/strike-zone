@@ -245,7 +245,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       g.QUESTS._reset(); const q0 = g.QUESTS.all()[0].p; g.start(0); g.killTick(false); out.quest = g.QUESTS.all()[0].p > q0;
       g.setTrial('javelin_amr'); g.start(0); out.trialUsed = g.W.slots[0] === 'javelin_amr' && g.trial === null; g.start(0); out.trialOnce = g.W.slots[0] !== 'javelin_amr';
       g.start(0, { mode: 'dm' }); g.step(1);
-      let los = 0; for (let i = 0; i < 20; i++) { const live = g.enemies.filter(e => e.alive).map(e => e.pos); const p = g.dmSpot(live, live); for (const v of live) if (v.distanceTo(p) < 9) los++; } out.spawnFar = los === 0;
+      let los = 0; for (let i = 0; i < 20; i++) { const live = g.enemies.filter(e => e.alive).map(e => e.pos); const p = g.dmSpot(live, live, live, true); for (const v of live) if (v.distanceTo(p) < 9) los++; } out.spawnFar = los === 0;
       g.damage(500); g.step(0.2); out.card = document.getElementById('dcard').classList.contains('show') && /RESPAWN/.test(document.getElementById('dcGo').textContent);
       g.step(0.8); document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space' })); g.step(0.1); out.respawnNow = g.player.alive && !document.getElementById('dcard').classList.contains('show');
       return out;
@@ -334,13 +334,29 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // v19: new-player grace in the first 2 Deathmatches
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game, out = {}; localStorage.removeItem('sz_dm_played');
+      g.start(0, { mode: 'dm' }); g.step(1); out.g1 = g.DM.grace && g.dmPower === 0.45 && g.ignorePlayer;
+      for (let i = 0; i < 220; i++) g.step(0.1); out.calmEnds = !g.ignorePlayer;
+      g.start(0, { mode: 'dm' }); g.step(0.2); out.g2 = g.DM.grace;
+      g.start(0, { mode: 'dm' }); g.step(0.2); out.g3 = !g.DM.grace && g.dmPower > 0.5 && !g.ignorePlayer;
+      return out;
+    });
+    check('v19 grace: first 2 Deathmatches use weaker bots and a 20 s calm start; the 3rd is normal', r.g1 && r.calmEnds && r.g2 && r.g3, JSON.stringify(r));
+    check('no page errors (v19)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   // 9. First launch: no tour, PLAY drops straight into the mission-1 drill; tour still replayable from Settings
   {
     const { ctx, pg } = await open(browser, { query: '', seen: [] });
     check('first launch skips lobby and tour', await pg.evaluate(() => !__game.onboard?.active && !document.getElementById('lobby').classList.contains('show')));
     await pg.waitForTimeout(300);
-    const r1 = await pg.evaluate(() => ({ running: __game.state.running, tut: !!__game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), card: document.getElementById('ctlCard')?.classList.contains('show') }));
-    check('first launch drops straight into mission 1: no drill, controls card shown', r1.running && !r1.tut && r1.flag === '1' && r1.card, JSON.stringify(r1));
+    const r1 = await pg.evaluate(() => ({ running: __game.state.running || document.getElementById('clickGo').classList.contains('show'), tut: !!__game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), card: document.getElementById('ctlCard') ? 1 : 0 }));
+    check('first launch drops straight into mission 1: no drill, controls card shown', r1.running && !r1.tut && r1.flag === '1' && r1.card === 1, JSON.stringify(r1));
     check('v15 first launch is a Deathmatch', await pg.evaluate(() => __game.state.mode === 'dm' || /DEATHMATCH/.test(document.getElementById('obj').textContent)));
     check('no page errors (first launch)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();

@@ -429,3 +429,11 @@ Research (Wikipedia "Deathmatch (video games)"): free-for-all, everyone (humans 
 - **UI ~22% bigger**: `--u` scale raised (11-18 px, 22 px on tall screens); touch buttons x1.2. Phone thumb cluster re-laid out for landscape and portrait (no overlaps from 360x740 to 1024x768); scoreboard moved under the objective in portrait.
 - Spawn spacing: stronger penalty for spots near other bots.
 - Tests 97/99 (2 known charm/spray failures). Remote config v8.
+
+## 2026-11-22 · v19: new-player grace, easier Deathmatch for everyone
+Why: since v17-18, 28 of 52 sessions under 2 min (22 Nov 06:00+ UTC) got a kill, died in their first match and left within ~1 min; mobile median fell 3.2 -> 1.8 min.
+- **Grace for the first 2 Deathmatches** (`sz_dm_played`, `dmGraceMatches`): bot power 0.45 (`dmGracePower`); for the first 20 s (`dmGraceCalm`) bots ignore the player and fight each other; rampage needs 30 s of no kills; first-death card says "You have N kills. Keep going: first to X wins!".
+- **All players**: Deathmatch bot power 0.62 -> 0.56 (`dmPower`; remote config v9 applies it to v18 too).
+- Cloud save also mirrors sz_dm_played, sz_dm_level, sz_mode.
+- `tools/vsplit.py`: per-build funnel from telemetry (builds split by first-seen time on CrazyGames).
+- Tests 99/101 (2 known charm/spray failures).
