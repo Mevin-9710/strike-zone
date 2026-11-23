@@ -345,6 +345,8 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       g.start(0, { mode: 'dm' }); g.step(0.2); out.g3 = !g.DM.grace && g.dmPower > 0.5 && !g.ignorePlayer;
       return out;
     });
+    { const ok = await pg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); g.step(0.2); for (let i = 0; i < 20; i++) { const p = g.dmSpot([], [], [], true); if (!p || !Number.isFinite(p.x)) return false; } return true; });
+      check('v21 DM spawn never returns null when nobody is alive', ok); }
     check('v19 grace: first 2 Deathmatches use weaker bots and a 20 s calm start; the 3rd is normal', r.g1 && r.calmEnds && r.g2 && r.g3, JSON.stringify(r));
     check('no page errors (v19)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();

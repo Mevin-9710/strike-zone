@@ -624,7 +624,7 @@ function dmSpot(far, viewers, others, hardAll) {                                
   let best = null, bs = -Infinity;
   for (let i = 0; i < 24; i++) {
     const p = pool[(Math.random() * pool.length) | 0]; let sc = Math.random() * 2;
-    let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p));
+    let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p)); if (d === Infinity) d = 30;   // nobody alive yet: any distance is fine
     sc += d < 9.5 ? -20 : d < 18 ? -(18 - d) * 1.2 : d > 40 ? -(d - 40) * 0.3 : 6;
     if (others) for (const o of others) { const od = o.distanceTo(p); if (od < 14) { sc -= 90 - od * 3; break; } }
     if (p.y > 2) sc -= 100;                                                        // ground level only (the terrace was a spawn trap)   // keep roofs/terraces rare
@@ -633,6 +633,7 @@ function dmSpot(far, viewers, others, hardAll) {                                
     if (viewers) { _spH.copy(p).y += 1.5; for (let vi = 0; vi < viewers.length; vi++) { const v = viewers[vi]; _spE.copy(v).y += 1.5; if (_spE.distanceTo(_spH) < 45 && world.lineClear(_spE, _spH)) { sc -= hardAll || vi === 0 ? 300 : 40; break; } } }   // in the first viewer's sight: never; others: discouraged
     if (sc > bs) { bs = sc; best = p; }
   }
+  if (!best) best = pool[(Math.random() * pool.length) | 0] || map.spawns.default || player.pos;   // never null (crash seen 7x in v17-v20)
   const r = DM.recent[DM.recentI = (DM.recentI + 1) % DM.recent.length]; r.x = best.x; r.z = best.z; r.t = elapsed;
   return best.clone();
 }
@@ -1940,6 +1941,10 @@ function frame(now) {
   if (fpsT >= 0.5) {
     fps = frames / fpsT; frames = 0; fpsT = 0;
     if (running && (frame.tk = (frame.tk || 0) + 1) % 30 === 0) track('fps', { fps: Math.round(fps), q: qLevel, s: Math.round(dynScale * 100) });
+    if (running && !manual && settings.quality === 'high' && !settings.qUser && !IS_TOUCH) {   // safety net: High default on a slow PC -> hand over to Auto
+      if (fps < 30) { if (++frame.lowHi >= 8) { frame.lowHi = 0; settings.quality = 'auto'; qLevel = 1; dynScale = 0.85; applyQuality(); store.set('sz_settings', settings); track('q', { k: 'auto', fps: Math.round(fps) }); } }
+      else frame.lowHi = 0;
+    }
     if (running && !manual && settings.quality === 'auto') {
       const target = IS_TOUCH ? 45 : 58;
       if (fps < target - 3) {

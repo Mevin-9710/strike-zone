@@ -448,3 +448,9 @@ New events to find the leak:
 - `sdk {ok}`: CrazyGames SDK init; `ld {p}`: 25/50/75% of assets; `gs`: first gameplayStart sent; `input {k, el}`: first key/mouse/touch in a match.
 - `lock {k: hint|click|err}`: mouse-capture "click to continue" shown / clicked / refused.
 - `tools/convfunnel.py FROM TO`: step-by-step funnel (page -> code -> assets -> start -> gameplayStart -> input -> kill).
+
+## 2026-11-23 · v21: Deathmatch spawn crash, slow-desktop FPS
+From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Deathmatch spawn picker; desktop sessions under 25 fps went 4% -> 15%.
+- **Crash**: `dmSpot` scored every spot -Infinity when nobody was alive to measure distance from (e.g. player respawning while all bots were dead), so `best` stayed null. Distance now defaults to 30 m in that case, and the picker always falls back to a random pool spot.
+- **FPS**: desktop defaults to High with no automatic downgrade. If a desktop player never picked a quality and runs under 30 fps for ~4 s in a match, the game switches to Auto (medium + dynamic resolution, can drop to low), remembers it, and sends `q {k:'auto', fps}`.
+- Tests 100/102 (2 known charm/spray failures).
