@@ -172,3 +172,16 @@ body:has(#pause.show) #hud{visibility:hidden}
   #pause .pzRight{width:calc(var(--u)*21)}#pzLo button{min-height:calc(var(--u)*4)!important}#pzLo button img{height:calc(var(--u)*1.8)!important}
   #resume{font-size:calc(var(--u)*1.8)!important}#pause .pzHead b{font-size:calc(var(--u)*1.8)}
 }
+/* v26.1 touch: smaller fire button tucked low, aim button high on the right edge, so the right half stays free for drag-to-aim */
+@media (orientation:landscape){
+  body.touch #touch #tfire{width:calc(66px*var(--ts))!important;height:calc(66px*var(--ts))!important;right:calc(84px*var(--ts))!important;bottom:calc(18px*var(--ts))!important}
+  body.touch #touch #tjump{width:calc(54px*var(--ts))!important;height:calc(54px*var(--ts))!important;right:calc(16px*var(--ts))!important;bottom:calc(16px*var(--ts))!important}
+  body.touch #touch #treload{width:calc(48px*var(--ts))!important;height:calc(48px*var(--ts))!important;right:calc(160px*var(--ts))!important;bottom:calc(22px*var(--ts))!important}
+  body.touch #touch #taim{width:calc(52px*var(--ts))!important;height:calc(52px*var(--ts))!important;right:calc(18px*var(--ts))!important;bottom:calc(150px*var(--ts))!important}
+  body.touch #touch #tab0{right:calc(18px*var(--ts))!important;bottom:calc(84px*var(--ts))!important}
+  body.touch #touch #tab1{right:calc(216px*var(--ts))!important;bottom:calc(22px*var(--ts))!important}
+}
+@media (orientation:portrait){
+  body.touch #touch #tfire{width:calc(70px*var(--ts))!important;height:calc(70px*var(--ts))!important;bottom:calc(40px*var(--ts))!important}
+  body.touch #touch #taim{right:calc(16px*var(--ts))!important;bottom:calc(220px*var(--ts))!important}
+}
