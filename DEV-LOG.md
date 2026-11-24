@@ -479,3 +479,4 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - 2026-11-24 · v27.2: team target 25 +5/level (remote-config v12).
 - 2026-11-24 · v28: bot-vs-bot accuracy fix enabled (sightT ramps for any target; player-movement penalties only when aiming at the player). Team DM bot boost: +4% kill speed every 5 total team kills (cap +16%), +8% for the team 5+ kills behind (remote tdmRamp/tdmRampMax/tdmComeback/tdmComebackGap). 90 s bots-only sim: 12-19 team score (was ~3-12). Tests 110/112.
 - 2026-11-24 · v29: team DM bots spread out: spawn anti-clump vs all teammates, weaker home-side pull (14->8), hunt/rampage goals offset 4-11 m or a random pool spot (35%).
+- 2026-11-24 · v29: QUIT TO LOBBY asks 'Leave the match?' with an optional feedback box; text goes to Supabase events as ev='feedback' (plus quit_ask leave/stay). Read with tools/feedback.py [days].

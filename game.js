@@ -27,7 +27,7 @@ import { weaponInfo } from './game/weapons.js';
 import { radio as RADIO } from './game/radio.js';
 import * as MODES from './game/modes.js';
 import { RC, loadRemote } from './game/remote.js';
-import { track, at, onQuit, stage } from './game/telemetry.js';
+import { track, at, onQuit, stage, flush as tFlush } from './game/telemetry.js';
 import { director } from './game/director.js';
 import * as QUESTS from './game/quests.js';
 import { icon } from './game/icons.js';
@@ -1734,7 +1734,25 @@ $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEve
 $('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
 $('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
-$('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => { paused = false; openLobby(); };
+$('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => quitAsk();
+// v29: "leave the match?" confirm with an optional feedback box (stored in Supabase as a 'feedback' event)
+function quitAsk() {
+  let el = $('quitAsk');
+  if (!el) {
+    el = document.createElement('div'); el.id = 'quitAsk';
+    el.innerHTML = `<div class="qa"><h2>LEAVE THE MATCH?</h2><p>Your progress in this match will be lost.</p><label for="qaText">How can we make Strike Zone better? <small>(optional)</small></label><textarea id="qaText" maxlength="500" rows="3" placeholder="Bugs, ideas, what felt bad…"></textarea><div class="qaB"><button id="qaStay" class="go">STAY</button><button id="qaLeave">LEAVE</button></div></div>`;
+    document.body.append(el);
+    el.querySelector('#qaText').addEventListener('keydown', e => e.stopPropagation());   // typing never triggers game keys
+    $('qaStay').onclick = () => { el.classList.remove('show'); track('ui', { k: 'quitStay' }); };
+    $('qaLeave').onclick = () => {
+      const t = $('qaText').value.trim().slice(0, 500);
+      track('quit_ask', { k: 'leave', fb: t ? 1 : 0, mode: mode || 'story', m: mission?.id, el: Math.round(elapsed) });
+      if (t) { track('feedback', { text: t, where: 'quit', mode: mode || 'story', m: mission?.id, lvl: META.level(), tdm: DM.tdm ? 1 : 0 }); FX.announce('THANKS FOR THE FEEDBACK!', 'start'); }
+      tFlush(); $('qaText').value = ''; el.classList.remove('show'); paused = false; openLobby();
+    };
+  }
+  el.classList.add('show'); track('ui', { k: 'quitAsk' }); setTimeout(() => $('qaText').focus(), 50);
+}
 
 // ---------- settings ----------
 document.body.insertAdjacentHTML('beforeend', `<div id="settings" class="panel"><div class="card" style="min-width:min(420px,90vw)"><h2>SETTINGS</h2><div id="setRows"></div><button id="setClose" class="go">DONE</button></div></div>`);

@@ -15,7 +15,7 @@ export const at = w => { where = w; };
 let quitInfo = () => ({});
 export const onQuit = fn => { quitInfo = fn; };      // game supplies a live snapshot for the quit event                // last known place, sent with 'quit'
 
-function flush(beacon) {
+export function flush(beacon) {
   if (!ON || !q.length) return;
   const body = JSON.stringify(q); q = [];
   try {
