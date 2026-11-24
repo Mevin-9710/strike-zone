@@ -241,7 +241,12 @@ let medkits = [], breaches = [], barrels = [], intel = [], extractMark = null, m
 
 const G = {                                         // services handed to enemies
   get player() { return player; }, get world() { return world; },
-  get ffaRival() { return mode === 'dm' ? ffaRival : null; }, get tdm() { return mode === 'dm' && !!DM.tdm; },
+  get ffaRival() { return mode === 'dm' ? ffaRival : null; },
+  botBoost(e) {                                                                // v28 team DM: +4% every 5 total kills (cap +16%), +8% for the team 5+ kills behind
+    if (mode !== 'dm' || !DM.tdm || !DM.score) return 1;
+    const A = DM.score.A, B = DM.score.B, mine = e.ally ? A : B, theirs = e.ally ? B : A;
+    return 1 + Math.min(RC.tdmRampMax, RC.tdmRamp * Math.floor((A + B) / 5)) + (theirs - mine >= RC.tdmComebackGap ? RC.tdmComeback : 0);
+  }, get tdm() { return mode === 'dm' && !!DM.tdm; },
   get dmParity() { return mode === 'dm'; }, get dmPower() { return DM.grace ? RC.dmGracePower : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); },
   get ignorePlayer() { return mode === 'dm' && DM.grace && elapsed < RC.dmGraceCalm; }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
@@ -2013,7 +2018,7 @@ function frame(now) {
 }
 
 // ---------- test / debug API ----------
-window.__game = { RC, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
+window.__game = { RC, G, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
   errors, get ready() { return !!A.enemies; }, MISSIONS, WEAPONS, ABILITIES,
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
   start: (i, o = {}) => startMission(i, o), openBriefing, openLobby, openShop, openPass, openProfile, META, doSpray, detonateBarrel, revive,

@@ -282,7 +282,9 @@ export class Enemy {
     if (this.blindT > 0) { target = null; tgtKind = null; }
     this.seesTarget = !!target; this.target = target; this.targetKind = tgtKind;
     // accuracy ramp: re-acquiring the player after ~1 s out of sight resets to a fresh (deliberately missed) first shot
-    if (tgtKind === 'player') { if (this.unseenT > 1) { this.sightT = 0; this.firstShot = true; } this.unseenT = 0; this.sightT += dt; }
+    // v28: tracked for bot targets too (before, bot-vs-bot shots stayed at 25% accuracy, so bots almost never killed each other)
+    const tid = tgtKind === 'bot' ? this.rival : tgtKind;
+    if (tgtKind) { if (this.unseenT > 1 || tid !== this._tid) { this.sightT = 0; if (tgtKind === 'player') this.firstShot = true; } this._tid = tid; this.unseenT = 0; this.sightT += dt; }
     else this.unseenT += dt;
 
     if (target) {
@@ -546,11 +548,12 @@ export class Enemy {
     acc *= 1 / (1 + Math.max(0, dist - 15) / 30);       // extra long-range falloff
     acc *= 0.25 + 0.75 * clamp(this.sightT / ACC_RAMP, 0, 1);   // settle onto target over ~1.2 s
     acc *= clamp(0.55 + 0.45 * diff, 0.3, 1.6);
-    acc *= G.player.moving ? 0.7 : 1; acc *= this.lockSlow < 1 ? 0.35 : 1; acc *= this.flinch > 0.3 ? 0.5 : 1;
-    if (!G.player.onGround) acc *= 0.6;
+    const atP = this.targetKind === 'player';                // player movement only makes the player harder to hit
+    acc *= atP && G.player.moving ? 0.7 : 1; acc *= this.lockSlow < 1 ? 0.35 : 1; acc *= this.flinch > 0.3 ? 0.5 : 1;
+    if (atP && !G.player.onGround) acc *= 0.6;
     const dm = !!G.dmParity;                             // Deathmatch: bots play by the player's rules (no global nerf, no warning shot)
     if (!dm) acc *= 0.65;                                // global tuning (attack tokens now cap simultaneous shooters)
-    const pw = dm ? Math.sqrt(G.dmPower || 1) : 1;      // DM level power: kill speed scales by dmPower (split between accuracy and damage)
+    const pw = dm ? Math.sqrt((G.dmPower || 1) * (G.botBoost ? G.botBoost(this) : 1)) : 1;   // v28: team DM ramp + comeback boost (split between accuracy and damage)      // DM level power: kill speed scales by dmPower (split between accuracy and damage)
     if (dm) { acc *= 1.05 * pw; if (G.rampage) acc *= 1.3; }
     const nearMiss = !dm && this.targetKind === 'player' && this.firstShot;     // first shot after spotting: a warning crack past the head
     if (this.targetKind === 'player') this.firstShot = false;

@@ -319,6 +319,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       out.noAllyTarget = true; let botKills = 0, sawBotTarget = false;
       for (let i = 0; i < 90; i++) { g.player.hp = 100; g.step(1); for (const a of g.allies) if (a.targetKind === 'player') out.noAllyTarget = false; for (const e of [...g.allies, ...g.enemies]) if (e.targetKind === 'bot') sawBotTarget = true; if (g.state.matchOver) break; }
       out.botTarget = sawBotTarget; out.scoreA = g.DM.score.A; out.scoreB = g.DM.score.B;
+      { const a = g.allies[0], e = g.enemies[0]; g.DM.score.A = 10; g.DM.score.B = 2; out.boostE = +g.G?.botBoost?.(e)?.toFixed(2); }
       out.botKills = g.DM.score.A + g.DM.score.B;
       g.start(0, { mode: 'dm' }); g.step(0.2); g.DM.score.A = g.DM.target - 1; g.tdmScore('A'); g.step(0.2);
       out.win = g.state.matchOver && /VICTORY/.test(document.getElementById('endTitle').textContent);
@@ -330,6 +331,8 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('v26 TDM: 4 allies + 5 enemies, team target', r.teams && r.target, JSON.stringify(r));
     check('v26 TDM: allies never target the player; bots target bots', r.noAllyTarget && r.botTarget, JSON.stringify(r));
     check('v26 TDM: team target ends the match (win + loss)', r.win && r.lose, JSON.stringify(r));
+    check('v28 TDM: bots kill each other (team score rises without the player)', r.scoreA + r.scoreB >= 10, JSON.stringify(r));
+    check('v28 TDM: boost = ramp (+8% at 12 kills) + comeback (+8%) for the side 8 behind', r.boostE === 1.16, JSON.stringify(r));
     check('v26 TDM: switch off = free-for-all', r.ffa, JSON.stringify(r));
     check('no page errors (v26)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
