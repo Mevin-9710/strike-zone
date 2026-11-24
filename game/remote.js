@@ -6,7 +6,7 @@ export const RC = {
   holdSeconds: 20, contactAfter: 20, easyAfterFails: 2, easyCountMul: 0.65, easyExtraTime: 30, autoNextSeconds: 5, winCoins: 100, partCoins: 50, midgameGapSeconds: 180,
   dmTime: 240, dmKills: 50, dmBots: 6, dmRespawn: 1.5, dmCoinsPerKill: 5, dmRematch: 8, dmInfiniteAmmo: true,
   minSpawnDist: 20, startGrace: 4, missions: { m2: { count: 5 } },
-  v14ui: true, quests: true, trials: true, deathCard: true, adaptive: true, hitTimer: true, dmSpawnScore: true, trialCost: 150, defaultMode: 'dm', dmBotScale: 1.2, dmArea: 0.82, dmStall: 20, dmLevelKills: 30, dmLevelStep: 10, dmMaxKills: 80, dmBaseThreat: 0.4, dmPower: 0.56, dmPowerStep: 0.06, dmMaps: 5, dmGraceMatches: 2, dmGracePower: 0.45, dmGraceCalm: 20,
+  v14ui: true, quests: true, trials: true, deathCard: true, adaptive: true, hitTimer: true, dmSpawnScore: true, trialCost: 150, defaultMode: 'dm', dmBotScale: 1.2, dmArea: 0.82, dmStall: 20, dmLevelKills: 15, dmLevelStep: 5, dmMaxKills: 80, dmBaseThreat: 0.4, dmPower: 0.56, dmPowerStep: 0.06, dmMaps: 5, dmGraceMatches: 2, dmGracePower: 0.45, dmGraceCalm: 20, dmTeams: true, tdmTeam: 5, tdmTeamTouch: 4, tdmLevelKills: 40, tdmLevelStep: 10, tdmMaxKills: 100,
   loaded: false,
 };
 export async function loadRemote(skip, ms = 2500) {

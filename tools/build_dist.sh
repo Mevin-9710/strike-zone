@@ -4,7 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 rm -rf dist && mkdir dist
-cp index.html game.js menu.css v14.css dist/
+cp index.html game.js menu.css v14.css ui26.css dist/
 cp -r game world fx fonts sfx dist/
 mkdir -p dist/lib/addons/loaders dist/lib/addons/utils
 cp lib/three.module.js lib/three.core.js dist/lib/

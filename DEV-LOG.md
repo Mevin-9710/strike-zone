@@ -454,3 +454,17 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - **Crash**: `dmSpot` scored every spot -Infinity when nobody was alive to measure distance from (e.g. player respawning while all bots were dead), so `best` stayed null. Distance now defaults to 30 m in that case, and the picker always falls back to a random pool spot.
 - **FPS**: desktop defaults to High with no automatic downgrade. If a desktop player never picked a quality and runs under 30 fps for ~4 s in a match, the game switches to Auto (medium + dynamic resolution, can drop to low), remembers it, and sends `q {k:'auto', fps}`.
 - Tests 100/102 (2 known charm/spray failures).
+
+## 2026-11-24 · Deathmatch kill target 15 +5/level
+- Level 1 now needs 15 kills, then +5 each level (15, 20, 25 ... capped at 80). Was 30 +10.
+- Changed in game/remote.js defaults and remote-config.json (v10), so it goes live for every build once pushed.
+- Mobile check (23 vs 24 Nov): no new errors (5 -> 0), fps median 60 both days, players quitting in under 60 s are at full HP with kills. The drop looks like a different mix of players, not a bug.
+- Tests 100/102 (2 known charm/spray failures).
+- Source files for the 4 new Deathmatch maps (Belltower Square, Lantern Canal, Neon Alley, Sandkeep) moved from ~/Downloads to docs/maps/dm-src/. They are standalone three r128 prototypes, kept only as reference for the port; not shipped.
+
+## 2026-11-24 · v26: Team Deathmatch + UI overhaul (uncommitted)
+- **Team Deathmatch** (remote `dmTeams`, default on; player can pick TDM/DM in the lobby or pause menu, stored in `sz_teams`): you + 4 blue bots vs 5 red (4v4 on touch). Allies live in `allies[]` (not `enemies`), never target the player, no abilities, blue outline/tag/tracers/minimap. Team spawns on each half of the long map axis. Team score: first to `tdmLevelKills` 40 +10/level (cap 100); time-out = higher score wins, equal = DRAW.
+- Bot-vs-bot accuracy fix written then **held back** on request (bot shots at bots still use 25% accuracy because sightT only ramps for the player).
+- **UI (ui26.css + v26 block in game.js)**: top-centre score strip (BLUE · timer · RED, or KILLS · timer · TARGET), segmented health with heart, right weapon column with rendered gun icons + slot keys, Tab scoreboard (tap the strip on touch), full-screen death recap (killer, damage taken, killer's gun, 4 loadout cards, click/Space anywhere to respawn, camera turns to the killer), pause menu (team lists, map + mode header, mode cards TDM/DM/Story, loadout, RESUME), lobby top tabs + SELECT MODE pop-up + bigger PLAY. Weapon icons now fill their frame (renderIcon framing fix).
+- `tools/shots_ui.cjs TAG`: lobby/hud/board/death/pause screenshots, desktop + phone.
+- Tests 105/107 (2 known charm/spray failures); FFA tests force `dmTeams=false`; lobby tests use the new nav/mode picker.

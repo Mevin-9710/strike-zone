@@ -210,3 +210,4 @@ body.touch.tdm #dmBoard{top:calc(var(--u)*4.2);font-size:calc(var(--u)*.8)}
   body.touch #touch #tab1{right:calc(256px*var(--ts))!important;bottom:calc(112px*var(--ts))!important;left:auto!important;top:auto!important}
   body.touch.tdm #dmBoard{top:calc(var(--u)*10.5)}
 }
+#dmBoard .tA{color:#6ab8ff}#dmBoard .tB{color:#ff5a5a}#dmBoard .tg{opacity:.7;font-size:.85em}

@@ -48,9 +48,9 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /^\s*0\s*$/.test(await pg.textContent('#coins')));
     check('v14 lobby: quests card, crate, weapon cards, mode toggle', await pg.evaluate(() => document.querySelectorAll('#lQuests .q').length === 4 && /CRATE/.test(document.getElementById('lCrate').textContent) && document.querySelectorAll('#lWeps .wcard').length >= 3 && document.querySelectorAll('#lWeps .wcard.lock').length >= 1));
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
-    await pg.click('#mDm');
+    await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=tdm]');
     check('mode toggle switches the lobby to Deathmatch', await pg.evaluate(() => document.getElementById('mDm').classList.contains('on') && /DEATHMATCH/.test(document.getElementById('lMission').textContent)));
-    await pg.click('#mStory');
+    await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=story]');
     { const { ctx: dctx, pg: dpg } = await open(browser, { query: 'test=1' });
       const dm = await dpg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); const n0 = g.enemies.filter(e => e.alive).length; g.killAll(); g.step(4); const n1 = g.enemies.filter(e => e.alive).length;
         g.damage(500); g.step(0.2); const dead = !g.player.alive; g.step(3); return { n0, n1, dead, back: g.player.alive, hud: document.getElementById('obj').textContent, run: g.state.running }; });
@@ -163,15 +163,15 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
   // 5. Shop, pass, profile, charm, spray
   {
     const { ctx, pg } = await open(browser, { query: '', profile: { xp: 4000, coins: 1000, claimed: 4 }, seen: ['sz_onboard_done', 'sz_tutorial_done'] });
-    await pg.click('#lShop');
+    await pg.click('#lNav [data-id=lShop]');
     const buy = pg.locator('#charms .item', { hasText: 'GOLD STAR' }).locator('button'); await buy.click();
     const s = await pg.evaluate(() => ({ coins: __game.META.profile.coins, charm: __game.META.profile.charm }));
     check('buying a charm spends coins and equips it', s.coins === 850 && s.charm === 'charm_star', JSON.stringify(s));
     await pg.locator('#sprays .item', { hasText: 'HLV CREW' }).locator('button').click();
     check('buying a spray equips it', await pg.evaluate(() => __game.META.profile.spray === 'spray_hlv'));
-    await pg.click('#shop .back'); await pg.click('#lPass');
+    await pg.click('#shop .back'); await pg.click('#lNav [data-id=lPass]');
     check('pass shows 40 tiers with 4 claimed', (await pg.locator('.tier').count()) === 40 && (await pg.locator('.tier.got').count()) === 4);
-    await pg.click('#pass .back'); await pg.click('#lProfile');
+    await pg.click('#pass .back'); await pg.click('#lNav [data-id=lProfile]');
     check('profile lists intel files', (await pg.locator('.file').count()) === 12);
     await pg.click('#profile .back');
     const c = await pg.evaluate(() => {
@@ -289,7 +289,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
   {
     const { ctx, pg } = await open(browser, { query: 'test=1' });
     const r = await pg.evaluate(() => {
-      const g = __game, out = {};
+      const g = __game, out = {}; g.RC.dmTeams = false;
       g.start(0, { mode: 'dm' }); g.step(0.5);
       out.medkits = g.medkits.length; out.roster = g.DM.roster.length;
       const d0 = g.DM.d; g.player.hp = 40; g.step(6); out.noRegen = g.player.hp <= 40 || g.DM.d > d0;
@@ -307,25 +307,53 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // v26: team Deathmatch (allies vs red team, team score wins)
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game, out = {};
+      localStorage.removeItem('sz_dm_level'); localStorage.setItem('sz_dm_played', '9');
+      g.RC.dmTeams = true; g.start(0, { mode: 'dm' }); g.step(0.3);
+      out.teams = g.allies.length === g.RC.tdmTeam - 1 && g.enemies.length === g.RC.tdmTeam && g.allies.every(e => e.ally);
+      out.target = g.DM.target === g.RC.tdmLevelKills;
+      out.noAllyTarget = true; let botKills = 0, sawBotTarget = false;
+      for (let i = 0; i < 90; i++) { g.player.hp = 100; g.step(1); for (const a of g.allies) if (a.targetKind === 'player') out.noAllyTarget = false; for (const e of [...g.allies, ...g.enemies]) if (e.targetKind === 'bot') sawBotTarget = true; if (g.state.matchOver) break; }
+      out.botTarget = sawBotTarget; out.scoreA = g.DM.score.A; out.scoreB = g.DM.score.B;
+      out.botKills = g.DM.score.A + g.DM.score.B;
+      g.start(0, { mode: 'dm' }); g.step(0.2); g.DM.score.A = g.DM.target - 1; g.tdmScore('A'); g.step(0.2);
+      out.win = g.state.matchOver && /VICTORY/.test(document.getElementById('endTitle').textContent);
+      g.start(0, { mode: 'dm' }); g.step(0.2); g.DM.score.B = g.DM.target - 1; g.tdmScore('B'); g.step(0.2);
+      out.lose = g.state.matchOver && /RED TEAM WINS/.test(document.getElementById('endTitle').textContent);
+      g.RC.dmTeams = false; g.start(0, { mode: 'dm' }); g.step(0.2); out.ffa = g.allies.length === 0 && g.enemies.length === g.RC.dmBots;
+      return out;
+    });
+    check('v26 TDM: 4 allies + 5 enemies, team target', r.teams && r.target, JSON.stringify(r));
+    check('v26 TDM: allies never target the player; bots target bots', r.noAllyTarget && r.botTarget, JSON.stringify(r));
+    check('v26 TDM: team target ends the match (win + loss)', r.win && r.lose, JSON.stringify(r));
+    check('v26 TDM: switch off = free-for-all', r.ffa, JSON.stringify(r));
+    check('no page errors (v26)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   // v17: Deathmatch levels, victory rewards, bot parity, touch layout
   {
     const { ctx, pg } = await open(browser, { query: 'test=1&touch=1', viewport: { width: 844, height: 390 }, touch: true });
     const r = await pg.evaluate(() => {
-      const g = __game, out = {};
+      const g = __game, out = {}; g.RC.dmTeams = false;
       localStorage.removeItem('sz_dm_level');
       g.start(0, { mode: 'dm' }); g.step(0.3); out.target1 = g.DM.target; out.lvl1 = g.DM.level;
       const ids = ['tfire', 'treload', 'taim', 'tjump', 'wep']; const R = ids.map(i => document.getElementById(i).getBoundingClientRect()); out.overlap = 0;
       for (let a = 0; a < 5; a++) for (let b = a + 1; b < 5; b++) { const p = R[a], q = R[b]; if (p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom) out.overlap++; }
       out.bigBots = g.enemies.every(e => e.root.scale.y > 1.1 && e.hp === 100);
       const up0 = g.META.profile.upPoints;
-      g.addKills(30); g.step(0.2);
+      g.addKills(15); g.step(0.2);
       out.victory = /VICTORY/.test(document.getElementById('endTitle').textContent) && /NEXT LEVEL 2/.test(document.getElementById('again').textContent);
       out.upPoint = g.META.profile.upPoints === up0 + 1 && document.getElementById('upBox').style.display !== 'none';
       g.start(0, { mode: 'dm' }); g.step(0.3); out.target2 = g.DM.target;
       g.timeout(); g.step(0.2); out.defeat = /DEFEAT/.test(document.getElementById('endTitle').textContent) && document.getElementById('upBox').style.display === 'none' && /RETRY LEVEL 2/.test(document.getElementById('again').textContent);
       return out;
     });
-    check('v17 DM level 1 = 30 kills; level 2 = 40', r.target1 === 30 && r.lvl1 === 1 && r.target2 === 40, JSON.stringify(r));
+    check('v25 DM level 1 = 15 kills; level 2 = 20', r.target1 === 15 && r.lvl1 === 1 && r.target2 === 20, JSON.stringify(r));
     check('v17 DM victory: VICTORY, NEXT LEVEL, +1 upgrade point shown', r.victory && r.upPoint, JSON.stringify(r));
     check('v17 DM defeat: DEFEAT, retry same level, no upgrades', r.defeat, JSON.stringify(r));
     check('v17 bots: bigger, 100 HP', r.bigBots, JSON.stringify(r));

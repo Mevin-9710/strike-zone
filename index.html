@@ -249,6 +249,9 @@
     <div id="objp" class="ov pnl"><div><div id="obj">OBJECTIVE</div><div id="timer">0:00</div><div id="prog"></div></div></div>
     <div id="spot" class="ov">SPOTTED</div>
     <div id="dmBoard" class="ov"></div>
+    <div id="sStrip" class="ov"><div class="sL"><span class="lb" id="ssLa">BLUE</span><b id="ssA">0</b></div><div class="sT" id="ssT">0:00</div><div class="sR"><b id="ssB">0</b><span class="lb" id="ssLb">RED</span></div><div class="sG" id="ssG"></div></div>
+    <div id="tabBoard" class="ov"></div>
+    <div id="wslots" class="ov"></div>
     <div id="thr" class="ov"><span>THREAT 1</span><i>▲</i></div>
     <div id="mmp" class="ov pnl"><div><canvas id="mm" width="220" height="220"></canvas><div id="mmlabel">HALVANE</div></div></div>
     <div id="feed" class="ov"></div>
@@ -298,7 +301,13 @@
   @media (prefers-reduced-motion:reduce){#rankBadge,.pickBtn.dm,#beatBest.rec{animation:none}}
   </style>
   <div id="mkFlash"></div>
-  <div id="dcard"><div class="box"><div class="by">ELIMINATED BY</div><div class="who" id="dcWho">BOT</div><div class="how" id="dcHow"></div><div class="lo" id="dcLo"></div><button id="dcGo" class="kbtn">RESPAWN</button></div></div>
+  <div id="dcard">
+    <div class="dcL"><div class="dcH"><kbd>1-4</kbd> CHANGE LOADOUT</div><div class="lo" id="dcLo"></div></div>
+    <div class="dcR"><div class="dcH">ELIMINATED BY</div><div class="who"><span class="av" id="dcAv"></span><span id="dcWho">BOT</span></div>
+      <div class="dcH">DAMAGE TAKEN</div><div class="dmgh" id="dcDmg"></div>
+      <div class="dcH">KILLED WITH</div><div class="kw"><img id="dcWimg" alt=""><span id="dcHow"></span></div></div>
+    <div class="dcB"><button id="dcGo">RESPAWN</button><div class="keys" id="dcKeys"><span><kbd>TAB</kbd> SCOREBOARD</span><span><kbd>ESC</kbd> MENU</span></div></div>
+  </div>
   <div id="pick" class="panel"><div class="pickRow">
     <button id="pStory" class="pickBtn"><b>STORY</b><small id="pStorySub">MISSION 1</small></button>
     <button id="pDm" class="pickBtn dm"><b>DEATHMATCH</b><small>SOLO VS BOTS · 5 MIN</small><span class="best" id="pDmBest"></span></button>
@@ -372,7 +381,14 @@
     </div>
   </div>
 
-  <div id="pause" class="panel"><div class="card" style="text-align:center"><h2>PAUSED</h2><button id="resume" class="go">RESUME</button><br><button id="pauseMenu">QUIT TO LOBBY</button></div></div>
+  <div id="pause" class="panel"><div class="card">
+    <div class="pzList" id="pzList"></div>
+    <div class="pzMain">
+      <div class="pzHead"><span class="ic2" id="pzIc"></span><b id="pzMap">MAP</b><span id="pzMode">MODE</span><span class="sp"></span><span id="pzTime">0:00</span></div>
+      <div class="pzModes" id="pzModes"></div>
+      <div class="pzFoot"><div class="pzBtns"><button id="pauseMenu">QUIT TO LOBBY</button></div><div class="pzRight"><div class="dcH" id="pzLoH">LOADOUT</div><div class="lo" id="pzLo"></div><button id="resume" class="go">RESUME</button></div></div>
+    </div>
+  </div></div>
 
   <div id="end" class="panel"><div class="card" style="max-width:min(720px,94vw)">
     <div id="dmEnd"><div id="rankBadge"></div><div class="tiles"><div><b id="tK">0</b><span>KILLS</span></div><div><b id="tKD">0</b><span>K/D</span></div><div><b id="tSt">0</b><span>BEST STREAK</span></div><div><b id="tC">0</b><span>◎ EARNED</span></div></div><div id="beatBest"></div></div>
@@ -382,6 +398,7 @@
 
   <link rel="stylesheet" href="menu.css">
   <link rel="stylesheet" href="v14.css">
+  <link rel="stylesheet" href="ui26.css">
   <script type="module" src="game.js"></script>
 </body>
 </html>

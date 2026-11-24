@@ -262,7 +262,7 @@ export class Enemy {
     this.lockSlow = G.inLockdown(this.pos) ? 0.3 : 1;
 
     // choose target: the player, or a decoy hologram that is closer/visible
-    const pTarget = G.player.alive && !G.ignorePlayer ? G.playerHead() : null;   // new-player calm start: bots leave the player alone
+    const pTarget = G.player.alive && !G.ignorePlayer && !this.ally ? G.playerHead() : null;   // team Deathmatch: allies never target the player   // new-player calm start: bots leave the player alone
     let target = null, tgtKind = null;
     const eye = this.eye;
     const sees = p => p && this.canSee(eye, p, G);
