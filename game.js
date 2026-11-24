@@ -717,8 +717,8 @@ function faceFoe() {                                                            
   player.yaw = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
 }
 function spreadGoal(e, to) {                                                    // v29: bots fan out instead of all running to the same spot
-  const pool = DM.pool; if (pool?.length && Math.random() < 0.35) return pool[(Math.random() * pool.length) | 0];
-  const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 7, g = _spG.set(to.x + Math.cos(a) * r, to.y, to.z + Math.sin(a) * r);
+  const pool = DM.pool; if (pool?.length && Math.random() < 0.23) return pool[(Math.random() * pool.length) | 0];   // v29.1: spread cut 35%
+  const a = Math.random() * Math.PI * 2, r = 2.6 + Math.random() * 4.55, g = _spG.set(to.x + Math.cos(a) * r, to.y, to.z + Math.sin(a) * r);
   const n = world.nearestNode(g); return n ? n.pos : to;
 }
 const _spG = new THREE.Vector3();
