@@ -484,3 +484,4 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - 2026-11-24 · v29.2: smaller minimap (PC 8u, phone 6.4u, now also shown in DM on phones). Feedback: exit-intent box on PC (mouse leaves through the top while not fighting, after 1+ match, once per session) and a one-time 'What should we improve?' line on the end screen after the 2nd match; both -> Supabase ev='feedback' (where: exit/end/quit).
 - 2026-11-24 · v29.3: PC minimap back to full size; small minimap is phone-only.
 - 2026-11-24 · v29.4: red (enemy) bots +10% kill speed in team DM (remote tdmRedBoost, config v14).
+- 2026-11-24 · v29.5: red bot boost 10% -> 6% (config v15).

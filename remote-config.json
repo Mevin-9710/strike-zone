@@ -1,5 +1,5 @@
 {
-  "v": 14,
+  "v": 15,
   "note": "Live tuning for Strike Zone. Fetched by every game at boot (game/remote.js). Missing keys keep the built-in values.",
   "quality": {
     "desk": null,
@@ -66,6 +66,6 @@
   "tdmRampMax": 0.16,
   "tdmComeback": 0.08,
   "tdmComebackGap": 5,
-  "tdmRedBoost": 0.1,
+  "tdmRedBoost": 0.06,
   "tdmMaxKills": 100
 }
