@@ -51,9 +51,9 @@ export function toonify(root, { rim = null } = {}) {
 
 // Ink outline: a back-face copy pushed out along the normals (skinned meshes keep their skeleton).
 const outlineMats = new Map();
-function outlineMat(thick, color) {
-  const k = thick + ':' + color; if (outlineMats.has(k)) return outlineMats.get(k);
-  const m = new THREE.MeshBasicMaterial({ color, side: THREE.BackSide });
+function outlineMat(thick, color, glow = false) {
+  const k = thick + ':' + color + ':' + glow; if (outlineMats.has(k)) return outlineMats.get(k);
+  const m = new THREE.MeshBasicMaterial(glow ? { color, side: THREE.BackSide, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false } : { color, side: THREE.BackSide });
   m.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>\n transformed += normalize(normal) * ${thick.toFixed(4)};`);
   };
@@ -62,18 +62,18 @@ function outlineMat(thick, color) {
   outlineMats.set(k, m); return m;
 }
 export const OUTLINES = false;   // ink outlines disabled; flip to true to bring them back
-export function outline(root, { thick = 0.02, color = 0x111111 } = {}) {
-  if (!OUTLINES) return root;
+export function outline(root, { thick = 0.02, color = 0x111111, force = false, glow = false } = {}) {
+  if (!OUTLINES && !force) return root;                // force: team outlines in Deathmatch stay on
   const add = [];
   root.traverse(o => {
-    if (!o.isMesh || o.userData.outline || o.userData.hasOutline || !o.geometry?.attributes?.normal) return;
+    if (!o.isMesh || o.userData.outline || (o.userData.hasOutline && !glow) || (glow && o.userData.hasGlow) || !o.geometry?.attributes?.normal) return;
     if (o.material?.transparent || o.material?.blending === THREE.AdditiveBlending) return;
     // thickness in world units: compensate for the mesh's own scale
     const s = new THREE.Vector3(); o.getWorldScale(s); const k = thick / Math.max(1e-3, (s.x + s.y + s.z) / 3);
-    const ol = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, outlineMat(k, color)) : new THREE.Mesh(o.geometry, outlineMat(k, color));
+    const ol = o.isSkinnedMesh ? new THREE.SkinnedMesh(o.geometry, outlineMat(k, color, glow)) : new THREE.Mesh(o.geometry, outlineMat(k, color, glow));
     if (o.isSkinnedMesh) ol.bind(o.skeleton, o.bindMatrix);
     ol.userData.outline = true; ol.frustumCulled = false; ol.castShadow = false; ol.renderOrder = o.renderOrder;
-    o.userData.hasOutline = true; add.push([o, ol]);
+    if (glow) o.userData.hasGlow = true; else o.userData.hasOutline = true; add.push([o, ol]);
   });
   for (const [o, ol] of add) {
     if (o.isSkinnedMesh) { o.parent.add(ol); ol.position.copy(o.position); ol.quaternion.copy(o.quaternion); ol.scale.copy(o.scale); }

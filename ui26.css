@@ -185,3 +185,4 @@ body:has(#pause.show) #hud{visibility:hidden}
   body.touch #touch #tfire{width:calc(70px*var(--ts))!important;height:calc(70px*var(--ts))!important;bottom:calc(40px*var(--ts))!important}
   body.touch #touch #taim{right:calc(16px*var(--ts))!important;bottom:calc(220px*var(--ts))!important}
 }
+#dmLoad{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(8,12,18,.82);color:var(--ky);font-size:calc(var(--u)*2.4);font-weight:800;letter-spacing:.12em}

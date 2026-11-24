@@ -12,6 +12,7 @@ cp lib/addons/loaders/GLTFLoader.js dist/lib/addons/loaders/
 cp lib/addons/utils/BufferGeometryUtils.js lib/addons/utils/SkeletonUtils.js dist/lib/addons/utils/
 # models: only the folders the code loads from (kenney, props, rigged, weapons); no renders/src/top-level duplicates
 for d in kenney props rigged weapons; do mkdir -p dist/models/$d; cp models/$d/*.glb dist/models/$d/; done
+mkdir -p dist/models/dm; cp models/dm/*.glb models/dm/*.json dist/models/dm/
 find dist \( -name '*.md' -o -name 'project.godot' \) -delete
 # guard: no absolute/root-relative asset paths (the CrazyGames iframe serves the zip from a sub-path)
 if grep -nE "(src|href)=\"/[^/]|from '/|import\('/" dist/index.html dist/game.js dist/game/*.js dist/world/*.js dist/fx/*.js; then echo 'absolute path found' >&2; exit 1; fi

@@ -335,6 +335,25 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // v27: the four Deathmatch arenas load, build nav + spawn pools, and run a match without errors
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(async () => {
+      const g = __game, M = await import('./world/dm-maps.js'), out = [];
+      localStorage.setItem('sz_dm_played', '9'); g.RC.dmTeams = true;
+      for (let j = 0; j < M.DM_MAPS.length; j++) {
+        await M.loadDmMap(M.DM_MAPS[j].id); g.start(0, { mode: 'dm', dmMap: j }); g.step(0.3);
+        const p = g.player.pos; g.step(3);
+        out.push({ id: M.DM_MAPS[j].id, ok: g.state.running && g.DM.pool.length > 40 && g.allies.length === 4 && g.enemies.length === 5 && p.y > -1 && p.x > 0 && g.world.nav.nodes.length > 1000, calls: g.info.calls });
+      }
+      return { out, errs: g.errors.length };
+    });
+    check('v27 DM arenas: all 4 load and play (nav, spawn pool, teams)', r.out.length === 4 && r.out.every(o => o.ok) && r.errs === 0, JSON.stringify(r));
+    check('v27 DM arenas: under 400 draw calls (incl. shadow pass + outlines)', r.out.every(o => o.calls < 400), JSON.stringify(r.out.map(o => o.calls)));
+    check('no page errors (v27)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   // v17: Deathmatch levels, victory rewards, bot parity, touch layout
   {
     const { ctx, pg } = await open(browser, { query: 'test=1&touch=1', viewport: { width: 844, height: 390 }, touch: true });

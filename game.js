@@ -8,6 +8,7 @@ import { loadKenney, dressMap } from './world/kenney.js';
 import { loadArch } from './world/kenney-arch.js';
 import { crazy } from './game/crazy.js';
 import { buildM1, buildM2, buildM3, LIGHTING } from './world/maps.js';
+import { DM_MAPS, loadDmMap, dmMapReady, buildDmMap } from './world/dm-maps.js';
 import { AbilityFX } from './fx/abilities.js';
 import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons.js';
 import { ENEMY_TYPES, Enemy, loadEnemyAssets, calibrateGun, buildCharAssets } from './game/enemies.js';
@@ -268,9 +269,11 @@ function smokeBlocks(a, b) {
   return false;
 }
 
+// v27: Deathmatch arenas (own list; story MISSIONS untouched)
+const DM_MISSIONS = DM_MAPS.map(d => ({ id: 'dm_' + d.id, title: d.title, build: (w, sc) => buildDmMap(d, w, sc), objective: 'dm', roster: ['guard', 'guard', 'sniper', 'commander'], pool: ['smoke', 'dash'], radio: {}, dm: true }));
 // ---------- building a mission ----------
 function buildMission(idx, opts = {}) {
-  missionIdx = idx; mission = MISSIONS[idx];
+  missionIdx = idx; mission = opts.dmMap != null ? DM_MISSIONS[opts.dmMap] : MISSIONS[idx];
   if (map) map.kit.dispose();
   scene = new THREE.Scene(); world = new World();
   map = mission.build(world, scene);
@@ -292,7 +295,7 @@ function buildMission(idx, opts = {}) {
     map.points = pts;
     map.intel = map.intelPool.filter(p => p.distanceTo(sp) > 15 && world.reachable(sp, p, 1.2)).slice(0, map.wantIntel);
   }
-  { const th = mission.proc?.theme || { m1: 'downtown', m2: 'harbor', m3: 'industrial' }[mission.id] || 'street';   // decorative Kenney scatter (no colliders / minimap)
+  if (!map.noDress) { const th = mission.proc?.theme || { m1: 'downtown', m2: 'harbor', m3: 'industrial' }[mission.id] || 'street';   // decorative Kenney scatter (no colliders / minimap)
     let h = 7; for (const ch of mission.id) h = (h * 31 + ch.charCodeAt(0)) | 0;
     map.dressCount = dressMap(world, map.kit.root, map, { seed: mission.proc?.seed || h, theme: th }); window.__dress = dressMap.stats; }
   scene.add(camera);
@@ -494,7 +497,18 @@ function dmMap() {                                                              
   if (n > 1 && i === dmMap.last) i = (i + 1 + ((Math.random() * (n - 1)) | 0)) % n;
   return (dmMap.last = i);
 }
-function dmStart(def) { unlockAudio(); const i = dmMap(); selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm', def: def ? 1 : 0 }); }
+function dmStart(def) {
+  unlockAudio();
+  if (RC.dmNewMaps) {                                                              // v27: the four DM arenas, never the same twice in a row, loaded on demand
+    const n = DM_MAPS.length; let j = DM.nextMap ?? ((Math.random() * n) | 0); if (n > 1 && j === dmStart.last) j = (j + 1) % n; dmStart.last = j; DM.nextMap = null;
+    const go = () => { $('dmLoad')?.remove(); startMission(0, { route: 'default', abilities: [], mode: 'dm', def: def ? 1 : 0, dmMap: j }); let k = (Math.random() * n) | 0; if (k === j) k = (k + 1) % n; DM.nextMap = k; loadDmMap(DM_MAPS[k].id).catch(() => {}); };
+    if (dmMapReady(DM_MAPS[j].id)) { go(); return; }
+    let el = $('dmLoad'); if (!el) { el = document.createElement('div'); el.id = 'dmLoad'; document.body.append(el); } el.textContent = `LOADING ${DM_MAPS[j].title.toUpperCase()}…`;
+    loadDmMap(DM_MAPS[j].id).then(go).catch(e => { errors.push('dm map: ' + e); el.remove(); RC.dmNewMaps = false; dmStart(def); });
+    return;
+  }
+  const i = dmMap(); selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm', def: def ? 1 : 0 });
+}
 const dmGoal = (lvl, tdm = DM.tdm) => tdm ? Math.min(RC.tdmMaxKills, RC.tdmLevelKills + RC.tdmLevelStep * (lvl - 1)) : Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (lvl - 1));
 const dmTarget = () => DM.target || dmGoal(dmLevel);
 function tdmScore(team) {                                                          // team Deathmatch: every kill scores for the killer's team
@@ -613,7 +627,7 @@ function dmPool() {                                                             
     if (n.links.length >= 6) { const k = `${Math.floor(n.pos.x / 4)},${Math.floor(n.pos.z / 4)},${Math.round(n.pos.y / 2)}`; if (!cell.has(k) && !world.overlaps(n.pos, 0.4, 1.8)) { cell.add(k); pool.push(n.pos.clone()); } }
     for (const l of n.links) { const m = l[0]; if (!seen[m.id]) { seen[m.id] = 1; q.push(m); } }
   }
-  if (pool.length >= 40 && RC.dmArea < 1) {                                       // play area ~20% smaller: keep spawns in the central part of the map
+  if (pool.length >= 40 && RC.dmArea < 1 && !map.dm) {                                       // play area ~20% smaller: keep spawns in the central part of the map
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const p of pool) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
     const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, hx = (x1 - x0) / 2 * RC.dmArea, hz = (z1 - z0) / 2 * RC.dmArea;
     const inner = pool.filter(p => Math.abs(p.x - cx) <= hx && Math.abs(p.z - cz) <= hz); if (inner.length >= 30) { DM.area = { cx, cz, hx, hz }; return inner; }
@@ -622,7 +636,9 @@ function dmPool() {                                                             
 }
 function dmSides(pool) {                                                          // team DM: split the map along its long axis
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const p of pool) { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); z0 = Math.min(z0, p.z); z1 = Math.max(z1, p.z); }
-  const x = (x1 - x0) >= (z1 - z0); return { x, c: x ? (x0 + x1) / 2 : (z0 + z1) / 2, h: Math.max(4, (x ? x1 - x0 : z1 - z0) / 2) };
+  const T = map.teamSpawns;
+  if (T) { const dx = T.B.x - T.A.x, dz = T.B.z - T.A.z, L = Math.hypot(dx, dz) || 1; return { ax: dx / L, az: dz / L, cx: (T.A.x + T.B.x) / 2, cz: (T.A.z + T.B.z) / 2, h: Math.max(4, L / 2) }; }   // v27: blue = the map's team A end (works for diagonal maps)
+  const x = (x1 - x0) >= (z1 - z0); return { ax: x ? 1 : 0, az: x ? 0 : 1, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, h: Math.max(4, (x ? x1 - x0 : z1 - z0) / 2) };
 }
 function dmSpot(far, viewers, others, hardAll, side = 0) {                               // side: team DM home half (-1 blue, +1 red)                                          // spawn scoring: never in sight, 18-40 m from the threat, no clumping, no repeats
   const pool = DM.pool?.length ? DM.pool : map.guards;
@@ -637,7 +653,7 @@ function dmSpot(far, viewers, others, hardAll, side = 0) {                      
     let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p)); if (d === Infinity) d = 30;   // nobody alive yet: any distance is fine
     sc += d < 9.5 ? -20 : d < 18 ? -(18 - d) * 1.2 : d > 40 ? -(d - 40) * 0.3 : 6;
     if (others) for (const o of others) { const od = o.distanceTo(p); if (od < 14) { sc -= 90 - od * 3; break; } }
-    if (side && DM.side) { const a = DM.side; sc += clamp(((a.x ? p.x - a.c : p.z - a.c) * side) / a.h, -1, 1) * 14; }
+    if (side && DM.side) { const a = DM.side; sc += clamp((((p.x - a.cx) * a.ax + (p.z - a.cz) * a.az) * side) / a.h, -1, 1) * 14; }
     if (p.y > 2) sc -= 100;                                                        // ground level only (the terrace was a spawn trap)   // keep roofs/terraces rare
     for (const r of DM.recent) if (r.t > elapsed - 10 && Math.abs(r.x - p.x) < 6 && Math.abs(r.z - p.z) < 6) { sc -= 8; break; }
     if (DM.deathPos && elapsed - DM.deathT < 7 && DM.deathPos.distanceTo(p) < 10) sc -= 8 * (1 - (elapsed - DM.deathT) / 7);
@@ -663,7 +679,7 @@ function dmBot(ident) {
   e.hp = 100; e.root.scale.setScalar(RC.dmBotScale);                          // same 100 HP as the player; drawn bigger so they read at range
   if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
   else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
-  toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.022, color: ally ? 0x0d3f8a : 0x8a0d0d }); nameTag(e);
+  toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.04, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); outline(e.root, { thick: 0.11, color: ally ? 0x1f7bff : 0xff1a2a, force: true, glow: true }); nameTag(e);   // v27: bright team outline + soft glow
   if (ally) { const f = ffaRival(e); if (f) { e.alert(f.pos, 1); if (!e.T.static) e.goTo(f.pos, G); } return; }
   const r = G.ignorePlayer || Math.random() >= 0.5 || (DM.tdm && Math.random() < 0.3) ? ffaRival(e) : null; e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
 }
@@ -687,9 +703,13 @@ function dmSetup() {
   const team = touch ? RC.tdmTeamTouch : RC.tdmTeam, nB = DM.tdm ? team : RC.dmBots, nA = DM.tdm ? team - 1 : 0;   // team DM: you + (team-1) allies vs team
   DM.pool = DM.pool.length ? DM.pool : map.guards.map(g => g.clone()); DM.side = DM.tdm ? dmSides(DM.pool) : null;
   DM.roster = Array.from({ length: nA + nB }, (_, i) => ({ i, name: names[i % names.length], k: 0, d: 0, e: null, respT: null, type: null, jumper: Math.random() < 0.5, ally: i >= nB }));
-  if (DM.tdm) { player.pos.copy(dmSpot([], null, null, false, -1)); player.vel.set(0, 0, 0); }   // start on the blue side
+  if (DM.tdm) { player.pos.copy(dmSpot([], null, null, false, -1)); player.vel.set(0, 0, 0); faceFoe(); }   // start on the blue side
   for (const r of DM.roster) dmBot(r);
   DM.boardDirty = true;
+}
+function faceFoe() {                                                              // (re)spawn looking toward the enemy side / centre, not into a wall
+  const T = map.teamSpawns, b = map.bounds, t = DM.tdm && T ? T.B : V((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
+  player.yaw = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
 }
 function clearAllies() { for (const e of allies) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } allies = []; }
 function dmTick(dt) {
@@ -698,7 +718,7 @@ function dmTick(dt) {
   if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
     if ((DM.deadT -= dt) <= 0) {
       const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live, DM.tdm ? null : live, true, DM.tdm ? -1 : 0); player.pos.copy(p); player.vel.set(0, 0, 0);
-      player.hp = 100; player.alive = true; invT = 2.5; DM.hits = []; hurtK = 0; FX.announce('BACK IN', 'start'); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
+      player.hp = 100; player.alive = true; invT = 2.5; DM.hits = []; faceFoe(); hurtK = 0; FX.announce('BACK IN', 'start'); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
       for (const e of enemies) if (e.alive) e.alert(player.pos, 0.6);
     }
     if ($('dcard').classList.contains('show')) { const t = Math.max(0, Math.ceil(DM.deadT)); if (t !== DM.dcT) { DM.dcT = t; $('dcGo').textContent = dcGoTxt(t); } }
@@ -1434,7 +1454,7 @@ function noteInput(kind) { if (firstInput || !running) return; firstInput = true
 function startMissionNow(idx, opts) {
   if (opts.part === undefined && !opts.mode && !TEST) opts = { ...opts, part: partOf(idx) };   // resume at the saved part
   if (trialWeapon && !opts.primary) { opts = { ...opts, primary: trialWeapon }; track('trial', { k: 'use', w: trialWeapon }); trialWeapon = null; }
-  const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice(), part: opts.part };
+  const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice(), part: opts.part, dmMap: opts.dmMap };
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
@@ -2120,6 +2140,7 @@ function lobbyModes() {                                                         
     progress = Number(store.get('sz_progress', progress)) || 0;
     Object.assign(loadout, store.get('sz_loadout', {})); Object.assign(settings, store.get('sz_settings', {})); Object.assign(META.profile, store.get('sz_profile', {}));
   }
+  DM.nextMap = (Math.random() * DM_MAPS.length) | 0; const dmPreP = TEST ? null : loadDmMap(DM_MAPS[DM.nextMap].id).catch(() => {});   // v27: first arena downloads alongside the game assets
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
@@ -2133,7 +2154,8 @@ function lobbyModes() {                                                         
   running = false;
   const firstRun = !TEST && !Q.has('brief') && !Q.has('onboard') && progress === 0 && !onboardingDone() && !tutorialDone();
   playMode = (store.get('sz_mode', null) || RC.defaultMode) === 'dm' ? 'dm' : 'story';   // v15: Deathmatch is the default mode (remote switch)
-  if (Q.has('brief')) openBriefing(); else openLobby();
+  if (firstRun && playMode === 'dm' && RC.dmNewMaps && dmPreP) await Promise.race([dmPreP, new Promise(r => setTimeout(r, 8000))]);   // first launch goes straight into the arena, no lobby flash
+  if (Q.has('brief')) openBriefing(); else if (!(firstRun && playMode === 'dm' && dmMapReady(DM_MAPS[DM.nextMap].id))) openLobby();
   if (Q.has('onboard')) startOnboarding(true);
   else if (firstRun) {                                                            // first launch: straight into the mission-1 drill, no menus (CG load time = page open -> gameplayStart)
     try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ }

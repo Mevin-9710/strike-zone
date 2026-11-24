@@ -469,3 +469,9 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - `tools/shots_ui.cjs TAG`: lobby/hud/board/death/pause screenshots, desktop + phone.
 - Tests 105/107 (2 known charm/spray failures); FFA tests force `dmTeams=false`; lobby tests use the new nav/mode picker.
 - 2026-11-24 · v26.1: touch fire button smaller (66px) and low in the corner, aim button moved high on the right edge, reload/jump smaller, so the right half is free for drag-to-aim. Tests 105/107.
+
+## 2026-11-24 · v27: four Deathmatch arenas + team outlines
+- Belltower Square, Lantern Canal, Neon Alley, Sandkeep baked from docs/maps/dm-src by `tools/export_dm_maps.cjs` into models/dm/<id>.glb (merged per material, 26-57k tris, ~2-2.8 MB each) + <id>.json (colliders, floors, ramps, ladders). `world/dm-maps.js` builds them (floors/stairs/bridge/ladder ramps from the prototypes' floor code). Loaded on demand (first one alongside boot assets), next one prefetched during a match. Remote `dmNewMaps` (on) switches back to the old maps.
+- Team sides follow each map's team spawns (diagonal-aware); spawns face the enemy side.
+- Bots: bright team outline + additive glow (blue allies, red enemies), forced on even though ink outlines are off globally.
+- Checked: stairs (Belltower, Neon), canal bridge, Sandkeep ramps + ladder ramps all climbable. `tools/shots_dm_maps.cjs` for stats/screens.

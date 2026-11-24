@@ -33,10 +33,10 @@ const PLAY = path.join(OUT, 'play');
 for (const f of ['index.html', 'game.js', 'menu.css', 'v14.css', 'ui26.css', 'game', 'world', 'fx', 'fonts', 'sfx']) cp(path.join(ROOT, f), path.join(PLAY, f));
 for (const f of ['three.module.js', 'three.core.js', 'addons/loaders/GLTFLoader.js',
   'addons/utils/BufferGeometryUtils.js', 'addons/utils/SkeletonUtils.js']) cp(path.join(ROOT, 'lib', f), path.join(PLAY, 'lib', f));
-for (const d of ['kenney', 'props', 'rigged', 'weapons']) {
+for (const d of ['kenney', 'props', 'rigged', 'weapons', 'dm']) {
   const src = path.join(ROOT, 'models', d);
   if (!fs.existsSync(src)) continue;
-  for (const f of fs.readdirSync(src)) if (f.endsWith('.glb')) cp(path.join(src, f), path.join(PLAY, 'models', d, f));
+  for (const f of fs.readdirSync(src)) if (f.endsWith('.glb') || (d === 'dm' && f.endsWith('.json'))) cp(path.join(src, f), path.join(PLAY, 'models', d, f));
 }
 // let the game page register the shared SW and link the manifest
 const playIndex = path.join(PLAY, 'index.html');
