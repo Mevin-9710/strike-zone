@@ -658,7 +658,7 @@ function dmSpot(far, viewers, others, hardAll, side = 0) {                      
     let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p)); if (d === Infinity) d = 30;   // nobody alive yet: any distance is fine
     sc += d < 9.5 ? -20 : d < 18 ? -(18 - d) * 1.2 : d > 40 ? -(d - 40) * 0.3 : 6;
     if (others) for (const o of others) { const od = o.distanceTo(p); if (od < 14) { sc -= 90 - od * 3; break; } }
-    if (side && DM.side) { const a = DM.side; sc += clamp((((p.x - a.cx) * a.ax + (p.z - a.cz) * a.az) * side) / a.h, -1, 1) * 14; }
+    if (side && DM.side) { const a = DM.side; sc += clamp((((p.x - a.cx) * a.ax + (p.z - a.cz) * a.az) * side) / a.h, -1, 1) * 8; }
     if (p.y > 2) sc -= 100;                                                        // ground level only (the terrace was a spawn trap)   // keep roofs/terraces rare
     for (const r of DM.recent) if (r.t > elapsed - 10 && Math.abs(r.x - p.x) < 6 && Math.abs(r.z - p.z) < 6) { sc -= 8; break; }
     if (DM.deathPos && elapsed - DM.deathT < 7 && DM.deathPos.distanceTo(p) < 10) sc -= 8 * (1 - (elapsed - DM.deathT) / 7);
@@ -676,8 +676,8 @@ function dmBot(ident) {
   const others = live(enemies);
   let p;
   if (!DM.tdm) p = dmSpot([player.pos, ...others], [player.pos, ...others], others);
-  else if (ally) { const foes = live(enemies), mates = live(allies); p = dmSpot(foes, foes, mates.length > 2 ? mates : null, false, -1); }
-  else { const foes = [player.pos, ...live(allies)]; p = dmSpot(foes, foes, others.length > 2 ? others : null, false, 1); } if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
+  else if (ally) { const foes = live(enemies), mates = live(allies); p = dmSpot(foes, foes, mates.length ? mates : null, false, -1); }
+  else { const foes = [player.pos, ...live(allies)]; p = dmSpot(foes, foes, others.length ? others : null, false, 1); } if (world.overlaps(p, 0.4, 1.8)) { const n = world.nearestNode(p); if (n) p = n.pos.clone(); }
   DM.nameI = (DM.nameI || 0) + 1; const skin = botAssets(type, ident ? ident.i : DM.nameI);
   const e = new Enemy(type, skin || A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) }); scene.add(e.root); e.skin = !!skin;
   if (ally) { e.ally = true; e.abCD = 1e9; allies.push(e); } else enemies.push(e);   // allies: no abilities (their flashes/smokes would hit the player)
@@ -685,7 +685,7 @@ function dmBot(ident) {
   if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
   else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
   toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.025, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); nameTag(e);   // v27.1: clean team outline (the additive glow hull looked blobby)
-  if (ally) { const f = ffaRival(e); if (f) { e.alert(f.pos, 1); if (!e.T.static) e.goTo(f.pos, G); } return; }
+  if (ally) { const f = ffaRival(e); if (f) { e.alert(f.pos, 1); if (!e.T.static) e.goTo(spreadGoal(e, f.pos), G); } return; }
   const r = G.ignorePlayer || Math.random() >= 0.5 || (DM.tdm && Math.random() < 0.3) ? ffaRival(e) : null; e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
 }
 function nameTag(e) {                                                              // small red callsign above Deathmatch bots (one canvas sprite per bot)
@@ -716,6 +716,12 @@ function faceFoe() {                                                            
   const T = map.teamSpawns, b = map.bounds, t = DM.tdm && T ? T.B : V((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
   player.yaw = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
 }
+function spreadGoal(e, to) {                                                    // v29: bots fan out instead of all running to the same spot
+  const pool = DM.pool; if (pool?.length && Math.random() < 0.35) return pool[(Math.random() * pool.length) | 0];
+  const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * 7, g = _spG.set(to.x + Math.cos(a) * r, to.y, to.z + Math.sin(a) * r);
+  const n = world.nearestNode(g); return n ? n.pos : to;
+}
+const _spG = new THREE.Vector3();
 function clearAllies() { for (const e of allies) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } allies = []; }
 function dmTick(dt) {
   const k = stats.kills - DM.k0;
@@ -731,8 +737,8 @@ function dmTick(dt) {
   }
   DM.uavT -= dt; DM.odT -= dt;
   { const quiet = elapsed - Math.max(DM.lastK, DM.alive0 || 0);                 // stalling: no kill for a while -> the bots go on a rampage
-    if (!DM.rampage && quiet > RC.dmStall * (DM.grace ? 1.5 : 1)) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
-    if (DM.rampage) { director.set(director.threat + 0.01 * dt * 10); if (Math.random() < dt * 0.8) for (const e of enemies) if (e.alive && e.state !== 'combat') { e.alert(player.pos, 1); e.goTo(player.pos, G); } } }
+    if (!DM.rampage && quiet > RC.dmStall * (DM.grace ? 1.5 : 1)) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
+    if (DM.rampage) { director.set(director.threat + 0.01 * dt * 10); if (Math.random() < dt * 0.8) for (const e of enemies) if (e.alive && e.state !== 'combat') { e.alert(player.pos, 1); e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } } }
   if (RC.dmInfiniteAmmo) for (const id of W.slots) { const s = W.state[id]; if (s && s.reserve < 999) s.reserve = 999; }   // reloads never run dry
   if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
   if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
@@ -746,8 +752,8 @@ function dmTick(dt) {
     if (allies.length > 12) { const dead = allies.filter(e => !e.alive).slice(0, allies.length - 8); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } allies = allies.filter(e => !dead.includes(e)); }
     if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } enemies = enemies.filter(e => !dead.includes(e)); }
   }
-  for (const e of allies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.35 && !e.T.static) { const f = ffaRival(e); if (f) { e.alert(f.pos, 0.5); e.goTo(f.pos, G); } }   // allies push toward the nearest enemy
-  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { const calm = G.ignorePlayer, r = calm || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(to, G); }   // bots hunt the player or a rival
+  for (const e of allies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.35 && !e.T.static) { const f = ffaRival(e); if (f) { e.alert(f.pos, 0.5); e.goTo(spreadGoal(e, f.pos), G); } }   // allies push toward the nearest enemy
+  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { const calm = G.ignorePlayer, r = calm || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(DM.tdm ? spreadGoal(e, to) : to, G); }   // bots hunt the player or a rival
   return '';
 }
 function dmDeath() { DM.deathPos = player.pos.clone(); DM.deathT = elapsed; DM.d++; DM.streak = 0; DM.deadT = RC.deathCard ? Math.max(RC.dmRespawn, 2) : RC.dmRespawn; player.alive = false; if (RC.deathCard) deathCard(); else FX.announce('ELIMINATED', 'objective'); }
