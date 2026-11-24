@@ -1607,6 +1607,13 @@ function endV14(add) {                                                          
   } else b.style.display = 'none';
   if (RC.quests) { const qs = QUESTS.all(); $('endQ').innerHTML = `<div class="qh"><span>QUESTS</span><small>${qs.some(q => q.done && !q.claimed) ? 'CLAIM IN THE LOBBY' : 'NEW IN ' + QUESTS.resetsIn()}</small></div>` + qs.map(q => `<div class="q${q.done ? ' done' : ''}">${q.t.toUpperCase()} · ${q.p}/${q.n}<div class="qr"><div class="qb"><i style="width:${Math.round(q.p / q.n * 100)}%"></i></div></div></div>`).join(''); }
   else $('endQ').textContent = '';
+  if (!TEST && (startMissionNow.n || 0) >= 2 && !store.get('sz_fb_done', 0) && !store.get('sz_fb_end', 0)) {   // v29.2 (2) one-time feedback line on the end screen
+    store.set('sz_fb_end', 1); track('ui', { k: 'fbEnd' });
+    const f = document.createElement('div'); f.id = 'fbEnd';
+    f.innerHTML = `<label for="fbEndT">What should we improve? <small>(optional)</small></label><div><input id="fbEndT" maxlength="500" placeholder="Bugs, ideas, what felt bad…"><button id="fbEndB">SEND</button></div>`;
+    $('endQ').after(f); f.querySelector('input').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') $('fbEndB').click(); });
+    $('fbEndB').onclick = () => { const t = $('fbEndT').value.trim(); if (!t) return; sendFeedback(t, 'end'); f.innerHTML = '<span class="ok">Thanks! We read every message.</span>'; };
+  } else $('fbEnd')?.remove();
   $('menuBtn').classList.add('kgrey');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
@@ -1747,12 +1754,30 @@ function quitAsk() {
     $('qaLeave').onclick = () => {
       const t = $('qaText').value.trim().slice(0, 500);
       track('quit_ask', { k: 'leave', fb: t ? 1 : 0, mode: mode || 'story', m: mission?.id, el: Math.round(elapsed) });
-      if (t) { track('feedback', { text: t, where: 'quit', mode: mode || 'story', m: mission?.id, lvl: META.level(), tdm: DM.tdm ? 1 : 0 }); FX.announce('THANKS FOR THE FEEDBACK!', 'start'); }
+      if (el.dataset.k === 'exit') { if (t) sendFeedback(t, 'exit'); track('ui', { k: 'exitAsk', fb: t ? 1 : 0 }); $('qaText').value = ''; el.classList.remove('show'); return; }
+      if (t) sendFeedback(t, 'quit');
       tFlush(); $('qaText').value = ''; el.classList.remove('show'); paused = false; openLobby();
     };
   }
-  el.classList.add('show'); track('ui', { k: 'quitAsk' }); setTimeout(() => $('qaText').focus(), 50);
+  setAsk(el, 'quit'); el.classList.add('show'); track('ui', { k: 'quitAsk' }); setTimeout(() => $('qaText').focus(), 50);
 }
+function setAsk(el, k) {                                                           // same dialog: 'quit' (Quit to lobby) or 'exit' (mouse heading out of the game)
+  el.dataset.k = k; const q = k === 'exit';
+  el.querySelector('h2').textContent = q ? 'LEAVING ALREADY?' : 'LEAVE THE MATCH?';
+  el.querySelector('p').textContent = q ? 'Before you go: one line on what we should improve helps a lot.' : 'Your progress in this match will be lost.';
+  $('qaStay').textContent = q ? 'NO THANKS' : 'STAY'; $('qaLeave').textContent = q ? 'SEND' : 'LEAVE';
+}
+function sendFeedback(t, where) {
+  store.set('sz_fb_done', 1);
+  track('feedback', { text: t.slice(0, 500), where, mode: mode || playMode || 'story', m: mission?.id, lvl: META.level(), tdm: DM.tdm ? 1 : 0, n: startMissionNow.n || 0 });
+  tFlush(); FX.announce('THANKS FOR THE FEEDBACK!', 'start');
+}
+// v29.2 (1) exit intent, PC: mouse leaves through the top of the game while not fighting -> ask once per session
+document.addEventListener('mouseout', e => {
+  if (touch || TEST || e.relatedTarget || e.clientY > 4 || (running && !paused) || sendFeedback.asked || store.get('sz_fb_done', 0)) return;
+  if (!startMissionNow.n) return;                                                 // only after at least one match
+  sendFeedback.asked = true; quitAsk(); setAsk($('quitAsk'), 'exit'); track('ui', { k: 'exitIntent' });
+});
 
 // ---------- settings ----------
 document.body.insertAdjacentHTML('beforeend', `<div id="settings" class="panel"><div class="card" style="min-width:min(420px,90vw)"><h2>SETTINGS</h2><div id="setRows"></div><button id="setClose" class="go">DONE</button></div></div>`);

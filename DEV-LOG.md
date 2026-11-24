@@ -481,3 +481,4 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - 2026-11-24 · v29: team DM bots spread out: spawn anti-clump vs all teammates, weaker home-side pull (14->8), hunt/rampage goals offset 4-11 m or a random pool spot (35%).
 - 2026-11-24 · v29: QUIT TO LOBBY asks 'Leave the match?' with an optional feedback box; text goes to Supabase events as ev='feedback' (plus quit_ask leave/stay). Read with tools/feedback.py [days].
 - 2026-11-24 · v29.1: bot spread cut 35% (roam 35%->23%, goal offset 4-11 m -> 2.6-7.2 m).
+- 2026-11-24 · v29.2: smaller minimap (PC 8u, phone 6.4u, now also shown in DM on phones). Feedback: exit-intent box on PC (mouse leaves through the top while not fighting, after 1+ match, once per session) and a one-time 'What should we improve?' line on the end screen after the 2nd match; both -> Supabase ev='feedback' (where: exit/end/quit).
