@@ -245,7 +245,7 @@ const G = {                                         // services handed to enemie
   botBoost(e) {                                                                // v28 team DM: +4% every 5 total kills (cap +16%), +8% for the team 5+ kills behind
     if (mode !== 'dm' || !DM.tdm || !DM.score) return 1;
     const A = DM.score.A, B = DM.score.B, mine = e.ally ? A : B, theirs = e.ally ? B : A;
-    return 1 + Math.min(RC.tdmRampMax, RC.tdmRamp * Math.floor((A + B) / 5)) + (theirs - mine >= RC.tdmComebackGap ? RC.tdmComeback : 0);
+    return 1 + (e.ally ? 0 : RC.tdmRedBoost) + Math.min(RC.tdmRampMax, RC.tdmRamp * Math.floor((A + B) / 5)) + (theirs - mine >= RC.tdmComebackGap ? RC.tdmComeback : 0);   // v29.4: red bots a touch stronger
   }, get tdm() { return mode === 'dm' && !!DM.tdm; },
   get dmParity() { return mode === 'dm'; }, get dmPower() { return DM.grace ? RC.dmGracePower : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); },
   get ignorePlayer() { return mode === 'dm' && DM.grace && elapsed < RC.dmGraceCalm; }, get rampage() { return mode === 'dm' && DM.rampage; },
