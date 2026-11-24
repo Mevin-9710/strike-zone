@@ -486,3 +486,4 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - 2026-11-24 · v29.4: red (enemy) bots +10% kill speed in team DM (remote tdmRedBoost, config v14).
 - 2026-11-24 · v29.5: red bot boost 10% -> 6% (config v15).
 - 2026-11-24 · v29.6: bot base power 0.69 at level 1, +0.017/level (L4 = 0.74, the level that felt right); was 0.56 +0.06. In-match ramp/comeback/red boost unchanged (config v16).
+- 2026-11-24 · v29.7: new-player grace power 0.55 (1st match) -> 0.60 (2nd), in-match ramp still applies. Losing streak eases the next match: -0.04 power per loss in a row (max -0.12, floor 0.45), reset on a win (sz_dm_losses). Config v17.

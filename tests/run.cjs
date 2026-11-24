@@ -389,7 +389,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const { ctx, pg } = await open(browser, { query: 'test=1' });
     const r = await pg.evaluate(() => {
       const g = __game, out = {}; localStorage.removeItem('sz_dm_played');
-      g.start(0, { mode: 'dm' }); g.step(1); out.g1 = g.DM.grace && g.dmPower === 0.45 && g.ignorePlayer;
+      g.start(0, { mode: 'dm' }); g.step(1); out.g1 = g.DM.grace && g.dmPower === 0.55 && g.ignorePlayer;
       for (let i = 0; i < 220; i++) g.step(0.1); out.calmEnds = !g.ignorePlayer;
       g.start(0, { mode: 'dm' }); g.step(0.2); out.g2 = g.DM.grace;
       g.start(0, { mode: 'dm' }); g.step(0.2); out.g3 = !g.DM.grace && g.dmPower > 0.5 && !g.ignorePlayer;

@@ -247,7 +247,7 @@ const G = {                                         // services handed to enemie
     const A = DM.score.A, B = DM.score.B, mine = e.ally ? A : B, theirs = e.ally ? B : A;
     return 1 + (e.ally ? 0 : RC.tdmRedBoost) + Math.min(RC.tdmRampMax, RC.tdmRamp * Math.floor((A + B) / 5)) + (theirs - mine >= RC.tdmComebackGap ? RC.tdmComeback : 0);   // v29.4: red bots a touch stronger
   }, get tdm() { return mode === 'dm' && !!DM.tdm; },
-  get dmParity() { return mode === 'dm'; }, get dmPower() { return DM.grace ? RC.dmGracePower : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); },
+  get dmParity() { return mode === 'dm'; }, get dmPower() { const base = DM.grace ? RC.dmGracePower + RC.dmGraceStep * (DM.graceN || 0) : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); return Math.max(RC.dmEaseFloor, base - (DM.ease || 0)); },   // v29.7: grace 0.55 -> 0.6, minus a loss-streak ease
   get ignorePlayer() { return mode === 'dm' && DM.grace && elapsed < RC.dmGraceCalm; }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
@@ -701,7 +701,7 @@ function dmSetup() {
   for (const e of enemies) scene.remove(e.root); enemies = []; clearAllies();
   DM.tdm = teamsOn(); DM.score = { A: 0, B: 0 }; DM.hits = []; SS.ssA = null; document.body.classList.toggle('teams', DM.tdm);
   DM.target = dmGoal(dmLevel); DM.level = dmLevel;
-  { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
+  { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; DM.graceN = n; DM.ease = Math.min(RC.dmEaseMax, RC.dmEaseStep * (Number(store.get('sz_dm_losses', 0)) || 0)); store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
   Object.assign(DM, { rampage: false, alive0: 0, coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
   DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
   const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
@@ -806,6 +806,7 @@ function dmEnd(won) {
   track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id, ...(DM.tdm ? { tA: DM.score.A, tB: DM.score.B } : {}) });
   const tier = k >= 30 ? 'LEGEND' : k >= 22 ? 'PLATINUM' : k >= 15 ? 'GOLD' : k >= 8 ? 'SILVER' : 'BRONZE';
   questP('finish'); if (won) questP('win'); if (k >= 15) questP('rank');
+  store.set('sz_dm_losses', won ? 0 : (Number(store.get('sz_dm_losses', 0)) || 0) + 1);   // v29.7: each loss in a row eases the next match a bit
   const lvl = dmLevel; if (won) { dmLevel++; store.set('sz_dm_level', dmLevel); META.profile.upPoints++; META.saveProfile(); } track('dm', { k: 'level', l: lvl, won });
   $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `LEVEL ${lvl} CLEARED · ${tier}` : DM.tdm ? (DM.draw ? `DRAW ${DM.score.A}–${DM.score.B}` : `RED TEAM WINS ${DM.score.B}–${DM.score.A}`) : `#${DM.place} · ${DM.winner} WINS`;
   $('tK').textContent = k; $('tKD').textContent = (k / Math.max(1, DM.d)).toFixed(1); $('tSt').textContent = DM.best; $('tC').textContent = dmC;
