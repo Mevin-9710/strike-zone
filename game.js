@@ -679,7 +679,7 @@ function dmBot(ident) {
   e.hp = 100; e.root.scale.setScalar(RC.dmBotScale);                          // same 100 HP as the player; drawn bigger so they read at range
   if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
   else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
-  toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.04, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); outline(e.root, { thick: 0.11, color: ally ? 0x1f7bff : 0xff1a2a, force: true, glow: true }); nameTag(e);   // v27: bright team outline + soft glow
+  toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.025, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); nameTag(e);   // v27.1: clean team outline (the additive glow hull looked blobby)
   if (ally) { const f = ffaRival(e); if (f) { e.alert(f.pos, 1); if (!e.T.static) e.goTo(f.pos, G); } return; }
   const r = G.ignorePlayer || Math.random() >= 0.5 || (DM.tdm && Math.random() < 0.3) ? ffaRival(e) : null; e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
 }

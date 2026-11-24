@@ -475,3 +475,4 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Team sides follow each map's team spawns (diagonal-aware); spawns face the enemy side.
 - Bots: bright team outline + additive glow (blue allies, red enemies), forced on even though ink outlines are off globally.
 - Checked: stairs (Belltower, Neon), canal bridge, Sandkeep ramps + ladder ramps all climbable. `tools/shots_dm_maps.cjs` for stats/screens.
+- 2026-11-24 · v27.1: team target 20 +5/level (remote-config v11); bot glow hull removed, clean 0.025 team outline only. CrazyGames zip rebuilt.
