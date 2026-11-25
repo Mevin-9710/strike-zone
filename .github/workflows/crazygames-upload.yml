@@ -1,0 +1,37 @@
+name: crazygames-upload
+# Builds dist/ and uploads it to the CrazyGames Developer Portal as a new build (draft).
+# Run it from the Actions tab ("Run workflow"). Needs repo secret CG_REFRESH_TOKEN.
+# Sending the build for review/release is still done in the portal for now.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'check = login + list submissions only; dry = upload files but do not attach; upload = upload and attach as new build'
+        type: choice
+        options: [check, dry, upload]
+        default: check
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency: crazygames-upload
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Portal flow unchanged?
+        run: node tools/cg_portal_check.mjs
+      - name: Build dist
+        if: inputs.mode != 'check'
+        run: bash tools/build_dist.sh
+      - name: CrazyGames ${{ inputs.mode }}
+        env:
+          CG_REFRESH_TOKEN: ${{ secrets.CG_REFRESH_TOKEN }}
+          CG_SUBMISSION_ID: ${{ vars.CG_SUBMISSION_ID }}
+        run: |
+          case "${{ inputs.mode }}" in
+            check)  node tools/cg_upload.mjs check ;;
+            dry)    node tools/cg_upload.mjs upload dist --dry ;;
+            upload) node tools/cg_upload.mjs upload dist ;;
+          esac
