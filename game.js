@@ -1608,13 +1608,20 @@ function endV14(add) {                                                          
   } else b.style.display = 'none';
   if (RC.quests) { const qs = QUESTS.all(); $('endQ').innerHTML = `<div class="qh"><span>QUESTS</span><small>${qs.some(q => q.done && !q.claimed) ? 'CLAIM IN THE LOBBY' : 'NEW IN ' + QUESTS.resetsIn()}</small></div>` + qs.map(q => `<div class="q${q.done ? ' done' : ''}">${q.t.toUpperCase()} · ${q.p}/${q.n}<div class="qr"><div class="qb"><i style="width:${Math.round(q.p / q.n * 100)}%"></i></div></div></div>`).join(''); }
   else $('endQ').textContent = '';
-  if (!TEST && (startMissionNow.n || 0) >= 2 && !store.get('sz_fb_done', 0) && !store.get('sz_fb_end', 0)) {   // v29.2 (2) one-time feedback line on the end screen
-    store.set('sz_fb_end', 1); track('ui', { k: 'fbEnd' });
+  const fbN = startMissionNow.n || 0, fbChips = !store.get('sz_fb_r', 0), fbText = fbN >= 2 && !store.get('sz_fb_done', 0) && !store.get('sz_fb_end', 0);
+  $('fbEnd')?.remove();
+  if (!TEST && (fbChips || fbText)) {   // v29.8 one-time one-tap reason chips (from match 1) + v29.2 one-time text line (from match 2)
     const f = document.createElement('div'); f.id = 'fbEnd';
-    f.innerHTML = `<label for="fbEndT">What should we improve? <small>(optional)</small></label><div><input id="fbEndT" maxlength="500" placeholder="Bugs, ideas, what felt bad…"><button id="fbEndB">SEND</button></div>`;
-    $('endQ').after(f); f.querySelector('input').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') $('fbEndB').click(); });
-    $('fbEndB').onclick = () => { const t = $('fbEndT').value.trim(); if (!t) return; sendFeedback(t, 'end'); f.innerHTML = '<span class="ok">Thanks! We read every message.</span>'; };
-  } else $('fbEnd')?.remove();
+    if (fbChips) { f.append(fbChipRow('How was that match?', FB_END, 'end')); track('ui', { k: 'fbChips', where: 'end' }); }
+    if (fbText) {
+      store.set('sz_fb_end', 1); track('ui', { k: 'fbEnd' });
+      const w = document.createElement('div'); w.className = 'fbT';
+      w.innerHTML = `<label for="fbEndT">What should we improve? <small>(optional)</small></label><div><input id="fbEndT" maxlength="500" placeholder="Bugs, ideas, what felt bad…"><button id="fbEndB">SEND</button></div>`;
+      f.append(w); w.querySelector('input').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') w.querySelector('button').click(); });
+      w.querySelector('button').onclick = () => { const t = $('fbEndT').value.trim(); if (!t) return; sendFeedback(t, 'end'); w.innerHTML = '<span class="ok">Thanks! We read every message.</span>'; };
+    }
+    $('again').parentElement.after(f);   // below RETRY/LOBBY so feedback never pushes the play buttons off a phone screen
+  }
   $('menuBtn').classList.add('kgrey');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
@@ -1748,7 +1755,7 @@ function quitAsk() {
   let el = $('quitAsk');
   if (!el) {
     el = document.createElement('div'); el.id = 'quitAsk';
-    el.innerHTML = `<div class="qa"><h2>LEAVE THE MATCH?</h2><p>Your progress in this match will be lost.</p><label for="qaText">How can we make Strike Zone better? <small>(optional)</small></label><textarea id="qaText" maxlength="500" rows="3" placeholder="Bugs, ideas, what felt bad…"></textarea><div class="qaB"><button id="qaStay" class="go">STAY</button><button id="qaLeave">LEAVE</button></div></div>`;
+    el.innerHTML = `<div class="qa"><h2>LEAVE THE MATCH?</h2><p>Your progress in this match will be lost.</p><div id="qaChips"></div><label for="qaText">How can we make Strike Zone better? <small>(optional)</small></label><textarea id="qaText" maxlength="500" rows="3" placeholder="Bugs, ideas, what felt bad…"></textarea><div class="qaB"><button id="qaStay" class="go">STAY</button><button id="qaLeave">LEAVE</button></div></div>`;
     document.body.append(el);
     el.querySelector('#qaText').addEventListener('keydown', e => e.stopPropagation());   // typing never triggers game keys
     $('qaStay').onclick = () => { el.classList.remove('show'); track('ui', { k: 'quitStay' }); };
@@ -1767,6 +1774,22 @@ function setAsk(el, k) {                                                        
   el.querySelector('h2').textContent = q ? 'LEAVING ALREADY?' : 'LEAVE THE MATCH?';
   el.querySelector('p').textContent = q ? 'Before you go: one line on what we should improve helps a lot.' : 'Your progress in this match will be lost.';
   $('qaStay').textContent = q ? 'NO THANKS' : 'STAY'; $('qaLeave').textContent = q ? 'SEND' : 'LEAVE';
+  const c = $('qaChips'); c.textContent = '';
+  if (!store.get('sz_fb_rq', 0)) c.append(fbChipRow(q ? 'What made you want to leave?' : 'Why are you leaving?', FB_QUIT, k));
+}
+// v29.8 one-tap reasons: one tap sends ev='fb_reason' right away (no typing needed, works on phones). Once per player per place (end / quit+exit).
+const FB_END = [['fun', 'FUN'], ['hard', 'TOO HARD'], ['easy', 'TOO EASY'], ['boring', 'BORING'], ['lag', 'LAGGY'], ['controls', 'CONTROLS']];
+const FB_QUIT = [['break', 'JUST A BREAK'], ['hard', 'TOO HARD'], ['boring', 'BORING'], ['lag', 'LAGGY'], ['controls', 'CONTROLS'], ['confusing', 'CONFUSING']];
+function fbChipRow(title, list, where) {
+  const row = document.createElement('div'); row.className = 'fbChips';
+  row.innerHTML = `<span>${title}</span><div>${list.map(([r, l]) => `<button data-r="${r}">${l}</button>`).join('')}</div>`;
+  row.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || row.dataset.done) return;
+    row.dataset.done = 1; b.classList.add('on'); store.set(where === 'end' ? 'sz_fb_r' : 'sz_fb_rq', 1);
+    track('fb_reason', { r: b.dataset.r, where, mode: mode || playMode || 'story', m: mission?.id, lvl: META.level(), tdm: DM.tdm ? 1 : 0, n: startMissionNow.n || 0, el: Math.round(elapsed) });
+    tFlush(); row.querySelector('span').textContent = 'Thanks!';
+  });
+  return row;
 }
 function sendFeedback(t, where) {
   store.set('sz_fb_done', 1);

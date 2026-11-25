@@ -205,7 +205,14 @@ body.touch #mmlabel{display:none}
 /* v29.2 end-screen feedback line */
 #fbEnd{margin:8px 0;text-align:left;color:#fff;font-size:calc(var(--u)*.95)}
 #fbEnd label small{color:#9aa6b2}
-#fbEnd>div{display:flex;gap:6px;margin-top:4px}
+#fbEnd .fbT>div{display:flex;gap:6px;margin-top:4px}
 #fbEnd input{flex:1;min-width:0;background:rgba(255,255,255,.08);border:1px solid var(--line);color:#fff;font:600 calc(var(--u)*1) system-ui,sans-serif!important;font-style:normal!important;padding:6px 8px;border-radius:3px}
-#fbEnd button{margin:0;padding:4px 14px!important;font-size:calc(var(--u)*1)!important}
+#fbEnd .fbT button{margin:0;padding:4px 14px!important;font-size:calc(var(--u)*1)!important}
 #fbEnd .ok{color:var(--kgr)}
+/* v29.8 one-tap feedback reasons (end screen + quit dialog) */
+.fbChips{margin:6px 0 8px;text-align:left;color:#fff;font-size:calc(var(--u)*.95)}
+.fbChips>div{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.fbChips button{margin:0!important;padding:5px 10px!important;font-size:calc(var(--u)*.85)!important;background:rgba(255,255,255,.08)!important;color:#fff!important;border:1px solid var(--line)!important;box-shadow:none!important;transform:none!important;min-height:32px}
+.fbChips button.on{background:var(--ky)!important;color:#111!important}
+.fbChips[data-done] button:not(.on){opacity:.4}
+#fbEnd .fbT{margin-top:6px}
