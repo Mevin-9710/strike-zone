@@ -1,0 +1,76 @@
+{
+  "portalVersion": "2.137",
+  "endpoints": {
+    "graph": true,
+    "requestPresigned": true,
+    "checkPresigned": true,
+    "presignBodyPathName": true,
+    "checkBodyKeys": true,
+    "putIfNoneMatch": true,
+    "firebaseProjectProd": true,
+    "firebaseApiKey": true
+  },
+  "graphql": {
+    "developerSubmissionUpdate": true,
+    "DeveloperSubmissionUpdateInput": [
+      "allowEmbed",
+      "appStoreDownloads",
+      "appStoreLink",
+      "apsDetail",
+      "categoryId",
+      "controls",
+      "description",
+      "fullscreen",
+      "gameFiles",
+      "gameJamId",
+      "gameLoaderType",
+      "gameName",
+      "hasIAP",
+      "hasLeaderboard",
+      "id",
+      "iframeLink",
+      "isAndroidFriendly",
+      "isChromebookFriendly",
+      "isIOSFriendly",
+      "leaderboardGuide",
+      "leaderboardOptions",
+      "marketingCreativesUrl",
+      "multiplayerOptions",
+      "orientation",
+      "platformAudioMuteSupported",
+      "playStoreDownloads",
+      "playStoreLink",
+      "steamDownloads",
+      "steamStoreLink",
+      "tagIds",
+      "toolsUsed",
+      "toolsUsedOther",
+      "unitySaveFileNames",
+      "updateStep"
+    ],
+    "UploadedFileInput": [
+      "path",
+      "size",
+      "uploadId"
+    ],
+    "SubmissionUpdateStep": [
+      "baseInfo",
+      "details",
+      "fullEdit",
+      "iframe"
+    ],
+    "DeveloperSubmissionSubmitForApprovalInput": [
+      "id"
+    ],
+    "DeveloperSubmissionReleaseInput": [
+      "id"
+    ],
+    "DeveloperSubmissionAddQAResultAndNoteInput": [
+      "gameBuildId",
+      "id",
+      "qaResult",
+      "updateNoteText"
+    ],
+    "filesSentWithBaseInfoStep": true
+  }
+}
