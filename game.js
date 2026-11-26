@@ -827,7 +827,8 @@ function dmEnd(won) {
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
     let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `${againLbl} (${n})`; };
     clearInterval(autoNextT); tick(); autoNextT = setInterval(tick, 1000);
-    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'again') { clearInterval(autoNextT); $('again').textContent = againLbl; } }, { once: true });
+    const stop = e => { if (!e.target.closest?.('button,input,a') || e.target.id === 'again') return; clearInterval(autoNextT); $('again').textContent = againLbl; $('end').removeEventListener('pointerdown', stop); };
+    $('end').removeEventListener('pointerdown', dmEnd.stop); dmEnd.stop = stop; $('end').addEventListener('pointerdown', stop);   // v30: only pressing another button stops the rematch countdown (a scroll or stray tap no longer does)
   }
 }
 function survivalTick(dt) {
@@ -1502,7 +1503,7 @@ function startMissionNow(idx, opts) {
   director.start({ mode, level: META.level(), firstMission: idx === 0 && progress === 0 && !mode, base: mode === 'dm' ? Math.min(0.75, RC.dmBaseThreat + 0.06 * (dmLevel - 1)) : null, easy: !!route.easy, on: !!RC.adaptive }); hitNextT = 0; threatChip(true);
   LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };
   stage('match'); startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n, def: opts.def ? 1 : 0 }); at(`${mission.id}:${route.part}`);
-  for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
+  for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile', 'loading']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); tutorial?.abort(); tutorial = null;                                  // v13: drill removed, every start is straight into play
   if (!TEST && ((!mode && idx === 0) || mode === 'dm') && !tutorialDone()) controlsCard();
@@ -1618,6 +1619,7 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   } else $('next').textContent = 'NEXT MISSION';
   $('next').onclick = () => { unlockAudio(); selected = nextIdx; const nm = MISSIONS[nextIdx]; const route = !nm.routes ? 'default' : nm.routes[selRoute] ? selRoute : 'stealth'; startMission(nextIdx, { route, abilities: [] }); };   // straight in with the current kit; LOBBY to change it
   if (RC.v14ui) endV14(add); else $('end').classList.remove('v14e');
+  if (mode === 'dm') $('dmEnd').after($('endPlay')); else $('endQ').after($('endPlay'));   // v30: DM rematch/lobby sit right under the result tiles, always on screen (phones too)
   $('end').classList.add('show'); $('end').querySelector('.card').scrollTop = 0;
 }
 function endV14(add) {                                                              // v14 end screen: coin count-up, timed double offer, quest bars
@@ -1646,7 +1648,7 @@ function endV14(add) {                                                          
       f.append(w); w.querySelector('input').addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') w.querySelector('button').click(); });
       w.querySelector('button').onclick = () => { const t = $('fbEndT').value.trim(); if (!t) return; sendFeedback(t, 'end'); w.innerHTML = '<span class="ok">Thanks! We read every message.</span>'; };
     }
-    $('again').parentElement.after(f);   // below RETRY/LOBBY so feedback never pushes the play buttons off a phone screen
+    $('adXP').parentElement.after(f);   // below RETRY/LOBBY so feedback never pushes the play buttons off a phone screen
   }
   $('menuBtn').classList.add('kgrey');
 }
@@ -2156,7 +2158,7 @@ window.__game = { RC, G, get allies() { return allies; }, tdmScore, ui: { board:
   get tutorial() { return tutorial; }, get onboard() { return onboard; }, startOnboarding, get mentor() { return mentor; }, TUT,
   killAll() { for (const e of enemies) if (e.alive) e.damage(9999); },
   peace() { for (const e of enemies) { e.update = function (dt) { this.mixer.update(dt); this.sync(); }; } },
-  damage: (n) => damagePlayer(n, null), timeout() { clock = 0.01; },
+  damage: (n) => damagePlayer(n, null), timeout() { clock = 0.01; }, dmScore(a, b) { DM.score.A = a; DM.score.B = b; },
   get scene() { return scene; }, get renderer() { return renderer; }, get camera() { return camera; },
   setQuality(q) { settings.quality = q; qLevel = q === 'high' ? 2 : 1; applyQuality(); },
   get info() { return { ...renderer.info.render, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, q: qLevel, fps }; },
@@ -2268,7 +2270,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 30, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

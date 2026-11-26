@@ -409,6 +409,9 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await pg.waitForTimeout(300);
     const r1 = await pg.evaluate(() => ({ running: __game.state.running || document.getElementById('clickGo').classList.contains('show'), tut: !!__game.tutorial?.active, flag: localStorage.getItem('sz_onboard_done'), card: document.getElementById('ctlCard') ? 1 : 0 }));
     check('first launch drops straight into mission 1: no drill, controls card shown', r1.running && !r1.tut && r1.flag === '1' && r1.card === 1, JSON.stringify(r1));
+    { await pg.mouse.click(400, 300); const ran = await pg.waitForFunction(() => __game.state.running, null, { timeout: 15000 }).then(() => true, () => false);
+      const ld = await pg.evaluate(() => document.getElementById('loading').className);
+      check('v29.9 first launch: loading screen is hidden once the match runs', ran && !/\bshow\b/.test(ld), JSON.stringify({ ran, ld })); }
     check('v15 first launch is a Deathmatch', await pg.evaluate(() => __game.state.mode === 'dm' || /DEATHMATCH/.test(document.getElementById('obj').textContent)));
     check('no page errors (first launch)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();

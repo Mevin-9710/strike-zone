@@ -5,6 +5,7 @@
     "requestPresigned": true,
     "checkPresigned": true,
     "presignBodyPathName": true,
+    "presignResponseFields": true,
     "checkBodyKeys": true,
     "putIfNoneMatch": true,
     "firebaseProjectProd": true,
