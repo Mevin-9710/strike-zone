@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check = login + list submissions only; dry = upload files but do not attach; upload = upload and attach as new build'
+        description: 'check = login + list submissions only; metrics = read Basic Launch score + daily stats; dry = upload files but do not attach; upload = upload and attach as new build'
         type: choice
-        options: [check, dry, upload]
+        options: [check, metrics, dry, upload]
         default: check
 jobs:
   upload:
@@ -23,7 +23,7 @@ jobs:
       - name: Portal flow unchanged?
         run: node tools/cg_portal_check.mjs
       - name: Build dist
-        if: inputs.mode != 'check'
+        if: inputs.mode == 'dry' || inputs.mode == 'upload'
         run: bash tools/build_dist.sh
       - name: CrazyGames ${{ inputs.mode }}
         env:
@@ -32,6 +32,13 @@ jobs:
         run: |
           case "${{ inputs.mode }}" in
             check)  node tools/cg_upload.mjs check ;;
+            metrics) node tools/cg_upload.mjs metrics --json cg-metrics.json ;;
             dry)    node tools/cg_upload.mjs upload dist --dry ;;
             upload) node tools/cg_upload.mjs upload dist ;;
           esac
+      - name: Save metrics
+        if: inputs.mode == 'metrics'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cg-metrics
+          path: cg-metrics.json

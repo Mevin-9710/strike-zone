@@ -9,10 +9,11 @@
 //
 // Usage:
 //   node tools/cg_upload.mjs check                 # auth + list your submissions (read-only)
+//   node tools/cg_upload.mjs metrics [--json f]    # Basic Launch score per platform + last 7 days (read-only)
 //   node tools/cg_upload.mjs upload [dir] [--id X] # upload files, attach them as a new build (draft)
 //        --dry  upload files but do not attach them   (sending for review stays a portal click for now)
 // Defaults: dir=dist, --id from CG_SUBMISSION_ID or the submission named "Strike Zone".
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 
 const API_KEY = 'AIzaSyAcnWHv0-RhlmU5ONOXzOSP0Q6ORQEMrNg'; // public web key from the portal bundle
@@ -122,6 +123,86 @@ async function uploadFiles(dir) {
   return done;
 }
 
+// Basic Launch evaluation, same query and scoring the portal's metrics page uses (portal v2.137).
+// Each metric scores 1..(thresholds+1) = 1..5: +1 for every benchmark threshold the value is strictly above.
+// scoringVersion 3 adds CTR as a 4th metric (max 20), otherwise 3 metrics (max 15).
+const BASIC_LAUNCH = `query($slug: String!) { gameBySlug(slug: $slug) { basicLaunchStatsAndBenchmarks {
+  basicLaunchStart basicLaunchExpire evaluationStart evaluationEnd totalPlays scoringVersion
+  desktop { ...M } mobile { ...M } } } }
+  fragment M on BasicLaunchPerformanceIndicators {
+    metrics { averagePlaytime retentionD1 gameplayConversion ctr }
+    benchmarks { averagePlaytime retentionD1 gameplayConversion ctr } }`;
+const DAILY = `query($slug: String!, $options: StatsForPeriodOptionsInput!) { gameBySlug(slug: $slug) {
+  desktop: dailyStats(options: $options, device: desktop) { ...D }
+  mobile: dailyStats(options: $options, device: mobile) { ...D } } }
+  fragment D on DailyDeveloperAnalytics { date users avgTimeOnPage retentionD1 avgConversion avgLoadingTime ctr rating totalVotes }`;
+const METRICS = [
+  ['averagePlaytime', 'Avg playtime'], ['gameplayConversion', 'Conversion (1 min)'], ['retentionD1', 'D1 retention'], ['ctr', 'CTR'],
+];
+const fmtMetric = (k, v) => v == null ? '-' : k === 'averagePlaytime'
+  ? `${Math.floor(v / 60000)}m${String(Math.round((v % 60000) / 1000)).padStart(2, '0')}s` : `${(v * 100).toFixed(2)}%`;
+function scoreMetric(v, th) {
+  let s = th.length + 1;
+  for (let i = 0; i < th.length; i++) if (v == null || v <= th[i]) { s = i + 1; break; }
+  return { value: v, score: s, max: th.length + 1, next: s <= th.length ? th[s - 1] : null };
+}
+function scorePlatform(p, version) {
+  if (!p) return null;
+  const keys = METRICS.map((m) => m[0]).filter((k) => k !== 'ctr' || version === 3);
+  const out = { metrics: {}, total: 0, max: 0 };
+  for (const k of keys) {
+    const th = p.benchmarks?.[k];
+    if (!th?.length) return null;
+    const r = scoreMetric(p.metrics?.[k] ?? null, th);
+    out.metrics[k] = { ...r, thresholds: th };
+    out.total += r.score; out.max += r.max;
+  }
+  return out;
+}
+
+async function metrics(me) {
+  const sub = me.submissions.find((s) => s.id === process.env.CG_SUBMISSION_ID)
+    || me.submissions.find((s) => /strike zone/i.test(s.gameName));
+  if (!sub?.slug) throw new Error('no game slug found');
+  const bl = (await gql(BASIC_LAUNCH, { slug: sub.slug }, 'basic launch stats')).gameBySlug?.basicLaunchStatsAndBenchmarks;
+  const lines = [], res = { slug: sub.slug, fetchedAt: new Date().toISOString(), basicLaunch: bl, scores: {}, daily: null };
+  const d = (x) => x ? String(x).slice(0, 10) : '-';
+  if (!bl) lines.push('No Basic Launch stats returned (no evaluation data yet).');
+  else {
+    lines.push(`## ${sub.gameName}: Basic Launch score`, '',
+      `Evaluation ${d(bl.evaluationStart)} to ${d(bl.evaluationEnd)} · Basic Launch ${d(bl.basicLaunchStart)} to ${d(bl.basicLaunchExpire)} · plays ${bl.totalPlays ?? '-'} · scoring v${bl.scoringVersion}`, '');
+    for (const plat of ['desktop', 'mobile']) {
+      const sc = scorePlatform(bl[plat], bl.scoringVersion);
+      res.scores[plat] = sc;
+      if (!sc) { lines.push(`**${plat}**: not enough data yet`, ''); continue; }
+      lines.push(`**${plat}: ${sc.total}/${sc.max}**`, '', '| Metric | Value | Score | Next score at | Thresholds |', '|---|---|---|---|---|');
+      for (const [k, label] of METRICS) {
+        const m = sc.metrics[k]; if (!m) continue;
+        lines.push(`| ${label} | ${fmtMetric(k, m.value)} | ${m.score}/${m.max} | ${m.next == null ? 'top' : '> ' + fmtMetric(k, m.next)} | ${m.thresholds.map((t) => fmtMetric(k, t)).join(' / ')} |`);
+      }
+      lines.push('');
+    }
+  }
+  try {
+    const until = new Date(Date.now() - 864e5), from = new Date(until - 6 * 864e5);
+    const day = (x) => x.toISOString().slice(0, 10);
+    const g = (await gql(DAILY, { slug: sub.slug, options: { from: day(from), until: day(until) } }, 'daily stats', 1)).gameBySlug;
+    res.daily = g;
+    for (const plat of ['desktop', 'mobile']) {
+      const rows = g?.[plat] || [];
+      if (!rows.length) continue;
+      lines.push(`**${plat}, daily (portal dashboard)**`, '', '| Date | Users | Avg time | Conversion | D1 | Load |', '|---|---|---|---|---|---|');
+      for (const r of rows) lines.push(`| ${d(r.date)} | ${r.users ?? '-'} | ${r.avgTimeOnPage == null ? '-' : Math.round(r.avgTimeOnPage) + ' s'} | ${fmtMetric('x', r.avgConversion)} | ${fmtMetric('x', r.retentionD1)} | ${r.avgLoadingTime == null ? '-' : (+r.avgLoadingTime).toFixed(1)} |`);
+      lines.push('');
+    }
+  } catch (e) { lines.push(`(daily stats unavailable: ${e.message.slice(0, 200)})`); }
+  const md = lines.join('\n');
+  console.log(md);
+  const jf = opt('--json');
+  if (jf) await writeFile(jf, JSON.stringify(res, null, 2));
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, md + '\n');
+}
+
 async function main() {
   const me = (await gql(LIST, undefined, 'list submissions')).me;
   if (cmd === 'check') {
@@ -129,6 +210,7 @@ async function main() {
     for (const s of me.submissions) console.log(`- ${s.id}  ${s.gameName}  [${s.status}${s.isFullLaunch ? ', full launch' : ''}]  build ${s.latestNonDraftBuild?.status || '-'}`);
     return;
   }
+  if (cmd === 'metrics') return metrics(me);
   if (cmd !== 'upload') throw new Error('unknown command ' + cmd);
   const id = opt('--id', process.env.CG_SUBMISSION_ID)
     || me.submissions.find((s) => /strike zone/i.test(s.gameName))?.id;
