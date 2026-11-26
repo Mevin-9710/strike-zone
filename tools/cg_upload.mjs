@@ -85,12 +85,14 @@ async function uploadFiles(dir) {
   // 1. ask for presigned PUT URLs (the portal sends [{path, name}])
   const pre = await rest('upload/request-presigned-url',
     items.map((i) => ({ path: i.path, name: i.path.split('/').pop() })));
-  const list = Array.isArray(pre) ? pre : pre.files || pre.urls || Object.values(pre);
-  if (list.length !== items.length) throw new Error('unexpected presign response: ' + JSON.stringify(pre).slice(0, 400));
+  // response: [{path, presignedUrl, type, encoding}], matched by path like the portal does
+  const byPath = new Map((Array.isArray(pre) ? pre : []).map((p) => [p.path, p]));
+  const missing = items.filter((i) => !byPath.get(i.path)?.presignedUrl).map((i) => i.path);
+  if (missing.length) throw new Error(`no presigned url for ${missing.length} file(s), e.g. ${missing[0]}; response: ` + JSON.stringify(pre).slice(0, 300).replace(/X-Amz-[^&"]*/g, '…'));
   const done = [];
   let n = 0;
   // 2. PUT each file, 3. confirm it (returns {fileName, size, uploadId})
-  const queue = items.map((it, k) => ({ it, ps: list[k].presigned || list[k] }));
+  const queue = items.map((it) => { const p = byPath.get(it.path); return { it, ps: { url: p.presignedUrl, type: p.type, encoding: p.encoding } }; });
   async function worker() {
     for (let q; (q = queue.shift());) {
       const body = await readFile(q.it.abs);

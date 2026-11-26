@@ -40,6 +40,7 @@ const fp = {
     requestPresigned: has(`upload/request-presigned-url`),
     checkPresigned: has('upload/check-presigned-url-upload'),
     presignBodyPathName: /JSON\.stringify\(\w+\.map\(\w+=>\(\{path:\w+\.path,name:\w+\.blob\?\.name\}\)\)\)/.test(all),
+    presignResponseFields: /\{path:\w+,presignedUrl:\w+,type:\w+,encoding:\w+\}/.test(all),
     checkBodyKeys: /\{filePath:\w+\.path,uncompressedSize:\w+,presignedUrl:\w+\}/.test(all),
     putIfNoneMatch: has('"If-None-Match":`*`'),
     firebaseProjectProd: has('projectId:`crazygames-prod`'),
