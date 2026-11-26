@@ -1,9 +1,9 @@
 // CrazyGames SDK v3 wrapper. Every call is a safe no-op when the SDK is absent (local dev, ?test=1, blocked script).
 // Hooks: crazy.init(), loading(on), gameplay(on), happy(), midgame(), rewarded(onDone), onAd(cb) for mute/pause.
 let MIN_AD_GAP = 180000;           // midgame ads at most every 3 min (the SDK also enforces its own cooldown)
-const KEYS = ['sz_loadout', 'sz_profile', 'sz_progress', 'sz_settings', 'sz_tutorial_done', 'sz_onboard_done', 'sz_daily', 'sz_surv_best', 'sz_parts', 'sz_login', 'sz_quests', 'sz_dm_best', 'sz_dm_played', 'sz_dm_level', 'sz_mode'];
+const KEYS = ['sz_audio', 'sz_loadout', 'sz_profile', 'sz_progress', 'sz_settings', 'sz_tutorial_done', 'sz_onboard_done', 'sz_daily', 'sz_surv_best', 'sz_parts', 'sz_login', 'sz_quests', 'sz_dm_best', 'sz_dm_played', 'sz_dm_level', 'sz_mode'];
 import { track } from './telemetry.js';
-let S = null, lastAd = 0, gsSent = false, adsArmed = false, adHook = () => {}, playing = false, inAd = false;
+let muteCb = null, S = null, lastAd = 0, gsSent = false, adsArmed = false, adHook = () => {}, playing = false, inAd = false;
 
 const sdk = () => S;
 const safe = fn => { try { return fn(S); } catch (e) { /* SDK hiccup: never break the game */ } };
@@ -30,10 +30,15 @@ export const crazy = {
     try {
       const sd = await waitForScript(4000); if (!sd) return false;
       await Promise.race([sd.init(), new Promise((_, rej) => setTimeout(() => rej(new Error('sdk init timeout')), 5000))]);
-      S = sd; mirrorData(); track('sdk', { ok: 1 }); return true;
+      S = sd; mirrorData(); track('sdk', { ok: 1 }); if (muteCb) { const cb = muteCb; muteCb = null; crazy.onMuteSetting(cb); } return true;
     } catch (e) { S = null; track('sdk', { ok: 0, m: String(e?.message || e).slice(0, 60) }); return false; }
   },
-  onAd(cb) { adHook = cb; },                         // cb(true) ad started -> mute+pause; cb(false) ended
+  onAd(cb) { adHook = cb; },
+  // CrazyGames "mute audio" platform setting: cb(true/false) now and on every change
+  onMuteSetting(cb) {
+    const read = () => safe(s => cb(!!s.game.settings?.muteAudio));
+    if (S) { read(); safe(s => s.game.addSettingsChangeListener?.(st => cb(!!st?.muteAudio))); } else muteCb = cb;
+  },                         // cb(true) ad started -> mute+pause; cb(false) ended
   loading(on) { safe(s => on ? s.game.loadingStart() : s.game.loadingStop()); },
   gameplay(on) { if (on === playing) return; playing = on; if (on && !gsSent) { gsSent = true; track('gs', { sdk: !!S }); } safe(s => on ? s.game.gameplayStart() : s.game.gameplayStop()); },
   setAdGap(ms) { if (ms >= 60000) MIN_AD_GAP = ms; },

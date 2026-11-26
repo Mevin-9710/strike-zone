@@ -14,7 +14,7 @@ import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons
 import { ENEMY_TYPES, Enemy, loadEnemyAssets, calibrateGun, buildCharAssets } from './game/enemies.js';
 import * as SkeletonUtils from './lib/addons/utils/SkeletonUtils.js';
 import { RELEASE_AT } from './fx/abilities.js';
-import { sfx, unlockAudio, music } from './game/audio.js';
+import { sfx, unlockAudio, music, ambience, audio, setAudio, toggleMute, forceMute, setLite } from './game/audio.js';
 import { toonify, outline } from './game/toon.js';
 import { TouchControls, isTouchDevice, TOUCH_CSS } from './game/touch.js';
 import { buildDistrict } from './world/procgen.js';
@@ -163,7 +163,7 @@ let qLevel = 2, lowFpsT = 0, dynScale = 1;            // dynScale: dynamic resol
 // Quality levels: 2 = high (shadows, up to 1.5x pixels, PC only), 1 = medium (no shadows, 1x pixels), 0 = low (0.7x pixels).
 function applyQuality() {
   const want = settings.quality === 'low' ? 0 : settings.quality === 'high' ? 2 : Math.min(qLevel, 1);
-  qLevel = want;
+  qLevel = want; setLite(want === 0);
   renderer.setPixelRatio((want === 0 ? Math.min(devicePixelRatio, 0.75) : want === 1 ? Math.min(devicePixelRatio, 1) : Math.min(devicePixelRatio, 1.5)) * dynScale);
   const shadowChange = renderer.shadowMap.enabled !== (want === 2);
   renderer.shadowMap.enabled = want === 2;
@@ -409,7 +409,7 @@ function buildMission(idx, opts = {}) {
 const cur = () => W.slots[W.cur], cs = () => WEAPONS[cur()], st = () => W.state[cur()];
 function equip(slot, instant = false) {
   if (!W.slots[slot]) return;
-  W.cur = slot; W.reloadT = 0; vm.equip(cur()); W.drawT = instant ? 0 : 0.45; attachCharm();
+  W.cur = slot; W.reloadT = 0; vm.equip(cur()); W.drawT = instant ? 0 : 0.45; attachCharm(); if (!instant && running) sfx.draw(cur());
   $('wicon').src = A.icons[cur()] || ''; $('wname').textContent = cs().name.toUpperCase(); wslots();
 }
 function startReload() {
@@ -443,7 +443,7 @@ function fire() {
   // recoil: camera kick + viewmodel
   player.pitch = clamp(player.pitch + w.recoil * (W.ads > 0.5 ? 0.6 : 1), -1.5, 1.5); W.recoverP += w.recoil * 0.7;
   player.yaw += (Math.random() - 0.5) * w.recoil * 0.5;
-  vm.fire(w); sfx.shot(w.cls);
+  vm.fire(w); sfx.shot(cur(), 0, 0, 1, 1 - s.mag / w.mag);
   addTracer(muzzleWorld(), end, 0xffe08a);
   if (best) {
     const head = best.h.part === 'head';
@@ -457,7 +457,7 @@ function fire() {
     if (killed) { best.e._dv = dir.clone().setY(0).normalize().multiplyScalar(w.dmg > 60 ? 7 : 3.5); if (head) FEEL.hitStop = 0.06; }
     FEEL.combo++; FEEL.comboT = 1.2;
     if (killed && mode === 'dm') dmKill();
-    if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(head, best.e); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
+    if (killed) { stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed) }); killTick(head, best.e); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills, head); feed(`VOSS ▸ ${ENEMY_TYPES[best.e.type].name.toUpperCase()}${head ? ' ✦' : ''}`, head); }
   } else if (wh) { addImpact(wh.point, wh.normal, false); if (wh.collider.tag === 'barrel' && wh.collider.prop?.alive) detonateBarrel(wh.collider.prop); }
   for (const e of enemies) e.hear(player.pos, w.cls === 'pistol' ? 0.7 : 1);
   if (s.mag === 0 && s.reserve > 0) setTimeout(() => { if (running && cur() === w && st().mag === 0) startReload(); }, 250);
@@ -481,7 +481,7 @@ function addImpact(p, n, flesh) {
   scene.add(s); impacts.push(s);
   if (!flesh) {
     const d = new THREE.Mesh(decalGeo, decalMat); d.position.copy(p).addScaledVector(n, 0.01); d.lookAt(p.clone().add(n)); d.userData.t = 8;
-    scene.add(d); impacts.push(d); sfx.impact();
+    scene.add(d); impacts.push(d); sfx.impact(p.distanceTo(player.pos), panOf(p.x, p.z));
   }
   if (impacts.length > 80) { const o = impacts.shift(); o.parent?.remove(o); }
 }
@@ -526,11 +526,18 @@ function botKill(killer, victim) {                                              
   if (DM.tdm) { if (killer.ident) killer.ident.k++; tdmScore(killer.ally ? 'A' : 'B'); return; }
   if (killer.ident) { killer.ident.k++; if (killer.ident.k >= dmTarget() && !matchOver) dmEnd(false); }
 }
+const panOf = (x, z) => Math.sin(Math.atan2(x - player.pos.x, z - player.pos.z) - player.yaw - Math.PI);   // stereo position of a world point
+function nearMiss(from, to) {                                                    // closest pass of a shot to your head (m), scalar math only
+  const ax = to.x - from.x, ay = to.y - from.y, az = to.z - from.z, L = ax * ax + ay * ay + az * az || 1;
+  const px = player.pos.x - from.x, py = player.pos.y + 1.5 - from.y, pz = player.pos.z - from.z;
+  const u = (px * ax + py * ay + pz * az) / L; if (u < 0.05 || u > 1.2) return 99;
+  return Math.hypot(px - ax * u, py - ay * u, pz - az * u);
+}
 function enemyFired(e, from, to, dmg, victim) {
   addTracer(from, to, e.ally ? 0x7cc8ff : e.S.laser ? 0xff8080 : 0xff6b4a);
   const d = from.distanceTo(player.pos);
   const rel = Math.atan2(from.x - player.pos.x, from.z - player.pos.z);
-  sfx.shot(e.S.cls, { dist: d, pan: Math.sin(rel - player.yaw - Math.PI) });
+  const pan = Math.sin(rel - player.yaw - Math.PI); sfx.shot(e.S.weapon || e.S.cls, d, pan, Math.cos(rel - player.yaw - Math.PI));
   if (victim) {                                                                   // bot vs bot (free-for-all Deathmatch)
     if (dmg > 0 && victim.alive && !matchOver) { victim.alert(e.pos, 1); if (victim.damage(dmg, from.clone())) botKill(e, victim); }
     else { const h = world.raycast(from, to.clone().sub(from).normalize(), from.distanceTo(to)); if (h) addImpact(h.point, h.normal, false); }
@@ -540,7 +547,7 @@ function enemyFired(e, from, to, dmg, victim) {
   if (hit && !dmg) addImpact(hit.point, hit.normal, false);
   if (dmg > 0 && mode !== 'dm' && RC.hitTimer && !hitReady(d, from)) { dmg = 0; if (hit) addImpact(hit.point, hit.normal, false); }   // v14 fair-fight hit timer: blocked hits become near-misses
   if (dmg > 0) { LS.by = e.type || ''; LS.byE = e; damagePlayer(dmg, from); }
-  else if (!hit && n) { /* whizz-by miss */ }
+  else if (d > 6 && nearMiss(from, to) < 2.2) sfx.whiz(pan);                        // round cracks past your head
 }
 let hitNextT = 0;
 function hitReady(dist, from) {                                                  // global inter-hit timer (story): delay = 0.5 s x rules / threat
@@ -555,11 +562,11 @@ function hitReady(dist, from) {                                                 
 function damagePlayer(dmg, from) {
   if (!player.alive || matchOver || invT > 0) return;
   LS.dmg += dmg; DM.hitT = elapsed; if (mode === 'dm' && DM.hits) { DM.hits.push(Math.round(dmg)); if (DM.hits.length > 12) DM.hits.shift(); } let x = dmg; if (player.shield > 0) { const a = Math.min(player.shield, x); player.shield -= a; x -= a; }
-  player.hp -= x; hurtK = Math.min(1, hurtK + 0.35 + dmg / 60); sfx.hurt();
+  player.hp -= x; hurtK = Math.min(1, hurtK + 0.35 + dmg / 60); sfx.hurt(dmg, from ? panOf(from.x, from.z) : 0);
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
   if (player.hp > 0 && player.hp < 35) storyEv('hurt');
-  if (player.hp <= 0) { player.hp = 0; director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm' && LS.byE?.ident) { LS.byE.ident.k++; DM.boardDirty = true; if (DM.tdm) { tdmScore('B'); if (matchOver) return; } else if (LS.byE.ident.k >= dmTarget()) { dmEnd(false); return; } } if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
+  if (player.hp <= 0) { player.hp = 0; sfx.death(); director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm' && LS.byE?.ident) { LS.byE.ident.k++; DM.boardDirty = true; if (DM.tdm) { tdmScore('B'); if (matchOver) return; } else if (LS.byE.ident.k >= dmTarget()) { dmEnd(false); return; } } if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
 }
 
 // ---------- enemy abilities (clip released -> effect + gameplay) ----------
@@ -729,7 +736,7 @@ function dmTick(dt) {
   if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
     if ((DM.deadT -= dt) <= 0) {
       const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live, DM.tdm ? null : live, true, DM.tdm ? -1 : 0); player.pos.copy(p); player.vel.set(0, 0, 0);
-      player.hp = 100; player.alive = true; invT = 2.5; DM.hits = []; faceFoe(); hurtK = 0; FX.announce('BACK IN', 'start'); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
+      player.hp = 100; player.alive = true; invT = 2.5; DM.hits = []; faceFoe(); hurtK = 0; FX.announce('BACK IN', 'start'); sfx.respawn(); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
       for (const e of enemies) if (e.alive) e.alert(player.pos, 0.6);
     }
     if ($('dcard').classList.contains('show')) { const t = Math.max(0, Math.ceil(DM.deadT)); if (t !== DM.dcT) { DM.dcT = t; $('dcGo').textContent = dcGoTxt(t); } }
@@ -801,6 +808,7 @@ function dmEnd(won) {
   if (matchOver) return; endMatch();
   if (DM.tdm) { won = DM.score.A > DM.score.B; DM.draw = DM.score.A === DM.score.B; }
   else { const rows = dmRows(); won = rows[0].me && rows[0].k > 0; DM.place = rows.findIndex(r => r.me) + 1; DM.winner = rows[0].name; DM.nRows = rows.length; }
+  music.end(won);
   const k = stats.kills - DM.k0, best = store.get('sz_dm_best', 0), rec = k > best; if (rec) store.set('sz_dm_best', k);
   const dmC = Math.round(DM.coins || k * RC.dmCoinsPerKill); META.profile.coins += dmC; matchCoins = dmC; META.saveProfile(); if (won) crazy.happy();
   track('dm_end', { won, k, d: DM.d, t: Math.round(elapsed), best: DM.best, m: mission.id, ...(DM.tdm ? { tA: DM.score.A, tB: DM.score.B } : {}) });
@@ -844,7 +852,7 @@ function enemyEffect(kind, d) {
   else if (kind === 'sensor') { if (d.pos.distanceTo(player.pos) < d.radius + 6) revealPlayer(); }
   else if (kind === 'drone') zones.edrone.push({ obj: d.obj, radius: d.radius, t: d.life });
   else if (kind === 'flash') {
-    sfx.flash();
+    sfx.flash(d.pos.distanceTo(player.pos));
     const eye = camera.getWorldPosition(V()), to = d.pos.clone().sub(eye), dist = to.length(), look = V(); camera.getWorldDirection(look);
     if (dist < d.radius && world.lineClear(eye, d.pos)) flashK = Math.max(flashK, clamp(0.35 + look.dot(to.normalize()), 0.15, 1) * (1 - dist / d.radius * 0.5));
   }
@@ -854,7 +862,7 @@ function enemyEffect(kind, d) {
 function chosenAbilities() { const saved = loadout.abilities[mission?.id]; return saved && saved.length === 2 ? saved : mission.pool.slice(0, 2); }
 function useAbility(slot) {
   const kind = picks[slot]; if (!kind || !running || abilityCD[slot] > 0 || !player.alive) return false;
-  abilityCD[slot] = ABILITIES[kind].cd; sfx.ability(); LS.ab++;
+  abilityCD[slot] = ABILITIES[kind].cd; sfx.ability(kind); LS.ab++;
   const fwd = V(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
   const look = V(); camera.getWorldDirection(look);
   const hand = camera.getWorldPosition(V()).addScaledVector(look, 0.5).add(V(0, -0.25, 0)).addScaledVector(V(-fwd.z, 0, fwd.x), -0.15);
@@ -873,7 +881,7 @@ function abilityEvent(kind, d) {
   else if (kind === 'drone') zones.drone.push({ obj: d.obj, radius: d.radius, t: d.life });
   else if (kind === 'shield') { player.shield = 60; player.shieldT = d.life; }
   else if (kind === 'flash') {
-    sfx.flash();
+    sfx.flash(20);
     for (const e of enemies) {
       if (!e.alive) continue; const ep = e.eye;
       if (ep.distanceTo(d.pos) < d.radius && world.lineClear(ep, d.pos)) { e.blindT = Math.max(e.blindT, 3.2); e.alert(player.pos, 0.6); }
@@ -1023,7 +1031,7 @@ function updateMedkits(dt) {
   }
 }
 function explode(p, r, dmg, label) {
-  sfx.boom(); shakeK = Math.max(shakeK, clamp(1 - player.pos.distanceTo(p) / 30, 0, 1));
+  sfx.boom(player.pos.distanceTo(p), panOf(p.x, p.z)); shakeK = Math.max(shakeK, clamp(1 - player.pos.distanceTo(p) / 30, 0, 1));
   for (let i = 0; i < 7; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: starTex(), color: i % 2 ? 0xffa040 : 0xffe080, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.position.copy(p).add(V(rand(-1, 1), rand(-0.5, 1.2), rand(-1, 1))); sp.scale.setScalar(rand(2, 3.6)); sp.userData.t = 0.35; sp.userData.spark = true; scene.add(sp); impacts.push(sp); }
   for (const e of enemies) {
     if (!e.alive) continue; const d = e.pos.clone().add(V(0, 1, 0)).distanceTo(p);
@@ -1060,7 +1068,9 @@ function updatePlayer(dt) {
   }
   if (FEEL.slideT > 0) { FEEL.slideT -= dt; const k = Math.max(0, FEEL.slideT / 0.55); player.vel.x = player.dash.x * (0.45 + 0.55 * k); player.vel.z = player.dash.z * (0.45 + 0.55 * k); }
   if (keys.Space && player.onGround && objective.active < 0) { player.vel.y = CFG.jump; player.onGround = false; if (FEEL.slideT > 0) { FEEL.slideT = 0; player.vel.x *= 1.15; player.vel.z *= 1.15; } }
+  const vy0 = player.vel.y, air0 = !player.onGround;
   world.move(player, dt, { step: 0.45, gravity: 22 });
+  if (air0 && player.onGround && vy0 < -5) sfx.land(-vy0);
   if (player.pos.y < -30) { player.pos.copy(map.spawns.default); player.vel.set(0, 0, 0); }
   player.moving = Math.hypot(player.vel.x, player.vel.z) > 0.5;
   if (player.moving && player.onGround && !keys.ShiftLeft) { stepT -= dt * Math.hypot(player.vel.x, player.vel.z); if (stepT <= 0) { stepT = 2.2; sfx.step(); for (const e of enemies) if (e.pos.distanceTo(player.pos) < 7) e.alert(player.pos, 0.5); } }
@@ -1085,7 +1095,7 @@ function updateWeapon(dt) {
   if (Math.abs(camera.fov - targetFov) > 0.05) { camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 18); camera.updateProjectionMatrix(); }
   const ev = vm.update(dt, { moving: player.moving, speed: Math.hypot(player.vel.x, player.vel.z), lookDX: lookD.x, lookDY: lookD.y, adsTarget: adsT, sprint: false, onGround: player.onGround, scope: w.scope && W.ads > 0.9 });
   lookD.x = lookD.y = 0;
-  for (const e of ev) e === 'out' ? sfx.magOut() : e === 'in' ? sfx.magIn() : sfx.bolt();
+  for (const e of ev) e === 'out' ? sfx.magOut(cur()) : e === 'in' ? sfx.magIn(cur()) : sfx.bolt();
   vm.root.position.y += ((objective.active >= 0 ? -0.35 : 0) - vm.root.position.y) * Math.min(1, dt * 8);
 }
 
@@ -1140,6 +1150,17 @@ let aimSlow = 1;
 // ---------- frame update ----------
 // ---- game feel state (research items: hit-stop, camera punch, slide, sprint FOV, death impulse, adaptive music)
 const FEEL = { hitStop: 0, punchP: 0, punchY: 0, slideT: 0, slideCD: 0, fovKick: 0, combo: 0, comboT: 0 };
+let musicFinal = false;
+function enemySteps() {                                                          // hear bots moving near you (positional, no allocations)
+  for (const e of enemies) {
+    if (!e.alive || e.T?.static || e.S?.flying) continue;
+    const mx = e.pos.x - (e._sx ?? e.pos.x), mz = e.pos.z - (e._sz ?? e.pos.z); e._sx = e.pos.x; e._sz = e.pos.z;
+    const dx = e.pos.x - player.pos.x, dz = e.pos.z - player.pos.z, d2 = dx * dx + dz * dz, mv = mx * mx + mz * mz;
+    if (d2 > 256 || mv < 1e-6 || mv > 4) continue;
+    e._st = (e._st ?? Math.random() * 2) - Math.sqrt(mv);
+    if (e._st <= 0) { e._st = 2.1; sfx.footstep(Math.sqrt(d2), panOf(e.pos.x, e.pos.z)); }
+  }
+}
 function update(dt) {
   if (!running) return;
   if (firstContactT > 0 && (firstContactT -= dt) <= 0) forceContact();
@@ -1148,6 +1169,10 @@ function update(dt) {
   FEEL.comboT -= dt; if (FEEL.comboT <= 0) FEEL.combo = 0;
   if (LS.mv < 0 && player.moving) LS.mv = Math.round(elapsed); if (LS.sh < 0 && stats.shots) LS.sh = Math.round(elapsed);
   { const fighting = enemies.some(e => e.alive && e.state === 'combat'); if (fighting && LS.ct < 0) LS.ct = Math.round(elapsed); music.setIntensity(fighting ? 1 : clock < 30 ? 0.7 : 0.25); }
+  sfx.health(player.alive ? player.hp / 100 : 0);
+  if (clock < 60 && clock > 0 && !musicFinal && mode !== 'survival' && !tutorial) { musicFinal = true; music.final(); }
+  if (clock < 10 && clock > 0 && Math.ceil(clock) !== Math.ceil(clock + dt)) sfx.tick(clock < 4);
+  enemySteps();
   for (const e of enemies) if (!e.alive && e._dv && e.deadT < 0.45) { e.pos.addScaledVector(e._dv, dt * (1 - e.deadT / 0.45)); }   // death knockback
   for (const e of allies) if (!e.alive && e._dv && e.deadT < 0.45) { e.pos.addScaledVector(e._dv, dt * (1 - e.deadT / 0.45)); }
   const tutHold = !!tutorial?.hold;                                     // tutorial drills: freeze the timer + hostiles
@@ -1222,7 +1247,7 @@ const MCTX = {
 // mentor ability effects: visuals + smoke/flash on hostiles only (never blinds or shields the player)
 function mentorEvent(kind, d) {
   if (kind === 'smoke') zones.smoke.push({ pos: d.pos, radius: d.radius, t: d.life });
-  else if (kind === 'flash') { sfx.flash(); for (const e of enemies) if (e.alive && e.eye.distanceTo(d.pos) < d.radius && world.lineClear(e.eye, d.pos)) e.blindT = Math.max(e.blindT, 3.2); }
+  else if (kind === 'flash') { sfx.flash(20); for (const e of enemies) if (e.alive && e.eye.distanceTo(d.pos) < d.radius && world.lineClear(e.eye, d.pos)) e.blindT = Math.max(e.blindT, 3.2); }
   else if (kind === 'decoy') zones.decoy.push({ obj: d.obj, t: d.life });
   else if (kind === 'sensor') zones.sensor.push({ pos: d.pos, radius: d.radius, t: d.life });
   else if (kind === 'drone') zones.drone.push({ obj: d.obj, radius: d.radius, t: d.life });
@@ -1484,15 +1509,15 @@ function startMissionNow(idx, opts) {
   if (!tutorial) crazy.armAds();
   firstContactT = mode || tutorial || TEST ? -1 : RC.contactAfter;
   if (!TEST && !mode) invT = Math.max(invT, RC.startGrace);                          // a few safe seconds to get bearings                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
-  if (mode !== 'survival') radioOnce('start'); music.start(); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? (DM.tdm ? 'TEAM DEATHMATCH · GO!' : 'DEATHMATCH · GO!') : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
+  if (mode !== 'survival') radioOnce('start'); musicFinal = false; sfx.reset(); music.start(); sfx.spawn(); ambience.start(mission.id.startsWith('dm_') ? mission.id.slice(3) : 'story'); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? (DM.tdm ? 'TEAM DEATHMATCH · GO!' : 'DEATHMATCH · GO!') : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* iOS: no fullscreen API */ } }
   else if (!TEST) lockMouse();
   crazy.gameplay(true);
 }
 $('dcGo').onclick = dcRespawnNow;
-function endMatch() { $('dcard').classList.remove('show'); tutorial?.abort(); music.setIntensity(0.1); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
+function endMatch() { $('dcard').classList.remove('show'); tutorial?.abort(); ambience.stop(); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
 function lose(reason) {
-  if (matchOver) return; endMatch(); questP('finish');
+  if (matchOver) return; endMatch(); music.end(false); questP('finish');
   track('fail', { m: mission.id, p: route.part, mode: mode || '', why: player.alive ? 'timer' : 'dead', t: Math.round(elapsed), w: wave, n: fails[missionIdx] || 0, ...lvlStats() }); at('fail:' + mission.id);
   if (mode === 'survival') { const rec = MODES.survRecord(wave); survBestV = MODES.survBest(); showEnd('SURVIVAL OVER', `You reached wave ${wave}.` + (rec ? '\n\nNEW BEST!' : `\n\nBest: wave ${survBestV}.`), null, { death: true, failed: true }); return; }
   fails[missionIdx] = (fails[missionIdx] || 0) + 1;
@@ -1506,7 +1531,7 @@ function lvlStats() {
 }
 onQuit(() => running || paused ? { lv: mission?.id, p: route?.part, el: Math.round(elapsed), hp: Math.round(player.hp), step: tutorial?.active ? tutorial.step : '', ...lvlStats() } : {});
 function win() {
-  if (matchOver) return; endMatch(); questP('finish');
+  if (matchOver) return; endMatch(); music.end(true); questP('finish');
   track(route.parts > 1 && route.part < route.parts - 1 ? 'part' : 'win', { m: mission.id, p: route.part, mode: mode || '', t: Math.round(elapsed), ...lvlStats() }); at('end:' + mission.id);
   if (route.parts > 1 && route.part < route.parts - 1) {                       // a part of a longer mission: bank it, go straight to the next part
     const pp = store.get('sz_parts', {}); pp[mission.id] = route.part + 1; store.set('sz_parts', pp);
@@ -1554,10 +1579,11 @@ function upgradeUI() {
   $('upAmmo').onclick = () => { if (META.upgrade(id, 'ammo')) { sfx.coin(); upgradeUI(); } };
 }
 function rewardedAd(onDone) { track('ad', { k: 'rewarded' }); crazy.rewarded(() => { track('ad', { k: 'rewarded_ok' }); onDone(); }); }
-function audioMute(on) { try { const c = window.__audioCtx; if (c) on ? c.suspend() : c.resume(); } catch (e) { /* none */ } }
+function audioMute(on) { forceMute('ad', on); }
 function revive() {
   revived = true; $('end').classList.remove('show'); $('hud').classList.add('on');
   player.hp = 100; player.alive = true; invT = 3; hurtK = 0; matchOver = false; running = true; paused = false;
+  sfx.respawn(); music.start(); ambience.start(mission.id.startsWith('dm_') ? mission.id.slice(3) : 'story');
   for (const e of enemies) if (e.alive && e.pos.distanceTo(player.pos) < 6) e.alert(player.pos, 0.3);
   if (touch) touch.show(true); else if (!TEST) lockMouse();
   radio('VOSS', 'Not done yet.', 2); crazy.gameplay(true);
@@ -1625,7 +1651,7 @@ function endV14(add) {                                                          
   $('menuBtn').classList.add('kgrey');
 }
 function pause() { if (!running || TEST || touch) return; doPause(); }
-function doPause() { if (!running) return; LS.pz++; touch?.show(false); running = false; paused = true; mouse.l = false; showBoard(false); pauseFill(); $('pause').classList.add('show'); crazy.gameplay(false); }
+function doPause() { if (!running) return; LS.pz++; music.pause(true); touch?.show(false); running = false; paused = true; mouse.l = false; showBoard(false); pauseFill(); $('pause').classList.add('show'); crazy.gameplay(false); }
 
 // ---------- briefing ----------
 let selected = Math.min(progress, MISSIONS.length - 1), selRoute = 'stealth', selAbilities = [];
@@ -1706,6 +1732,7 @@ document.addEventListener('keydown', e => {
   if (['Space', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.code)) e.preventDefault();
   if (isMenu()) return;
   if ($('dcard').classList.contains('show')) { if (e.code === 'Space') dcRespawnNow(); const d = +e.code.replace('Digit', ''); if (d >= 1 && d <= 4) dcPick(d - 1); return; }
+  if (e.code === 'KeyM') { muteToast(toggleMute()); return; }
   if (e.code === 'KeyR') startReload();
   if (e.code === 'Digit1') equip(0); if (e.code === 'Digit2') equip(1);
   if (e.code === 'KeyQ') useAbility(0); if (e.code === 'KeyF') useAbility(1);
@@ -1746,7 +1773,7 @@ document.addEventListener('pointerlockchange', () => { if (!document.pointerLock
 document.addEventListener('pointerlockerror', () => { track('lock', { k: 'err' }); setTimeout(lockHint, 50); });
 $('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
-$('resume').onclick = () => { $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
+$('resume').onclick = () => { music.pause(false); $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
 $('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => quitAsk();
@@ -1820,10 +1847,28 @@ function settingsUI() {
     if (k === 'quality') settings.qUser = 1; if (k === 'fireMode') settings.fUser = 1;
     store.set('sz_settings', settings); touch?.applySettings(); if (k === 'quality') { qLevel = settings.quality === 'high' ? 2 : 1; applyQuality(); }
   });
+  $('setRows').insertAdjacentHTML('afterbegin', [['master', 'MASTER VOLUME'], ['music', 'MUSIC'], ['sfx', 'EFFECTS']].map(([k, label]) =>
+    `<p style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>${label}</span><input type="range" data-a="${k}" min="0" max="1" step="0.05" value="${audio[k]}"></p>`).join('') +
+    `<p style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>MUTE ALL SOUND <small style="opacity:.6">(M)</small></span><input type="checkbox" data-a="muted" ${audio.muted ? 'checked' : ''}></p>`);
+  $('setRows').querySelectorAll('[data-a]').forEach(el => el.oninput = () => { setAudio(el.dataset.a, el.type === 'checkbox' ? el.checked : Number(el.value)); muteIcons(); });
   $('setRows').insertAdjacentHTML('beforeend', '<p style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span>INTERFACE TOUR</span><button id="setTour" type="button">REPLAY</button></p>');
   $('setTour').onclick = () => { $('settings').classList.remove('show'); startOnboarding(true); };
   $('settings').classList.add('show');
 }
+// ---------- sound on/off: lobby + pause buttons, M key, toast ----------
+const SPK = on => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="4 9 8 9 13 5 13 19 8 15 4 15 4 9"/>${on ? '<path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/>' : '<line x1="17" y1="9" x2="22" y2="14"/><line x1="22" y1="9" x2="17" y2="14"/>'}</svg>`;
+function muteIcons() { for (const id of ['lMute', 'pzMute']) { const b = $(id); if (b) { b.innerHTML = SPK(!audio.muted) + (id === 'pzMute' ? (audio.muted ? ' SOUND OFF' : ' SOUND ON') : ''); b.setAttribute('aria-label', audio.muted ? 'Unmute' : 'Mute'); b.classList.toggle('off', audio.muted); } } }
+function muteToast(muted) {
+  muteIcons(); let t = $('muteToast');
+  if (!t) { t = document.createElement('div'); t.id = 'muteToast'; t.style.cssText = 'position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:60;padding:8px 16px;border-radius:8px;background:rgba(10,14,20,.82);color:#fff;font:600 14px/1.2 inherit;letter-spacing:.08em;display:flex;gap:8px;align-items:center;pointer-events:none;transition:opacity .3s'; document.body.append(t); }
+  t.innerHTML = SPK(!muted) + (muted ? 'SOUND OFF · PRESS M' : 'SOUND ON'); t.style.opacity = '1'; clearTimeout(muteToast.t); muteToast.t = setTimeout(() => { t.style.opacity = '0'; }, 1400);
+}
+$('lSettings').insertAdjacentHTML('beforebegin', '<button id="lMute" class="ico" type="button"></button>');
+$('pauseMenu').insertAdjacentHTML('afterend', '<button id="pzMute" type="button"></button>');
+$('lMute').onclick = () => { unlockAudio(); toggleMute(); muteIcons(); track('ui', { k: 'mute', on: audio.muted ? 1 : 0 }); };
+$('pzMute').onclick = () => { toggleMute(); muteIcons(); track('ui', { k: 'mute', on: audio.muted ? 1 : 0 }); };
+muteIcons();
+crazy.onMuteSetting(on => forceMute('sdk', on));
 // ---------- first-time interface tour (coach marks) -> mission 1 guided tutorial ----------
 let onboard = null;
 function startOnboarding(force) {
@@ -1931,6 +1976,7 @@ function applyRemote() {                                                        
   if (touch && !settings.fUser) settings.fireMode = RC.touchAutoFire ? 'auto' : 'button';
 }
 function openLobby() {
+  music.pause(false); music.menu(); ambience.stop();
   only('lobby'); at('lobby'); stage('lobby');
   const lc = TEST || !startMissionNow.n ? null : MODES.loginClaim();             // v14: login reward lands after the first match, not on boot
   if (lc) { META.profile.coins += lc.coins; META.saveProfile(); sfx.coin?.(); loginBanner(lc); track('ui', { k: 'login', d: lc.day }); }

@@ -459,6 +459,26 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // ---- audio: unlock on first gesture, samples decode, mute/volume persist, a firefight plays without errors
+  {
+    const { ctx, pg } = await open(browser);
+    const pre = await pg.evaluate(async () => (await import('./game/audio.js')).samplesLoaded());
+    await pg.mouse.click(640, 360); await pg.waitForTimeout(2500);
+    const a = await pg.evaluate(async () => {
+      const A = await import('./game/audio.js'); const n = A.samplesLoaded();
+      const g = __game; g.openLobby(); document.getElementById('lMute').click(); const m1 = JSON.parse(localStorage.getItem('sz_audio') || '{}').muted;
+      document.getElementById('lMute').click(); A.setAudio('music', 0.3);
+      g.start(0, { mode: 'dm' }); g.step(6); g.mouse('l', true); g.step(2); g.mouse('l', false); g.key('KeyR', true); g.step(0.1); g.key('KeyR', false); g.step(3);
+      return { n, m1, saved: JSON.parse(localStorage.getItem('sz_audio')), sliders: !!document.querySelector('#settings') };
+    });
+    await pg.evaluate(() => __game.openLobby()); await pg.click('#lSettings');
+    const rows = await pg.$$eval('#setRows [data-a]', els => els.map(e => e.dataset.a).join(','));
+    check('audio: nothing loads before the first gesture, samples decode after it', pre === 0 && a.n >= 30, `${pre} -> ${a.n}`);
+    check('audio: mute button + volume persist in sz_audio, settings has volume rows', a.m1 === true && a.saved.muted === false && a.saved.music === 0.3 && rows === 'master,music,sfx,muted', JSON.stringify(a.saved) + ' ' + rows);
+    check('no page errors (audio)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   await browser.close();
   const failed = results.filter(r => !r.ok).length;
   console.log(`\n${results.length - failed}/${results.length} passed`);
