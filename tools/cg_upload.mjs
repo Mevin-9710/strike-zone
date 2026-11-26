@@ -37,15 +37,22 @@ async function token() {
   return idToken;
 }
 
-async function gql(query, variables) {
-  const r = await fetch(GRAPH, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || j.errors) throw new Error('graphql: ' + JSON.stringify(j.errors || r.status));
-  return j.data;
+async function gql(query, variables, label = 'graphql', retries = 3) {
+  for (let attempt = 1; ; attempt++) {
+    const t0 = Date.now();
+    const r = await fetch(GRAPH, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await token()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(90e3),
+    });
+    const text = await r.text();
+    let j = {}; try { j = JSON.parse(text); } catch {}
+    if (r.ok && !j.errors) return j.data;
+    const why = `${label}: HTTP ${r.status} after ${((Date.now() - t0) / 1e3).toFixed(1)} s: ` + (j.errors ? JSON.stringify(j.errors) : text.slice(0, 300));
+    if (r.status >= 500 && attempt < retries) { console.log(`  ${why} (retrying)`); await new Promise((f) => setTimeout(f, 5e3 * attempt)); continue; }
+    throw new Error(why);
+  }
 }
 
 async function rest(path, body) {
@@ -61,15 +68,17 @@ async function rest(path, body) {
 const LIST = `query { me { id submissions { id gameName gameStatus status isFullLaunch slug
   latestNonDraftBuild { id status createdAt totalFileSize } } } }`;
 const SUB = `query($id: String!) { me { id submission(id: $id) {
-  id gameName status gameStatus hasPendingBuildUpdate gameJamId categoryId tagIds description controls
-  marketingCreativesUrl steamStoreLink appStoreLink playStoreLink playStoreDownloads appStoreDownloads steamDownloads
-  toolsUsed toolsUsedOther
+  id gameName status gameStatus hasPendingBuildUpdate gameJamId
   multiplayerOptions { isMultiplayer supportsInstantJoin hasModeratedChat supportsPrivateLobby
     instantJoinLaunchesInPrivateLobby minLobbySize maxLobbySize }
   game { hasLeaderboard rawLeaderboardOptions }
   gameBuilds { id status createdAt loaderType fullscreen iosFriendly androidFriendly chromebookFriendly
-    hasIap hasLeaderboard mobileOrientation platformAudioMuteSupported allowEmbed apsConfig { progressType }
+    hasIap hasLeaderboard mobileOrientation platformAudioMuteSupported apsConfig { progressType }
     unityConfig { saveFileNames } files { fileName size uploadFileId } } } } }`;
+// Details the portal re-sends with the files step. Separate query so a failure is easy to pin down.
+const DETAILS = `query($id: String!) { me { id submission(id: $id) {
+  id categoryId tagIds description controls marketingCreativesUrl steamStoreLink appStoreLink playStoreLink
+  toolsUsed toolsUsedOther gameBuilds { id allowEmbed } } } }`;
 
 async function walk(dir) {
   const out = [];
@@ -114,7 +123,7 @@ async function uploadFiles(dir) {
 }
 
 async function main() {
-  const me = (await gql(LIST)).me;
+  const me = (await gql(LIST, undefined, 'list submissions')).me;
   if (cmd === 'check') {
     console.log(`auth ok (developer ${me.id})`);
     for (const s of me.submissions) console.log(`- ${s.id}  ${s.gameName}  [${s.status}${s.isFullLaunch ? ', full launch' : ''}]  build ${s.latestNonDraftBuild?.status || '-'}`);
@@ -124,8 +133,11 @@ async function main() {
   const id = opt('--id', process.env.CG_SUBMISSION_ID)
     || me.submissions.find((s) => /strike zone/i.test(s.gameName))?.id;
   if (!id) throw new Error('no submission id (pass --id)');
-  const sub = (await gql(SUB, { id })).me.submission;
+  const sub = (await gql(SUB, { id }, 'read submission')).me.submission;
+  const det = (await gql(DETAILS, { id }, 'read details')).me.submission;
+  Object.assign(sub, { ...det, gameBuilds: sub.gameBuilds });
   const b = sub.gameBuilds[sub.gameBuilds.length - 1];
+  b.allowEmbed = det.gameBuilds.find((x) => x.id === b.id)?.allowEmbed;
   const dir = args[1] && !args[1].startsWith('--') ? args[1] : 'dist';
   await stat(join(dir, 'index.html'));
   console.log(`submission ${sub.id} "${sub.gameName}" [${sub.status}], base build ${b.id} (${b.files.length} files)`);
@@ -144,14 +156,13 @@ async function main() {
       categoryId: sub.categoryId, tagIds: sub.tagIds, description: sub.description, controls: sub.controls,
       marketingCreativesUrl: sub.marketingCreativesUrl ?? undefined, steamStoreLink: sub.steamStoreLink ?? undefined,
       appStoreLink: sub.appStoreLink ?? undefined, playStoreLink: sub.playStoreLink ?? undefined,
-      playStoreDownloads: sub.playStoreDownloads || undefined, appStoreDownloads: sub.appStoreDownloads || undefined,
-      steamDownloads: sub.steamDownloads || undefined, toolsUsed: sub.toolsUsed ?? undefined,
+      toolsUsed: sub.toolsUsed ?? undefined,
       toolsUsedOther: sub.toolsUsedOther ?? undefined,
     } : {}),
   };
   if (flag('--dry')) { console.log(JSON.stringify({ ...input, gameFiles: `${gameFiles.length} files`, description: input.description && `${input.description.length} chars`, controls: input.controls && `${input.controls.length} chars` }, null, 2)); return; }
   const upd = await gql(`mutation($input: DeveloperSubmissionUpdateInput!) {
-    developerSubmissionUpdate(input: $input) { id status hasPendingBuildUpdate gameBuilds { id status createdAt } } }`, { input });
+    developerSubmissionUpdate(input: $input) { id status hasPendingBuildUpdate gameBuilds { id status createdAt } } }`, { input }, 'attach build', 1);
   const s2 = upd.developerSubmissionUpdate;
   console.log(`new build attached: ${JSON.stringify(s2.gameBuilds.at(-1))}, pending update: ${s2.hasPendingBuildUpdate}`);
   if (flag('--submit')) {
