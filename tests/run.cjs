@@ -347,11 +347,13 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       for (let j = 0; j < M.DM_MAPS.length; j++) {
         await M.loadDmMap(M.DM_MAPS[j].id); g.start(0, { mode: 'dm', dmMap: j }); g.step(0.3);
         const p = g.player.pos; g.step(3);
-        out.push({ id: M.DM_MAPS[j].id, ok: g.state.running && g.DM.pool.length > 40 && g.allies.length === 4 && g.enemies.length === 5 && p.y > -1 && p.x > 0 && g.world.nav.nodes.length > 1000, calls: g.info.calls });
+        const e = p.clone(), ey = g.player.yaw; e.y += 1.6; let free = 0; for (const d of [2, 4, 6, 8]) { const t = e.clone(); t.x -= Math.sin(ey) * d; t.z -= Math.cos(ey) * d; if (g.world.lineClear(e, t)) free = d; else break; }
+        out.push({ id: M.DM_MAPS[j].id, free, ok: g.state.running && g.DM.pool.length > 40 && g.allies.length === 4 && g.enemies.length === 5 && p.y > -1 && p.x > 0 && g.world.nav.nodes.length > 1000, calls: g.info.calls });
       }
       return { out, errs: g.errors.length };
     });
     check('v27 DM arenas: all 4 load and play (nav, spawn pool, teams)', r.out.length === 4 && r.out.every(o => o.ok) && r.errs === 0, JSON.stringify(r));
+    check('v30.1 TDM spawn looks down an open line (8 m+), not into a wall', r.out.every(o => o.free >= 8), JSON.stringify(r.out.map(o => o.free)));
     check('v27 DM arenas: under 400 draw calls (incl. shadow pass + outlines)', r.out.every(o => o.calls < 400), JSON.stringify(r.out.map(o => o.calls)));
     check('no page errors (v27)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();

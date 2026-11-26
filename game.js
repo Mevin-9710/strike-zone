@@ -714,7 +714,14 @@ function dmSetup() {
 }
 function faceFoe() {                                                              // (re)spawn looking toward the enemy side / centre, not into a wall
   const T = map.teamSpawns, b = map.bounds, t = DM.tdm && T ? T.B : V((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
-  player.yaw = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
+  const fy = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
+  _spE.copy(player.pos).y += CFG.eye; let by = fy, bs = -Infinity;                  // v30.1: look down the most open line near the foe side, never into a wall (SZ-03)
+  for (let i = 0; i < 16; i++) {
+    const yaw = fy + (i - 8) / 16 * Math.PI * 2; let free = 0;
+    for (const d of [3, 6, 10, 15, 22]) { _spH.set(_spE.x - Math.sin(yaw) * d, _spE.y, _spE.z - Math.cos(yaw) * d); if (!world.lineClear(_spE, _spH)) break; free = d; }
+    const sc = free + Math.cos(yaw - fy) * 6; if (sc > bs) { bs = sc; by = yaw; }
+  }
+  player.yaw = by;
 }
 function spreadGoal(e, to) {                                                    // v29: bots fan out instead of all running to the same spot
   const pool = DM.pool; if (pool?.length && Math.random() < 0.23) return pool[(Math.random() * pool.length) | 0];   // v29.1: spread cut 35%
@@ -2187,7 +2194,11 @@ function pauseFill() {
   $('pzList').innerHTML = dm ? boardHTML(true) : `<div class="bcol"><div class="bt">${(mission?.title || '').toUpperCase()}</div><div class="br me">${icon('user')}<span>YOU</span><b>${stats.kills}</b><i></i></div></div>`;
   const cur = dm ? (DM.tdm ? 'tdm' : 'dm') : 'story';
   $('pzModes').innerHTML = PZ_MODES.map(([k, n, ic, sub]) => `<div class="pzm m-${k}${k === cur ? ' cur' : ''}"><div class="art">${icon(ic)}</div><div class="nm">${icon(ic)}<span>${n}<small>${sub}</small></span><button data-m="${k}">${k === cur ? 'RESTART' : 'PLAY'}</button></div></div>`).join('');
-  $('pzModes').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => pzPlay(b.dataset.m));
+  $('pzModes').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => {   // v30.1: restart / mode switch needs a second tap (players lost running matches to one stray click)
+    if (b.dataset.arm) { pzPlay(b.dataset.m); return; }
+    const t0 = b.textContent; b.dataset.arm = 1; b.textContent = 'SURE? TAP AGAIN'; b.classList.add('arm'); track('ui', { k: 'pzArm', m: b.dataset.m });
+    setTimeout(() => { delete b.dataset.arm; b.textContent = t0; b.classList.remove('arm'); }, 2500);
+  });
   const lo = $('pzLo'); lo.innerHTML = '';
   $('pzLoH').style.display = dm ? '' : 'none';
   if (dm) DM_LOADOUTS.forEach(([name, p], i) => { if (!dcOk(p)) return; const b = document.createElement('button'); b.className = p === (DM.next?.[0] || W.slots[0]) ? 'on' : ''; b.innerHTML = `<img src="${A.icons[p] || ''}" alt=""><span>${name}</span>`; b.onclick = () => { DM.next = [DM_LOADOUTS[i][1], DM_LOADOUTS[i][2]]; dmApplyLoadout(); pauseFill(); track('ui', { k: 'pzLoadout', w: p }); }; lo.append(b); });
