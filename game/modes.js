@@ -39,3 +39,18 @@ export function loginClaim() {
   return { day, coins: LOGIN_COINS[day - 1], tomorrow: LOGIN_COINS[day % 7] };
 }
 export const loginTomorrow = () => { const s = get('sz_login', { last: '', day: 0 }); return LOGIN_COINS[s.last === dayKey() ? s.day % 7 : 0]; };
+
+// v31 return gifts (D1 retention): a real weapon unlock waits for the player on a later day, shown at the end of every match
+export const RETURN_GIFTS = [{ day: 2, id: 'hailstorm_mg', cls: 'HEAVY' }, { day: 3, id: 'longshot_bolt', cls: 'MARKSMAN' }];
+export function visitDay() {                                                       // counts distinct UTC days with a session; call once per boot
+  const s = get('sz_days', { last: '', n: 0 }), today = dayKey();
+  if (s.last !== today) { s.last = today; s.n = (s.n || 0) + 1; put('sz_days', s); }
+  return s.n;
+}
+export const giftsOwned = () => get('sz_gifts', []);
+export function claimGifts(day) {                                                  // gifts whose day has come; each is granted once
+  const own = giftsOwned(), got = RETURN_GIFTS.filter(g => day >= g.day && !own.includes(g.id));
+  if (got.length) put('sz_gifts', own.concat(got.map(g => g.id)));
+  return got;
+}
+export const nextGift = has => RETURN_GIFTS.find(g => !giftsOwned().includes(g.id) && !has(g.id)) || null;   // has(id): already unlocked another way
