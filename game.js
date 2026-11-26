@@ -1477,7 +1477,7 @@ function startMissionNow(idx, opts) {
   director.start({ mode, level: META.level(), firstMission: idx === 0 && progress === 0 && !mode, base: mode === 'dm' ? Math.min(0.75, RC.dmBaseThreat + 0.06 * (dmLevel - 1)) : null, easy: !!route.easy, on: !!RC.adaptive }); hitNextT = 0; threatChip(true);
   LS = { dmg: 0, ab: 0, pz: 0, mv: -1, sh: -1, ct: -1, by: '' };
   stage('match'); startMissionNow.n = (startMissionNow.n || 0) + 1; track('start', { m: mission.id, p: route.part, mode: mode || '', n: startMissionNow.n, def: opts.def ? 1 : 0 }); at(`${mission.id}:${route.part}`);
-  for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile']) $(id).classList.remove('show');
+  for (const id of ['brief', 'pick', 'quick', 'end', 'pause', 'lobby', 'shop', 'pass', 'profile', 'loading']) $(id).classList.remove('show');
   $('hud').classList.add('on'); running = true; paused = false;
   dropMentor(); tutorial?.abort(); tutorial = null;                                  // v13: drill removed, every start is straight into play
   if (!TEST && ((!mode && idx === 0) || mode === 'dm') && !tutorialDone()) controlsCard();
