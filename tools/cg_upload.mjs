@@ -61,12 +61,14 @@ async function rest(path, body) {
 const LIST = `query { me { id submissions { id gameName gameStatus status isFullLaunch slug
   latestNonDraftBuild { id status createdAt totalFileSize } } } }`;
 const SUB = `query($id: String!) { me { id submission(id: $id) {
-  id gameName status gameStatus hasPendingBuildUpdate gameJamId
+  id gameName status gameStatus hasPendingBuildUpdate gameJamId categoryId tagIds description controls
+  marketingCreativesUrl steamStoreLink appStoreLink playStoreLink playStoreDownloads appStoreDownloads steamDownloads
+  toolsUsed toolsUsedOther
   multiplayerOptions { isMultiplayer supportsInstantJoin hasModeratedChat supportsPrivateLobby
     instantJoinLaunchesInPrivateLobby minLobbySize maxLobbySize }
   game { hasLeaderboard rawLeaderboardOptions }
   gameBuilds { id status createdAt loaderType fullscreen iosFriendly androidFriendly chromebookFriendly
-    hasIap hasLeaderboard mobileOrientation platformAudioMuteSupported apsConfig { progressType }
+    hasIap hasLeaderboard mobileOrientation platformAudioMuteSupported allowEmbed apsConfig { progressType }
     unityConfig { saveFileNames } files { fileName size uploadFileId } } } } }`;
 
 async function walk(dir) {
@@ -137,8 +139,17 @@ async function main() {
     orientation: (b.iosFriendly || b.androidFriendly) ? b.mobileOrientation : null,
     multiplayerOptions: sub.multiplayerOptions, gameJamId: sub.gameJamId,
     apsDetail: { progressType: b.apsConfig?.progressType || 'NO' }, gameFiles, allowEmbed: !!b.allowEmbed,
+    // The portal also sends the details form with this step; resend current values so nothing is cleared.
+    ...(sub.categoryId ? {
+      categoryId: sub.categoryId, tagIds: sub.tagIds, description: sub.description, controls: sub.controls,
+      marketingCreativesUrl: sub.marketingCreativesUrl ?? undefined, steamStoreLink: sub.steamStoreLink ?? undefined,
+      appStoreLink: sub.appStoreLink ?? undefined, playStoreLink: sub.playStoreLink ?? undefined,
+      playStoreDownloads: sub.playStoreDownloads || undefined, appStoreDownloads: sub.appStoreDownloads || undefined,
+      steamDownloads: sub.steamDownloads || undefined, toolsUsed: sub.toolsUsed ?? undefined,
+      toolsUsedOther: sub.toolsUsedOther ?? undefined,
+    } : {}),
   };
-  if (flag('--dry')) { console.log(JSON.stringify({ ...input, gameFiles: `${gameFiles.length} files` }, null, 2)); return; }
+  if (flag('--dry')) { console.log(JSON.stringify({ ...input, gameFiles: `${gameFiles.length} files`, description: input.description && `${input.description.length} chars`, controls: input.controls && `${input.controls.length} chars` }, null, 2)); return; }
   const upd = await gql(`mutation($input: DeveloperSubmissionUpdateInput!) {
     developerSubmissionUpdate(input: $input) { id status hasPendingBuildUpdate gameBuilds { id status createdAt } } }`, { input });
   const s2 = upd.developerSubmissionUpdate;
