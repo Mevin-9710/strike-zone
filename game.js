@@ -653,8 +653,30 @@ function dmSides(pool) {                                                        
   if (T) { const dx = T.B.x - T.A.x, dz = T.B.z - T.A.z, L = Math.hypot(dx, dz) || 1; return { ax: dx / L, az: dz / L, cx: (T.A.x + T.B.x) / 2, cz: (T.A.z + T.B.z) / 2, h: Math.max(4, L / 2) }; }   // v27: blue = the map's team A end (works for diagonal maps)
   const x = (x1 - x0) >= (z1 - z0); return { ax: x ? 1 : 0, az: x ? 0 : 1, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, h: Math.max(4, (x ? x1 - x0 : z1 - z0) / 2) };
 }
+function dmHomes(pool, a) {                                                       // v42 team DM: the spawn area of each team = the ground spots nearest its base
+  const T = map.teamSpawns, ground = pool.filter(p => p.y <= 2), out = {};
+  for (const side of [-1, 1]) {
+    const at = T ? (side < 0 ? T.A : T.B) : V(a.cx + a.ax * a.h * 0.9 * side, 0, a.cz + a.az * a.h * 0.9 * side);
+    const pts = ground.map(p => [p, Math.hypot(p.x - at.x, p.z - at.z)]).sort((x, y) => x[1] - y[1]);
+    out[side] = pts.filter(([, d], i) => i < 12 && (d < 16 || i < 6)).map(([p]) => p);
+  }
+  return out;
+}
 function dmSpot(far, viewers, others, hardAll, side = 0) {                               // side: team DM home half (-1 blue, +1 red)                                          // spawn scoring: never in sight, 18-40 m from the threat, no clumping, no repeats
   const pool = DM.pool?.length ? DM.pool : map.guards;
+  const home = side && DM.home?.[side];
+  if (home?.length) {                                                              // v42 team DM: each team (re)spawns only in its own base area
+    let best = home[0], bs = -Infinity;
+    for (const p of home) {
+      let sc = Math.random() * 3;
+      if (others) for (const o of others) if (o.distanceTo(p) < 2.5) { sc -= 40; break; }       // don't stack on a team-mate
+      for (const q of far) if (q.distanceTo(p) < 8) { sc -= 30; break; }                       // an enemy is camping this corner of the base
+      for (const r of DM.recent) if (r.t > elapsed - 4 && Math.abs(r.x - p.x) < 2 && Math.abs(r.z - p.z) < 2) { sc -= 10; break; }
+      if (sc > bs) { bs = sc; best = p; }
+    }
+    const r = DM.recent[DM.recentI = (DM.recentI + 1) % DM.recent.length]; r.x = best.x; r.z = best.z; r.t = elapsed;
+    return best.clone();
+  }
   if (!RC.dmSpawnScore) {
     let best = null, bd = -1;
     for (let i = 0; i < 8; i++) { const p = pool[(Math.random() * pool.length) | 0]; let d = Infinity; for (const q of far) d = Math.min(d, q.distanceTo(p)); if (d > bd) { bd = d; best = p; } }
@@ -714,7 +736,7 @@ function dmSetup() {
   DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
   const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
   const team = touch ? RC.tdmTeamTouch : RC.tdmTeam, nB = DM.tdm ? team : RC.dmBots, nA = DM.tdm ? team - 1 : 0;   // team DM: you + (team-1) allies vs team
-  DM.pool = DM.pool.length ? DM.pool : map.guards.map(g => g.clone()); DM.side = DM.tdm ? dmSides(DM.pool) : null;
+  DM.pool = DM.pool.length ? DM.pool : map.guards.map(g => g.clone()); DM.side = DM.tdm ? dmSides(DM.pool) : null; DM.home = DM.tdm ? dmHomes(DM.pool, DM.side) : null;
   DM.roster = Array.from({ length: nA + nB }, (_, i) => ({ i, name: names[i % names.length], k: 0, d: 0, e: null, respT: null, type: null, jumper: Math.random() < 0.5, ally: i >= nB }));
   if (DM.tdm) { player.pos.copy(dmSpot([], null, null, false, -1)); player.vel.set(0, 0, 0); faceFoe(); }   // start on the blue side
   for (const r of DM.roster) dmBot(r);
@@ -2361,7 +2383,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 41, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 42, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

@@ -174,7 +174,9 @@ export class Enemy {
   play(name, { once = false, fade = 0.2, solo = false } = {}) {
     const clip = this.A.clips[name]; if (!clip || (this.clip === name && !solo)) return;
     const next = this.actions[name] ??= this.mixer.clipAction(clip);
-    for (const a of Object.values(this.actions)) if (a !== next && a.isRunning() && a.getEffectiveWeight() > 0) a.fadeOut(fade);
+    // v42: a finished one-shot (clamped, so isRunning() is false) still weighs 1: fade it out too, or it blends into
+    // every later pose (the "frozen lean" while shooting, the half-standing death)
+    for (const a of Object.values(this.actions)) if (a !== next && a.getEffectiveWeight() > 0) a.fadeOut(fade);
     next.reset(); next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Infinity); next.clampWhenFinished = once;
     next.setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(fade).play(); this.clip = name;
   }
@@ -251,6 +253,7 @@ export class Enemy {
     if (!this.alive) {
       this.deadT += dt;
       if (this.deadT > 4) this.pos.y -= dt * 0.6;                 // bodies sink away after a few seconds
+      else if (!this.T.flying && !this.T.static) { this.vel.x = this.vel.z = 0; G.world.move(this, dt); }   // v42: killed mid-air (dash, ledge, jump pad): fall to the floor
       if (this.T.flying && this.pos.y > (this.groundY ?? 0) + 0.3) { this.vel.y -= 14 * dt; this.pos.y = Math.max(this.groundY ?? 0, this.pos.y + this.vel.y * dt); }
       if (this.glow) this.glow.visible = false;
       this.sync(); return;
