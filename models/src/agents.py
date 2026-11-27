@@ -10,7 +10,7 @@ from body import *   # noqa
 argv = sys.argv[sys.argv.index('--') + 1:]
 OUT, ONLY = argv[0], argv[1:]
 
-RED = dict(base=(0.42, 0.05, 0.05), dark=(0.16, 0.02, 0.02), light=(0.70, 0.12, 0.10), deep=(0.08, 0.01, 0.01), glow=(1.0, 0.15, 0.08))
+RED = dict(base=(0.80, 0.07, 0.04), dark=(0.36, 0.03, 0.02), light=(1.0, 0.30, 0.20), deep=(0.16, 0.015, 0.01), glow=(1.0, 0.15, 0.08))   # v32.1: vivid
 WHITE, IRIS = np.array((0.86, 0.86, 0.84)), np.array((0.09, 0.055, 0.035))
 
 
@@ -47,13 +47,11 @@ def painter(S):
         # ---------- torso: vest / plate carrier ----------
         if S.get('vest'):
             V = C('vest')
-            arm = (ax > 0.14 * B) & (z > 1.33)
-            vm = T & (z > 1.07) & (z < 1.47) & ~arm
-            strap = T & (z >= 1.38) & (ax > 0.055 * B) & (ax < 0.125 * B)
-            put(vm | strap, V)
-            put(T & (z > 1.07) & (z < 1.088) & ~arm, V * 0.55)                          # bottom trim
-            put(T & (z > 1.455) & (z < 1.47) & (ax < 0.055 * B), V * 0.55)              # neckline trim
-            put(T & arm & (z < 1.36) & (ax < 0.15 * B), V * 0.55)                       # armhole trim
+            vtop = np.where(ax < 0.06 * B, 1.462, 1.53) - np.clip(ax - 0.115 * B, 0, None) * 2.6   # smooth armholes + shoulder straps
+            vm = T & (z > 1.07) & (z < vtop)
+            put(vm, V)
+            put(vm & (z > vtop - 0.014), V * 0.6)                                       # edge binding
+            put(T & (z > 1.07) & (z < 1.088), V * 0.55)                                 # bottom trim
             if S.get('pouches', True):
                 for cx in (-0.105 * B, 0.0, 0.105 * B):
                     pm = T & front & (rect(x, z, cx - 0.042 * B, cx + 0.042 * B, 1.10, 1.24) > 0.5)
@@ -174,10 +172,12 @@ def painter(S):
         # ---------- painted light + fabric ----------
         skin = SK | (ID == NECK)
         fab = 1 + 0.05 * nz(P) + np.where(skin, 0.0, 0.035) * nf(P)
-        grad = 0.86 + 0.16 * np.clip(z / 1.9, 0, 1)
+        grad = 0.92 + 0.12 * np.clip(z / 1.9, 0, 1)
         lit = 1 + 0.06 * np.clip(N[:, 2], 0, 1)
-        ao = 0.40 + 0.60 * AO
-        return col * (fab * grad * lit * ao)[:, None]
+        ao = 0.66 + 0.34 * AO
+        out = col * (fab * grad * lit * ao)[:, None] * 1.12
+        lum = (out @ np.array((0.2126, 0.7152, 0.0722)))[:, None]
+        return lum + (out - lum) * np.where(skin, 1.05, 1.2)[:, None]          # v32.1: punchier saturation (not on skin)
     return paint
 
 
@@ -214,17 +214,17 @@ def hood(K, pid=TORSO, c=(0, 0.022, 1.727), half=(0.162, 0.172, 0.186)):
 
 # ================================================================ characters
 OPS = {
-    'rhea': dict(name='Rhea Voss', h=1.00, B=1.00, skin=(0.62, 0.42, 0.30), hair=(0.03, 0.025, 0.02), top=(0.07, 0.09, 0.13),
-                 pants=(0.12, 0.13, 0.16), accent=(0.10, 0.45, 1.0), gear='short', kneepads=True, stripes=True, headband=1.79),
-    'kade': dict(name='Kade Mercer', h=1.06, B=1.25, skin=(0.45, 0.30, 0.22), hair=(0.05, 0.04, 0.03), top=(0.22, 0.25, 0.14),
-                 pants=(0.16, 0.15, 0.11), accent=(1.0, 0.55, 0.10), gear='helmet', helmetcol=(0.24, 0.27, 0.16), vest=True, vestcol=(0.30, 0.32, 0.36),
-                 shoulder_metal=True, stubble=True, kneepads=True, torso_bulk=1.05),
-    'yuna': dict(name='Yuna Sato', h=0.96, B=0.90, skin=(0.80, 0.62, 0.48), hair=(0.02, 0.02, 0.03), top=(0.72, 0.74, 0.78),
-                 pants=(0.20, 0.22, 0.26), accent=(0.05, 0.75, 0.70), gear='hood', coat=True, scarf=True),
-    'tomas': dict(name='Tomas Reyes', h=1.02, B=1.10, skin=(0.55, 0.38, 0.26), hair=(0.12, 0.08, 0.05), top=(0.36, 0.24, 0.14),
-                  pants=(0.13, 0.14, 0.17), accent=(1.0, 0.82, 0.15), gear='cap', beard=True, pack=True, chevron=True),
-    'amara': dict(name='Amara Diallo', h=1.08, B=0.95, skin=(0.28, 0.18, 0.12), hair=(0.03, 0.02, 0.02), top=(0.22, 0.12, 0.34),
-                  pants=(0.10, 0.10, 0.14), accent=(0.55, 1.0, 0.25), gear='bun', stripes=True, drone=True, elbowpads=True),
+    'rhea': dict(name='Rhea Voss', h=1.00, B=1.00, skin=(0.72, 0.47, 0.32), hair=(0.05, 0.03, 0.02), top=(0.03, 0.15, 0.60),
+                 pants=(0.20, 0.23, 0.32), accent=(0.10, 0.65, 1.0), gear='short', kneepads=True, stripes=True, headband=1.79),
+    'kade': dict(name='Kade Mercer', h=1.06, B=1.25, skin=(0.55, 0.34, 0.22), hair=(0.06, 0.04, 0.03), top=(0.28, 0.40, 0.10),
+                 pants=(0.30, 0.27, 0.15), accent=(1.0, 0.45, 0.03), gear='helmet', helmetcol=(0.34, 0.42, 0.14), vest=True, vestcol=(0.55, 0.47, 0.30),
+                 shoulder_metal=True, kneepads=True, torso_bulk=1.05),
+    'yuna': dict(name='Yuna Sato', h=0.96, B=0.90, skin=(0.85, 0.64, 0.48), hair=(0.03, 0.03, 0.05), top=(0.86, 0.89, 0.93),
+                 pants=(0.12, 0.28, 0.40), accent=(0.0, 0.90, 0.80), gear='hood', coat=True, scarf=True),
+    'tomas': dict(name='Tomas Reyes', h=1.02, B=1.10, skin=(0.64, 0.42, 0.27), hair=(0.14, 0.08, 0.04), top=(0.75, 0.30, 0.05),
+                  pants=(0.14, 0.20, 0.38), accent=(1.0, 0.80, 0.03), gear='cap', pack=True, chevron=True),
+    'amara': dict(name='Amara Diallo', h=1.08, B=0.95, skin=(0.36, 0.22, 0.14), hair=(0.04, 0.025, 0.02), top=(0.40, 0.08, 0.80),
+                  pants=(0.16, 0.16, 0.26), accent=(0.45, 1.0, 0.08), gear='bun', stripes=True, drone=True, elbowpads=True),
 }
 EN = {   # Meridian Covenant: one red hue only
     'guard': dict(B=1.0, gear='en_helmet', torso_bulk=1.06, vest=True, balaclava=True, top=RED['base'], vestcol=RED['light'], pants=RED['dark'],
@@ -270,7 +270,7 @@ def build_operative(key, c):
         K.blob((dx, -0.07, 1.60), (0.022, 0.012, 0.016), LENS, e=0.9, seg=8, rings=6)
     ob = K.join(c['name'].replace(' ', '_'))
     S = dict(B=B, seed=sum(map(ord, key)), skin=c['skin'], hair=c['hair'], top=c['top'], sleeve=c['top'], pants=c['pants'],
-             boots=(0.045, 0.045, 0.05), gloves=(0.05, 0.05, 0.06), accent=c['accent'], metal=(0.30, 0.32, 0.36), dark=(0.035, 0.035, 0.045),
+             boots=(0.10, 0.085, 0.07), gloves=(0.12, 0.10, 0.085), accent=c['accent'], metal=(0.42, 0.45, 0.50), dark=(0.06, 0.06, 0.075),
              lens=tuple(0.12 + 0.35 * a for a in c['accent']) if g != 'hood' else (0.30, 0.55, 0.65), pack=c['pants'], belt=(0.04, 0.04, 0.05),
              cuff=c['accent'], patch2=c['top'], pad=(0.05, 0.05, 0.06), iris=IRIS, lash=(0.02, 0.015, 0.012),
              brow=tuple(v * 0.9 for v in c['hair']), helmet=c.get('helmetcol', (0.30, 0.32, 0.36)), shoulder=c['top'], collar='top',
@@ -279,7 +279,7 @@ def build_operative(key, c):
              scarf=c.get('scarf'), elbowpads=c.get('elbowpads'), headband=c.get('headband'),
              face='none' if covered else 'eyes')
     S['vest'] = S['vestcol'] if c.get('vest') else None
-    if c.get('shoulder_metal'): S['shoulder'] = (0.30, 0.32, 0.36)
+    if c.get('shoulder_metal'): S['shoulder'] = c['vestcol']
     S['coat'] = c.get('coat'); S['coatcol'] = c['top']
     return ob, S
 

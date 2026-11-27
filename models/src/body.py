@@ -162,7 +162,7 @@ def srgb(c):
 
 
 # ---------------------------------------------------------------- texture pipeline
-def _uv(ob, head_scale=2.2):
+def _uv(ob, head_scale=1.7):
     bpy.ops.object.select_all(action='DESELECT'); ob.select_set(True); bpy.context.view_layer.objects.active = ob
     if not ob.data.uv_layers: ob.data.uv_layers.new(name='UVMap')
     bpy.ops.object.mode_set(mode='EDIT'); bpy.ops.mesh.select_all(action='SELECT')
@@ -176,7 +176,7 @@ def _uv(ob, head_scale=2.2):
     tot = np.zeros(len(me.polygons), int); me.polygons.foreach_get('loop_total', tot)
     loop_pid = np.repeat(pid, tot)
     big = np.isin(loop_pid, (SKIN,)) ; mid = np.isin(loop_pid, (TORSO, HAIR, HELMET))
-    for m, k in ((big, head_scale), (mid, 1.25)):
+    for m, k in ((big, head_scale), (mid, 1.8)):
         if m.any():
             c = uv[m].mean(0); uv[m] = c + (uv[m] - c) * k
     me.uv_layers.active.data.foreach_set('uv', uv.ravel())
@@ -249,7 +249,7 @@ def _dilate(img, F, it=10):
     return img
 
 
-def finish(ob, name, painter, h=1.0, res=512, glow=(1.0, 0.15, 0.08), glow_strength=3.0, ao_dist=0.35):
+def finish(ob, name, painter, h=1.0, res=768, glow=(1.0, 0.15, 0.08), glow_strength=3.0, ao_dist=0.35):
     """UV + AO + paint + materials, then scale to height h. painter(P,N,ID,AO) -> linear RGB (n,3)."""
     me = ob.data
     pid = np.zeros(len(me.polygons), int); me.attributes['pid'].data.foreach_get('value', pid)
