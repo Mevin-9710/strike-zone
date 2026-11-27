@@ -33,8 +33,10 @@ export class TouchControls {
     this.el.style.setProperty('--ts', this.s.btnSize * 1.2);   // v18: touch buttons 20% bigger
     this.el.style.setProperty('--to', this.s.btnOpacity);
   }
-  show(on) { this.el.classList.toggle('on', on); if (!on) this.reset(); }
-  reset() { this.move.x = this.move.y = 0; this.fire = this.use = false; this.touches.clear(); this.stick.classList.remove('on'); }
+  show(on) { this.el.classList.toggle('on', on); if (!on) this.reset(); else this.rest(); }
+  // v35 (cryzen study): the stick is always visible as a faint ring bottom-left, so new players know where to put the thumb
+  rest() { this.stick.classList.add('on', 'rest'); this.stick.style.left = this.stick.style.top = ''; this.knob.style.transform = 'translate(-50%,-50%)'; }
+  reset() { this.move.x = this.move.y = 0; this.fire = this.use = false; this.touches.clear(); this.rest(); }
   setUse(label) { const b = this.el.querySelector('#tuse'); b.style.display = label ? 'block' : 'none'; if (label) b.textContent = label; if (!label) this.use = false; }
   setAbilities(names) { names.forEach((n, i) => { const b = this.el.querySelector('#tab' + i); if (b) b.textContent = n; }); }
   setCooldowns(cds) { cds.forEach((c, i) => { const b = this.el.querySelector('#tab' + i); if (b) b.classList.toggle('cd', c > 0); }); }
@@ -52,7 +54,7 @@ export class TouchControls {
       }
       if (t.clientX < innerWidth * 0.42) {                     // floating stick
         this.touches.set(t.identifier, { role: 'stick', ox: t.clientX, oy: t.clientY });
-        this.stick.style.left = `${t.clientX}px`; this.stick.style.top = `${t.clientY}px`; this.stick.classList.add('on');
+        this.stick.style.left = `${t.clientX}px`; this.stick.style.top = `${t.clientY}px`; this.stick.classList.add('on'); this.stick.classList.remove('rest');
         this.knob.style.transform = 'translate(-50%,-50%)';
       } else {
         // a tap on the weapon panel swaps weapons
@@ -81,7 +83,7 @@ export class TouchControls {
     for (const t of e.changedTouches) {
       const s = this.touches.get(t.identifier); if (!s) continue;
       this.touches.delete(t.identifier); s.btn?.classList.remove('down');
-      if (s.role === 'stick') { this.move.x = this.move.y = 0; this.stick.classList.remove('on'); }
+      if (s.role === 'stick') { this.move.x = this.move.y = 0; this.rest(); }
       if (s.role === 'firelook') this.fire = false;
       if (s.role === 'use') this.use = false;
     }
@@ -94,6 +96,8 @@ export const TOUCH_CSS = `
 #touch.on{display:block}
 #tstick{position:fixed;width:calc(120px*var(--ts));height:calc(120px*var(--ts));margin:calc(-60px*var(--ts)) 0 0 calc(-60px*var(--ts));border:3px solid #111;border-radius:50%;background:rgba(255,210,59,.18);display:none;pointer-events:none}
 #tstick.on{display:block}
+#tstick.rest{left:calc(env(safe-area-inset-left) + 36px + 60px*var(--ts));top:calc(100% - 44px - 60px*var(--ts));opacity:.5}
+#tstick.rest #tknob{opacity:.7}
 #tknob{position:absolute;left:50%;top:50%;width:46%;height:46%;border-radius:50%;background:#ffd23b;border:3px solid #111;transform:translate(-50%,-50%)}
 #touch .tb{position:fixed;opacity:var(--to);width:calc(64px*var(--ts));height:calc(64px*var(--ts));border-radius:50%;padding:0;margin:0;font-size:calc(14px*var(--ts));transform:none;box-shadow:3px 3px 0 #111;touch-action:none}
 #touch .tb.down{background:#111;color:#ffd23b}
@@ -112,8 +116,12 @@ body.touch #abil{display:none}
 body.touch #prompt{top:auto;bottom:calc(30vh + 110px)}
 body.touch #radio{bottom:auto;top:calc(var(--u)*9.5);max-width:58vw}body.touch #radio .txt{font-size:calc(var(--u)*.85);flex:1;min-width:0}body.touch #radio .por{display:none}
 body.touch #tspray{opacity:.45}
+/* v35: slimmer phone health box (moved off the stick's resting spot) and ammo */
+body.touch #vit{left:auto!important;right:calc(50% + 40px)!important;bottom:8px!important;top:auto!important;transform:scale(.72)!important;transform-origin:bottom right!important;background:rgba(30,35,51,.85)!important;border-radius:6px}
+body.touch #ammo{font-size:calc(var(--u)*1.5)!important}
 /* portrait play: thumbs sit low, buttons stack up the right edge */
 @media (orientation:portrait){
+#tstick.rest{display:none}
 #tfire{bottom:calc(16vh)}#taim{bottom:calc(16vh + 92px*var(--ts))}#treload{bottom:calc(16vh + 96px*var(--ts))}
 #tjump{bottom:calc(6vh)}#tab0{bottom:calc(30vh + 70px*var(--ts))}#tab1{bottom:calc(30vh + 70px*var(--ts));right:calc(28px + 76px*var(--ts))!important}
 #tab0{right:calc(24px)}#tuse{right:calc(34vw);bottom:calc(34vh)}
