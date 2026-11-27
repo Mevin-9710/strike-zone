@@ -76,6 +76,11 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   await clickText(page, new RegExp(GAME, 'i')).catch(async () => { await page.getByText(GAME, { exact: false }).first().click(); await log('click game text'); });
   await page.waitForTimeout(4000); await shot(page, 'submission');
 
+  await clickText(page, /game versions/i); await page.waitForTimeout(3000); await shot(page, 'versions');
+  if (!(await page.getByRole('button', { name: /go to qa/i }).first().isVisible().catch(() => false))) {
+    // the newest (draft) build may need opening first: try its row / an 'Edit' or 'View' button
+    for (const re of [/draft/i, /edit/i, /continue/i, /view/i]) { const b = page.getByRole('button', { name: re }).first(); if (await b.isVisible().catch(() => false)) { await b.click(); await log(`click ${re}`); await page.waitForTimeout(3000); await shot(page, 'version_open'); break; } }
+  }
   await clickText(page, /go to qa/i, { timeout: 30000 });
   await page.waitForTimeout(3000); await shot(page, 'qa_open');
 
