@@ -542,3 +542,9 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
   - New build guard: every relative ES-module import in dist/ must resolve to a file in dist/, or the build fails. It caught the v43 bug when re-run.
   - The packaged dist/ was booted headlessly into a match before shipping.
   - Lesson: always boot dist/ (not the repo root) before a ship.
+- 2026-11-27 · v44 (phone first load, round 2). The Kenney story kits (arch + props, ~1.5 MB after v43) no longer hold up boot. `A.loadKits()` starts them at the end of boot (4 s into the first arena on a first run). `startMissionNow` shows "LOADING MAP…" and waits for them when a story map is chosen first. Tests load them synchronously.
+  - Before the first match: 6.8 → 5.2 MB. Page open → in a match on a simulated 8 Mbps / 150 ms phone link: 8.7 → 7.1 s (v42: 16.1 s).
+  - Story start on a 2 Mbps link: overlay shows, then the map builds with all Kenney props.
+  - Tests 116/120: the known 3, plus "deathmatch ends with REMATCH". That test fails whenever blue leads at the forced timeout (the button then reads NEXT LEVEL). It is order-dependent and v44 doesn't touch the end screen.
+  - Packaged dist/ booted into a match before shipping.
+  - Boot b: 44.
