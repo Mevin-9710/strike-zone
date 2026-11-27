@@ -40,7 +40,8 @@ async function shot(page, name) {
 
 // click the first visible element whose text matches (button-like first, then any)
 async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
-  const loc = page.locator('button:visible, a:visible, [role=tab]:visible, [role=button]:visible').filter({ hasText: re }).first();
+  if (/discard|delete|remove|reject/i.test(String(re))) throw new Error('refusing to click a destructive button: ' + re);
+  const loc = page.locator('button:visible, a:visible, [role=tab]:visible, [role=button]:visible').filter({ hasText: re }).filter({ hasNotText: /discard|delete|remove/i }).first();
   await loc.waitFor({ state: 'visible', timeout }); await loc.click(); await log(`click ${re}`);
 }
 
@@ -77,11 +78,9 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   await page.waitForTimeout(4000); await shot(page, 'submission');
 
   await clickText(page, /game versions/i); await page.waitForTimeout(3000); await shot(page, 'versions');
-  if (!(await page.getByRole('button', { name: /go to qa/i }).first().isVisible().catch(() => false))) {
-    // the newest (draft) build may need opening first: try its row / an 'Edit' or 'View' button
-    for (const re of [/draft/i, /edit/i, /continue/i, /view/i]) { const b = page.getByRole('button', { name: re }).first(); if (await b.isVisible().catch(() => false)) { await b.click(); await log(`click ${re}`); await page.waitForTimeout(3000); await shot(page, 'version_open'); break; } }
-  }
-  await clickText(page, /go to qa/i, { timeout: 30000 });
+  // Version History: the newest draft row (top) has 'Submit update', which opens the QA flow
+  await clickText(page, /^\s*submit update\s*$/i); await page.waitForTimeout(4000); await shot(page, 'submit_update');
+  if (await page.locator('button:visible, a:visible').filter({ hasText: /go to qa/i }).count()) await clickText(page, /go to qa/i);
   await page.waitForTimeout(3000); await shot(page, 'qa_open');
 
   // the preview: our game drops straight into a match (gameplayStart) on first launch; if a menu PLAY shows, click it at once
@@ -109,7 +108,7 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
     for (let i = 0; i < nb; i++) { const b = boxes.nth(i); if (await b.isVisible() && !(await b.isChecked())) await b.check().catch(() => {}); }
     if (nb) await log(`checked ${nb} boxes`);
     await shot(page, `qa_step${step}`);
-    const submit = page.getByRole('button', { name: /^submit/i }).first();
+    const submit = page.getByRole('button', { name: /^\s*submit\s*$/i }).first();
     if (await submit.isVisible().catch(() => false)) {
       if (cmd !== 'submit') { await log('reached Submit; explore mode stops here (nothing submitted)'); break; }
       if (await submit.isDisabled()) throw new Error('Submit is disabled: check the last screenshot');
