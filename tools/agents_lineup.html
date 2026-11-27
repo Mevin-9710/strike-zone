@@ -1,0 +1,30 @@
+<!doctype html><meta charset=utf8><body style="margin:0;background:#8fb3d9"><script type="importmap">{"imports":{"three":"../lib/three.module.js"}}</script>
+<script type="module">
+// Agent lineup with the in-game toon look (toonify + ink outline), for before/after shots.
+// ?dir=models/rigged&f=rhea,kade&clip=idle_rifle&t=0.3&yaw=0.5&gun=1&team=0|1  (team: 0 = none, 1 = TDM team outlines)
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { calibrateGun } from '../game/enemies.js';
+import { toonify, outline } from '../game/toon.js';
+const q = new URLSearchParams(location.search), dir = q.get('dir') || 'models/rigged', names = (q.get('f') || 'rhea').split(',');
+const clip = q.get('clip') || 'idle_rifle', t = +(q.get('t') || 0.3), yaw = +(q.get('yaw') || 0.45), team = +(q.get('team') || 0);
+const r = new THREE.WebGLRenderer({ antialias: true }); r.setPixelRatio(devicePixelRatio); r.setSize(innerWidth, innerHeight); r.outputColorSpace = THREE.SRGBColorSpace; document.body.append(r.domElement);
+const sc = new THREE.Scene(); sc.background = new THREE.Color(0x8fb3d9);
+sc.add(new THREE.HemisphereLight(0xdfeaff, 0x5a5040, 1.5)); const dl = new THREE.DirectionalLight(0xfff2dd, 2.4); dl.position.set(3, 6, 4); sc.add(dl);
+const fl = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambertMaterial({ color: 0x8a8578 })); fl.rotation.x = -Math.PI / 2; sc.add(fl); toonify(fl);
+const n = names.length, sp = +(q.get('sp') || 1.25), Z = +(q.get('z') || 0);
+const cam = new THREE.PerspectiveCamera(+(q.get('fov') || 30), innerWidth / innerHeight, 0.1, 100);
+const cy = +(q.get('cy') || 1.0); cam.position.set(0, cy + 0.25, Z || 1.6 + n * 1.05); cam.lookAt(0, cy, 0);
+const L = new GLTFLoader(); const gun = q.get('gun') !== '0' ? await L.loadAsync('../models/weapons/ar7_lance.glb') : null;
+const SU = await import('../lib/addons/utils/SkeletonUtils.js');
+for (let i = 0; i < n; i++) {
+  const g = await L.loadAsync(`../${dir}/${names[i]}.glb`); const root = SU.clone(g.scene); root.position.x = (i - (n - 1) / 2) * sp; root.rotation.y = yaw; sc.add(root);
+  const mx = new THREE.AnimationMixer(root); const c = g.animations.find(a => a.name === clip); if (c) mx.clipAction(c).play(); mx.update(t);
+  if (gun) { const off = calibrateGun(g, 'shoot'); const w = gun.scene.clone(true); w.matrixAutoUpdate = false; w.matrix.copy(off); root.getObjectByName('handR').add(w); toonify(w); }
+  const enemy = names[i].startsWith('enemy');
+  toonify(root, { rim: enemy ? 0xff6a5a : 0x8fd8ff });
+  if (team) outline(root, { thick: 0.025, color: enemy ? 0xff2a3a : 0x2f9bff, force: true }); else outline(root, { thick: 0.02 });
+  root.updateMatrixWorld(true);
+}
+r.render(sc, cam); r.render(sc, cam); window.__info = r.info.render; document.title = 'done';
+</script>
