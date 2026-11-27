@@ -73,5 +73,25 @@
       "updateNoteText"
     ],
     "filesSentWithBaseInfoStep": true
+  },
+  "art": {
+    "uploadEndpoint": true,
+    "developerSubmissionUpdateArt": true,
+    "DeveloperSubmissionUpdateArtInput": [
+      "gameCovers",
+      "gameVideos",
+      "id"
+    ],
+    "GameCoverWithUploadedFileInput": [
+      "size",
+      "uploadedFile"
+    ],
+    "ArtVideoInput": [
+      "portraitVideoOriginal",
+      "portraitVideoThumbnail",
+      "videoOriginal",
+      "videoThumbnail"
+    ],
+    "coverSizes": true
   }
 }

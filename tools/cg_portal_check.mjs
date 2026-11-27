@@ -5,6 +5,8 @@
 // tools/cg_portal_fingerprint.json. Needs no login.
 //   node tools/cg_portal_check.mjs          exit 0 = unchanged, 2 = changed (prints diff), 1 = error
 //   node tools/cg_portal_check.mjs --write  save the current fingerprint as the new baseline
+//   node tools/cg_portal_check.mjs --art    also fail on cover-art changes (otherwise they only warn, so art
+//                                           drift never blocks a game build upload)
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -56,6 +58,15 @@ const fp = {
     DeveloperSubmissionAddQAResultAndNoteInput: inputFields('DeveloperSubmissionAddQAResultAndNoteInput'),
     filesSentWithBaseInfoStep: has('updateStep:`baseInfo`'),
   },
+  // cover art (cg_upload.mjs art): multipart POST /upload + developerSubmissionUpdateArt
+  art: {
+    uploadEndpoint: /\w+=\w+\(`upload`\),\w+=\w+\(`upload\/request-presigned-url`\)/.test(all),
+    developerSubmissionUpdateArt: has('mutation DeveloperSubmissionUpdateArt($input: DeveloperSubmissionUpdateArtInput!)'),
+    DeveloperSubmissionUpdateArtInput: inputFields('DeveloperSubmissionUpdateArtInput'),
+    GameCoverWithUploadedFileInput: inputFields('GameCoverWithUploadedFileInput'),
+    ArtVideoInput: inputFields('ArtVideoInput'),
+    coverSizes: has('landscape (1920x1080), portrait (800x1200), and square (800x800)'),
+  },
 };
 
 if (process.argv.includes('--write')) {
@@ -65,11 +76,13 @@ if (process.argv.includes('--write')) {
 }
 const old = JSON.parse(await readFile(FP, 'utf8'));
 const diffs = [];
-for (const g of ['endpoints', 'graphql']) for (const k of new Set([...Object.keys(old[g] || {}), ...Object.keys(fp[g])])) {
+for (const g of ['endpoints', 'graphql', 'art']) for (const k of new Set([...Object.keys(old[g] || {}), ...Object.keys(fp[g])])) {
   const a = JSON.stringify(old[g]?.[k]), b = JSON.stringify(fp[g][k]);
   if (a !== b) diffs.push(`${g}.${k}: ${a} -> ${b}`);
 }
 console.log(`portal v${old.portalVersion} -> v${version}`);
-if (!diffs.length) { console.log('upload flow unchanged'); process.exit(0); }
-console.log('UPLOAD FLOW CHANGED:\n' + diffs.join('\n'));
+const hard = diffs.filter((d) => !d.startsWith('art.') || process.argv.includes('--art'));
+if (diffs.length > hard.length) console.log('warning, cover-art flow changed (art uploads may break):\n' + diffs.filter((d) => !hard.includes(d)).join('\n'));
+if (!hard.length) { console.log('upload flow unchanged'); process.exit(0); }
+console.log('UPLOAD FLOW CHANGED:\n' + hard.join('\n'));
 process.exit(2);
