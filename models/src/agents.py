@@ -25,9 +25,20 @@ def painter(S):
     def paint(P, N, ID, AO):
         x, y, z = P[:, 0], P[:, 1], P[:, 2]; ax = np.abs(x); sg = np.sign(x)
         col = np.zeros((len(x), 3))
+        # v33: the body is one fused surface, so clothing borders come from position (clean lines), not from part ids
+        ID = ID.copy(); bd = np.isin(ID, list(BODY_PIDS))
+        nr = np.hypot(x, y - 0.006)
+        ID[bd & np.isin(ID, (TORSO, NECK)) & (z >= 1.505) & (z < 1.60) & (nr < 0.085)] = NECK
+        ID[bd & (ID == NECK) & (z < 1.505)] = TORSO
+        ID[bd & (ax > sx + 0.553) & (z > 1.2)] = GLOVE
+        ID[bd & (ID == GLOVE) & (ax <= sx + 0.553)] = FARM
+        ID[bd & (z < 0.18) & np.isin(ID, (SHIN, BOOT))] = BOOT
+        ID[bd & (ID == BOOT) & (z >= 0.18)] = SHIN
+        th = bd & np.isin(ID, (TORSO, HIPS)) & (nr < 0.30)
+        ID[th & (z < 1.075)] = HIPS; ID[th & (z >= 1.075) & (z < 1.505)] = TORSO
         table = {SKIN: 'skin', NECK: S.get('neck_col', 'skin'), TORSO: 'top', HIPS: 'pants', UARM: 'sleeve', FARM: 'sleeve',
                  GLOVE: 'gloves', THIGH: 'pants', SHIN: 'pants', BOOT: 'boots', HAIR: 'hair', HELMET: 'helmet', ACC: 'accent',
-                 DARK: 'dark', METAL: 'metal', LENS: 'lens', PACK: 'pack', SHOULDER: 'shoulder'}
+                 DARK: 'dark', METAL: 'metal', LENS: 'lens', PACK: 'pack', SHOULDER: 'shoulder', HOOD: 'top'}
         for p, k in table.items(): col[ID == p] = C(k)
         T, H, UA, FA, G, TH, SH, BT, SK = (ID == TORSO, ID == HIPS, ID == UARM, ID == FARM, ID == GLOVE, ID == THIGH, ID == SHIN, ID == BOOT, ID == SKIN)
         front, back = y < -0.03, y > 0.03
@@ -174,7 +185,7 @@ def painter(S):
         fab = 1 + 0.05 * nz(P) + np.where(skin, 0.0, 0.035) * nf(P)
         grad = 0.92 + 0.12 * np.clip(z / 1.9, 0, 1)
         lit = 1 + 0.06 * np.clip(N[:, 2], 0, 1)
-        ao = 0.66 + 0.34 * AO
+        ao = np.where(skin, 0.86 + 0.14 * AO, 0.66 + 0.34 * AO)
         out = col * (fab * grad * lit * ao)[:, None] * 1.12
         lum = (out @ np.array((0.2126, 0.7152, 0.0722)))[:, None]
         return lum + (out - lum) * np.where(skin, 1.05, 1.2)[:, None]          # v32.1: punchier saturation (not on skin)
@@ -187,7 +198,8 @@ def hair_cap(K, scale=1.07, front=0.42, nape=-0.35, top=0.0, pid=HAIR, c=(0, 0.0
         if (y < -0.25 and z < front) or z < nape or (y < 0.25 and z < -0.05):
             return x * 0.84, y * 0.84, z * 0.96            # pulled inside the head = hairline
         return x, y, z + (top if z > 0.5 else 0)
-    return K.blob(c, (HEAD_R[0] * scale, HEAD_R[1] * scale, HEAD_R[2] * scale), pid, e=0.85, seg=20, rings=14, deform=d)
+    return K.blob(c, (HEAD_R[0] * scale, HEAD_R[1] * scale, HEAD_R[2] * scale), pid, e=0.9, seg=24, rings=16,
+                  deform=lambda x, y, z: d(*head_shape(x, y, z)))
 
 
 def combat_helmet(K, pid=HELMET, c=(0, 0.006, 1.77), half=(0.160, 0.170, 0.136), cups=True):
@@ -205,7 +217,7 @@ def visor(K, pid, c=(0, -0.127, 1.722), half=(0.126, 0.03, 0.034), wrap=0.9):
     return K.blob(c, half, pid, e=0.6, seg=14, rings=6, deform=lambda x, y, z: (x, y + wrap * x * x * 1.0, z))
 
 
-def hood(K, pid=TORSO, c=(0, 0.022, 1.727), half=(0.162, 0.172, 0.186)):
+def hood(K, pid=HOOD, c=(0, 0.022, 1.727), half=(0.162, 0.172, 0.186)):
     def d(x, y, z):
         if y < -0.5 and abs(z) < 0.72 and abs(x) < 0.8: y = -0.5
         return x, y, z
@@ -268,7 +280,7 @@ def build_operative(key, c):
         for ox, oy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
             K.blob((dx + ox * 0.085, oy * 0.085, 1.625), (0.045, 0.045, 0.006), ACC, e=1.0, seg=12, rings=4)
         K.blob((dx, -0.07, 1.60), (0.022, 0.012, 0.016), LENS, e=0.9, seg=8, rings=6)
-    ob = K.join(c['name'].replace(' ', '_'))
+    sculpt(K); ob = K.join(c['name'].replace(' ', '_'))
     S = dict(B=B, seed=sum(map(ord, key)), skin=c['skin'], hair=c['hair'], top=c['top'], sleeve=c['top'], pants=c['pants'],
              boots=(0.10, 0.085, 0.07), gloves=(0.12, 0.10, 0.085), accent=c['accent'], metal=(0.42, 0.45, 0.50), dark=(0.06, 0.06, 0.075),
              lens=tuple(0.12 + 0.35 * a for a in c['accent']) if g != 'hood' else (0.30, 0.55, 0.65), pack=c['pants'], belt=(0.04, 0.04, 0.05),
@@ -317,7 +329,7 @@ def build_enemy(key, c):
         K.caps((0.24, 0.30, 0.92), (0.24, 0.30, 1.66), 0.055, 0.05, DARK, seg=12, hemi=2, mid=1)
     if c.get('sidearm'):
         K.caps((-0.205 * B, -0.03, 0.92), (-0.205 * B, -0.03, 1.04), 0.03, 0.03, DARK, seg=8, hemi=2, mid=0)
-    ob = K.join(key)
+    sculpt(K); ob = K.join(key)
     S = dict(B=B, seed=len(key) * 7, skin=R['light'], hair=R['deep'], top=c['top'], sleeve=c['top'], pants=c['pants'], boots=R['deep'],
              gloves=R['deep'], accent=R['light'], metal=R['light'], dark=R['deep'], lens=R['glow'], pack=R['dark'], belt=R['deep'],
              cuff=R['light'], patch2=R['deep'], pad=R['deep'], iris=R['deep'], lash=R['deep'], brow=R['deep'], helmet=c.get('helmet', R['base']),
