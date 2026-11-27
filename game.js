@@ -856,7 +856,7 @@ function dmEnd(won) {
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
     let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `${againLbl} (${n})`; };
     clearInterval(autoNextT); tick(); autoNextT = setInterval(tick, 1000);
-    const stop = e => { if (!e.target.closest?.('button,input,a') || e.target.id === 'again') return; clearInterval(autoNextT); $('again').textContent = againLbl; $('end').removeEventListener('pointerdown', stop); };
+    const stop = e => { if (!e.target.closest?.('button,input,a') || e.target.id === 'again' || e.target.id === 'endMore') return; clearInterval(autoNextT); $('again').textContent = againLbl; $('end').removeEventListener('pointerdown', stop); };
     $('end').removeEventListener('pointerdown', dmEnd.stop); dmEnd.stop = stop; $('end').addEventListener('pointerdown', stop);   // v30: only pressing another button stops the rematch countdown (a scroll or stray tap no longer does)
   }
 }
@@ -1654,14 +1654,33 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   if (nextIdx !== null && !TEST) {                                              // win: next mission starts by itself unless the player touches anything
     let n = RC.autoNextSeconds + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('next').click(); } else $('next').textContent = `NEXT MISSION (${n})`; };
     tick(); autoNextT = setInterval(tick, 1000);
-    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'next') { clearInterval(autoNextT); $('next').textContent = 'NEXT MISSION'; } }, { once: true });
+    $('end').addEventListener('pointerdown', e => { if (e.target.id !== 'next' && e.target.id !== 'endMore') { clearInterval(autoNextT); $('next').textContent = 'NEXT MISSION'; } }, { once: true });
   } else $('next').textContent = 'NEXT MISSION';
   $('next').onclick = () => { unlockAudio(); selected = nextIdx; const nm = MISSIONS[nextIdx]; const route = !nm.routes ? 'default' : nm.routes[selRoute] ? selRoute : 'stealth'; startMission(nextIdx, { route, abilities: [] }); };   // straight in with the current kit; LOBBY to change it
   if (RC.v14ui) endV14(add); else $('end').classList.remove('v14e');
   if (mode === 'dm') $('dmEnd').after($('endPlay')); else $('endQ').after($('endPlay'));
   giftCard();   // v30: DM rematch/lobby sit right under the result tiles, always on screen (phones too)
-  $('end').classList.add('show'); $('end').querySelector('.card').scrollTop = 0;
+  const show = () => { endPage(1); $('end').classList.add('show'); $('end').querySelector('.card').scrollTop = 0; };
+  if (TEST) show(); else outro(title, show);
 }
+// v39: the match does not cut to the result. The world slows to a stop under a fading VICTORY / DEFEAT, then the result screen
+// comes in; CONTINUE (or 5 s) moves on to the what-next screen. Two short screens, no scrolling.
+let outroT = -1;
+function outro(title, then) {
+  const word = title.split(' · ')[0], lose = /DEFEAT|FAILED|OVER/.test(word);
+  let el = $('outro'); if (!el) { el = document.createElement('div'); el.id = 'outro'; el.innerHTML = '<b></b>'; document.body.append(el); }
+  el.className = lose ? 'lose' : ''; el.firstChild.textContent = word; void el.offsetWidth; el.classList.add('on');
+  outroT = 0; clearTimeout(outro.t); FX.announce('', 'info');
+  outro.t = setTimeout(() => { el.classList.add('off'); outroT = -1; then(); setTimeout(() => { el.className = ''; }, 400); }, 1700);
+}
+const outroScale = () => outroT < 0 ? 1 : Math.max(0, 1 - outroT / 1.3);
+function endPage(n) {
+  const E = $('end'); E.dataset.pg = n; clearTimeout(endPage.t);
+  if (n === 1 && !TEST) { endPage.t = setTimeout(() => { if (E.dataset.pg === '1' && E.classList.contains('show')) endPage(2); }, 5000); }
+  if (n === 2) { const c = E.querySelector('.card'); c.style.animation = 'none'; void c.offsetWidth; c.style.animation = ''; }
+}
+$('endMore').onclick = () => endPage(2);
+$('end').addEventListener('pointerdown', e => { if (e.target.closest?.('button') && e.target.id !== 'endMore' && $('end').dataset.pg === '1') clearTimeout(endPage.t); });   // busy with upgrades / double offer: stay
 function giftCard() {                                                              // v31: the unlock waiting tomorrow, right under the play buttons
   const el = $('endGift'), un = META.unlocked(progress).weapons, g = MODES.nextGift(id => un.has(id));
   $('endPlay').after(el);
@@ -2183,7 +2202,7 @@ function frame(now) {
     }
   }
   if (!manual) {
-    const t0 = performance.now(); if (!running) idleAnim(dt); update(dt); const t1 = performance.now(); render(); const t2 = performance.now();
+    const t0 = performance.now(); if (!running) { if (outroT >= 0) outroT += dt; idleAnim(dt * outroScale()); } update(dt); const t1 = performance.now(); render(); const t2 = performance.now();
     if (TEST) { (window.__frames ??= []).push([+(t1 - t0).toFixed(1), +(t2 - t1).toFixed(1), +(now - (frame.last ?? now)).toFixed(0)]); if (window.__frames.length > 600) window.__frames.shift(); }
     frame.last = now;
   }
@@ -2191,7 +2210,7 @@ function frame(now) {
 }
 
 // ---------- test / debug API ----------
-window.__game = { RC, G, get dmWalk() { return DM.walkLog || (DM.walk && DM.walk.e ? { walking: +DM.walk.t.toFixed(1), dist: +DM.walk.e.pos.distanceTo(DM.walk.spot).toFixed(1) } : { walk: DM.walk, grace: DM.grace }); }, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
+window.__game = { RC, G, outro: t => outro(t, () => {}), get dmWalk() { return DM.walkLog || (DM.walk && DM.walk.e ? { walking: +DM.walk.t.toFixed(1), dist: +DM.walk.e.pos.distanceTo(DM.walk.spot).toFixed(1) } : { walk: DM.walk, grace: DM.grace }); }, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
   errors, get ready() { return !!A.enemies; }, MISSIONS, WEAPONS, ABILITIES,
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
   start: (i, o = {}) => startMission(i, o), openBriefing, openLobby, openShop, openPass, openProfile, META, doSpray, detonateBarrel, revive,
@@ -2326,7 +2345,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 38, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 39, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
