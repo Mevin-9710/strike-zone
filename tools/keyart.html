@@ -15,6 +15,7 @@ html,body{margin:0;background:#000;overflow:hidden}
 // Shoot all three with tools/keyart_shoot.cjs (supersampled), sizes 1920x1080 / 800x1200 / 800x800.
 import * as THREE from 'three';
 import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from '../lib/addons/libs/meshopt_decoder.module.js';   // v43: models are meshopt-compressed
 import * as SU from '../lib/addons/utils/SkeletonUtils.js';
 import { calibrateGun } from '../game/enemies.js';
 import { toonify, outline } from '../game/toon.js';
@@ -60,7 +61,7 @@ function skyTex() {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-const L = new GLTFLoader(); const load = (p) => L.loadAsync('../' + p);
+const L = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder); const load = (p) => L.loadAsync('../' + p);
 const CEN = { lantern: [35, 0.4, 20], belltower: [30, 0, 22], neon: [32, 0, 24], sandkeep: [35, 0, 22] }[MAP] || [35, 0, 20];
 
 // ================= layer 1: arena backdrop, rendered small and blurred (depth of field)

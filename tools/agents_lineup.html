@@ -4,6 +4,7 @@
 // ?dir=models/rigged&f=rhea,kade&clip=idle_rifle&t=0.3&yaw=0.5&gun=1&team=0|1  (team: 0 = none, 1 = TDM team outlines)
 import * as THREE from 'three';
 import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from '../lib/addons/libs/meshopt_decoder.module.js';
 import { calibrateGun } from '../game/enemies.js';
 import { toonify, outline } from '../game/toon.js';
 const q = new URLSearchParams(location.search), dir = q.get('dir') || 'models/rigged', names = (q.get('f') || 'rhea').split(',');
@@ -15,7 +16,7 @@ const fl = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshLambert
 const n = names.length, sp = +(q.get('sp') || 1.25), Z = +(q.get('z') || 0);
 const cam = new THREE.PerspectiveCamera(+(q.get('fov') || 30), innerWidth / innerHeight, 0.1, 100);
 const cy = +(q.get('cy') || 1.0); cam.position.set(0, cy + 0.25, Z || 1.6 + n * 1.05); cam.lookAt(0, cy, 0);
-const L = new GLTFLoader(); const gun = q.get('gun') !== '0' ? await L.loadAsync('../models/weapons/ar7_lance.glb') : null;
+const L = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder); const gun = q.get('gun') !== '0' ? await L.loadAsync('../models/weapons/ar7_lance.glb') : null;
 const SU = await import('../lib/addons/utils/SkeletonUtils.js');
 for (let i = 0; i < n; i++) {
   const g = await L.loadAsync(`../${dir}/${names[i]}.glb`); const root = SU.clone(g.scene); root.position.x = (i - (n - 1) / 2) * sp; root.rotation.y = yaw; sc.add(root);

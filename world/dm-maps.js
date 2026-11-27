@@ -2,7 +2,8 @@
 // Visuals are baked from the prototypes in docs/maps/dm-src by tools/export_dm_maps.cjs -> models/dm/<id>.glb;
 // colliders (and the prototypes' floor/ramp data) come from models/dm/<id>.json. Loaded on demand, cached.
 import * as THREE from 'three';
-import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { makeLoader } from './gltf.js';
+const dmLoader = makeLoader();
 import { Kit } from './kit.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -14,7 +15,7 @@ export const DM_MAPS = [
 ];
 const P = {}, R = {};
 export function loadDmMap(id) {
-  if (!P[id]) P[id] = Promise.all([new GLTFLoader().loadAsync(`models/dm/${id}.glb`), fetch(`models/dm/${id}.json`).then(r => r.json())])
+  if (!P[id]) P[id] = Promise.all([dmLoader.loadAsync(`models/dm/${id}.glb`), fetch(`models/dm/${id}.json`).then(r => r.json())])
     .then(([g, data]) => { const def = DM_MAPS.find(d => d.id === id), bb = new THREE.Box3();
       g.scene.updateMatrixWorld(true);
       g.scene.traverse(o => { if (o.isMesh) {
