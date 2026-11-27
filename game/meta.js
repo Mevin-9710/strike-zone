@@ -61,6 +61,7 @@ export const LEVEL_WEAPONS = [[3, 'harrow_45'], [4, 'warden_br'], [6, 'bulldog_r
 export function unlocked(progress) {
   const w = new Set(BASE_UNLOCKS.weapons), o = new Set(BASE_UNLOCKS.operatives);
   for (const [lv, id] of LEVEL_WEAPONS) if (level() >= lv) w.add(id);
+  for (const id of store.get('sz_gifts', [])) w.add(id);                         // v31 return gifts
   for (let i = 0; i < progress && i < UNLOCKS.length; i++) { (UNLOCKS[i].weapons || []).forEach(x => w.add(x)); (UNLOCKS[i].operatives || []).forEach(x => o.add(x)); }
   return { weapons: w, operatives: o };
 }

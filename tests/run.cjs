@@ -359,6 +359,27 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await ctx.close();
   }
 
+  // v31: return gift (D1): day 1 end screen shows what unlocks tomorrow; on day 2 it is granted, equipped and announced
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1&gifts=1' });
+    const r = await pg.evaluate(async () => {
+      const g = __game, M = await import('./world/dm-maps.js'); await M.loadDmMap(M.DM_MAPS[0].id); g.RC.dmTeams = true;
+      g.start(0, { mode: 'dm', dmMap: 0 }); g.step(0.3); g.dmScore(25, 10); g.timeout(); g.step(0.2);
+      const card = document.getElementById('endGift'); return { days: JSON.parse(localStorage.getItem('sz_days')).n, shown: card.style.display !== 'none' && /HEAVY/.test(card.textContent), gifts: localStorage.getItem('sz_gifts') };
+    });
+    check('v31 day 1: end screen shows the HEAVY unlock waiting tomorrow, nothing granted yet', r.days === 1 && r.shown && !r.gifts, JSON.stringify(r));
+    await pg.evaluate(() => { const y = new Date(Date.now() - 864e5).toISOString().slice(0, 10); localStorage.setItem('sz_days', JSON.stringify({ last: y, n: 1 })); });
+    await pg.reload(); await pg.waitForFunction(() => window.__game?.ready, null, { timeout: 90000 });
+    const r2 = await pg.evaluate(async () => {
+      const g = __game, M = await import('./world/dm-maps.js'); await M.loadDmMap(M.DM_MAPS[0].id);
+      g.start(0, { mode: 'dm', dmMap: 0 }); g.step(0.3);
+      return { w: g.state.weapon, gifts: JSON.parse(localStorage.getItem('sz_gifts') || '[]'), days: JSON.parse(localStorage.getItem('sz_days')).n, toast: !!document.querySelector('.questToast') };
+    });
+    check('v31 day 2: Hailstorm granted once, equipped, toast shown', r2.days === 2 && r2.gifts.length === 1 && r2.gifts[0] === 'hailstorm_mg' && r2.w === 'hailstorm_mg' && r2.toast, JSON.stringify(r2));
+    check('no page errors (v31 gifts)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
   // v17: Deathmatch levels, victory rewards, bot parity, touch layout
   {
     const { ctx, pg } = await open(browser, { query: 'test=1&touch=1', viewport: { width: 844, height: 390 }, touch: true });
