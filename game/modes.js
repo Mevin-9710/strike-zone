@@ -38,6 +38,11 @@ export function loginClaim() {
   put('sz_login', { last: today, day });
   return { day, coins: LOGIN_COINS[day - 1], tomorrow: LOGIN_COINS[day % 7] };
 }
+export function loginWeek() {                                                     // the lobby strip: which slot is today and whether it is paid
+  const s = get('sz_login', { last: '', day: 0 }), today = dayKey(), yday = dayKey(Date.now() - 864e5);
+  if (s.last === today) return { cur: s.day, got: true };
+  return { cur: s.last === yday ? (s.day % 7) + 1 : 1, got: false };
+}
 export const loginTomorrow = () => { const s = get('sz_login', { last: '', day: 0 }); return LOGIN_COINS[s.last === dayKey() ? s.day % 7 : 0]; };
 
 // v31 return gifts (D1 retention): a real weapon unlock waits for the player on a later day, shown at the end of every match

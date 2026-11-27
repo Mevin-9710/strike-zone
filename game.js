@@ -2089,7 +2089,10 @@ function lobbyV14() {
   } else $('lQuests').style.display = 'none';
   // crate (login calendar)
   { const st = store.get('sz_login', { last: '', day: 0 }), today = new Date().toISOString().slice(0, 10), got = st.last === today;
-    $('lCrate').innerHTML = `${icon('supply-drop')}<span>${got ? 'DAILY CRATE OPENED' : 'FREE DAILY CRATE'}<small>${got ? `DAY ${st.day} OF 7 · TOMORROW +${MODES.loginTomorrow()}` : 'FINISH 1 MATCH TO OPEN'}</small></span>`;
+    // v41: 7-day reward strip under the crate line: paid days ticked, today lit, tomorrow tagged
+    const wk = MODES.loginWeek(), cells = MODES.LOGIN_COINS.map((c, i) => { const d = i + 1, paid = d < wk.cur || (d === wk.cur && wk.got), now = d === wk.cur && !wk.got, nx = wk.got && d === wk.cur % 7 + 1;
+      return `<i class="d${paid ? ' got' : ''}${now ? ' now' : ''}${nx ? ' nx' : ''}${d === 7 ? ' big' : ''}"><b>${nx ? 'NEXT' : now ? 'TODAY' : 'DAY ' + d}</b>${paid ? icon('check') : `<em>${c}</em>`}</i>`; }).join('');
+    $('lCrate').innerHTML = `<div class="dh">${icon('supply-drop')}<span>${got ? 'DAILY REWARD CLAIMED' : 'DAILY REWARD'}<small>${got ? `DAY ${st.day} OF 7 · COME BACK TOMORROW +${MODES.loginTomorrow()}` : 'FINISH 1 MATCH TO CLAIM'}</small></span></div><div class="days">${cells}</div>`;
     $('lCrate').classList.toggle('ready', !got); }
   // weapon cards: equipped + next ones; locked ones offer a 1-level trial
   const un = META.unlocked(progress).weapons, list = PRIMARIES.slice(0, 5);
@@ -2358,7 +2361,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 40, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 41, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

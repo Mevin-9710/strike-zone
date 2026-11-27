@@ -46,7 +46,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const { ctx, pg } = await open(browser, { query: '' });
     check('boots into the 3D lobby', await pg.isVisible('#lobby'));
     check('lobby shows level + coins', /LV 1/.test(await pg.textContent('#lvl')) && /^\s*0\s*$/.test(await pg.textContent('#coins')));
-    check('v14 lobby: quests card, crate, weapon cards, mode toggle', await pg.evaluate(() => document.querySelectorAll('#lQuests .q').length === 4 && /CRATE/.test(document.getElementById('lCrate').textContent) && document.querySelectorAll('#lWeps .wcard').length >= 3 && document.querySelectorAll('#lWeps .wcard.lock').length >= 1));
+    check('v14 lobby: quests card, crate, weapon cards, mode toggle', await pg.evaluate(() => document.querySelectorAll('#lQuests .q').length === 4 && /DAILY REWARD/.test(document.getElementById('lCrate').textContent) && document.querySelectorAll('#lCrate .days .d').length === 7 && document.querySelectorAll('#lWeps .wcard').length >= 3 && document.querySelectorAll('#lWeps .wcard.lock').length >= 1));
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
     await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=tdm]');
     check('mode toggle switches the lobby to Deathmatch', await pg.evaluate(() => document.getElementById('mDm').classList.contains('on') && /DEATHMATCH/.test(document.getElementById('lMission').textContent)));
