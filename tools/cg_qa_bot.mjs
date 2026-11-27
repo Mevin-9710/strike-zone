@@ -115,7 +115,10 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
     [cont] = await Promise.all([ctx.waitForEvent('page', { timeout: 30000 }).catch(() => null), clickText(page, /^\s*continue\s*$/i, { timeout: 30000 })]);
   }
   if (!cont) throw new Error('QA tool Continue never opened the qa-continue tab');
-  page = cont; await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(6000); await shot(qaTab, 'qa_tool_done'); await shot(page, 'qa_continue');
+  page = cont; await page.waitForLoadState('domcontentloaded');
+  // the qa-continue page can sit on 'Loading…' for a while: wait (up to 90 s) for its Continue button
+  await page.locator('button:visible').filter({ hasText: /^\s*continue\b/i }).first().waitFor({ state: 'visible', timeout: 90000 }).catch(async () => { await log('qa-continue still loading after 90 s'); });
+  await page.waitForTimeout(2000); await shot(qaTab, 'qa_tool_done'); await shot(page, 'qa_continue');
   // walk the QA steps: Continue / Next until the checklist + notes + Submit page
   for (let step = 0; step < 6; step++) {
     // answer every manual checklist question. Default 'Yes' (Mevin's standing answer); a question whose
@@ -146,7 +149,7 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
       await submit.click(); await page.waitForTimeout(6000); await shot(page, 'submitted'); await log('SUBMITTED'); break;
     }
     const next = page.locator('button:visible').filter({ hasText: /^\s*(continue|next)\b/i }).first();
-    if (!(await next.isVisible().catch(() => false))) { await log('no Continue/Next/Submit button found'); break; }
+    if (!(await next.isVisible().catch(() => false))) { await log('no Continue/Next/Submit button found'); process.exitCode = 1; break; }
     if (await next.isDisabled()) { await log('Continue is disabled: an answer is missing, see screenshot'); process.exitCode = 1; break; }
     // on the qa-continue page this Continue IS the final submit (updates are auto-approved)
     if (cmd !== 'submit') { await log('reached the final Continue; explore mode stops here (nothing submitted)'); break; }
