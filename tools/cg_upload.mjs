@@ -14,7 +14,7 @@
 //        --dry  upload files but do not attach them   (sending for review stays a portal click for now)
 //   node tools/cg_upload.mjs art-status [--json f]  # current + pending cover art versions (read-only)
 //   node tools/cg_upload.mjs art [dir] [--dry]     # upload dir/cover_16x9.png, cover_2x3.png, cover_1x1.png as new
-//        cover art (the portal's Art tab "Save"); keeps the published preview videos. CrazyGames reviews new art.
+//        cover art (the portal's Art tab "Save"); keeps the published preview videos. On 27 Nov the new art was published instantly (no review).
 // Defaults: dir=dist, --id from CG_SUBMISSION_ID or the submission named "Strike Zone".
 import { appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
@@ -275,7 +275,7 @@ async function art(me) {
   }
   const r = await gql(`mutation($input: DeveloperSubmissionUpdateArtInput!) { developerSubmissionUpdateArt(input: $input) { id hasPendingArtUpdate } }`,
     { input: { id, gameCovers, gameVideos } }, 'save art', 1);
-  console.log(`art submitted for review: pending art update = ${r.developerSubmissionUpdateArt.hasPendingArtUpdate}`);
+  console.log(`art saved: ${r.developerSubmissionUpdateArt.hasPendingArtUpdate ? "waiting for CrazyGames art review" : "published right away (no review pending)"}`);
   await artStatus(me);
 }
 const subId = (me) => opt('--id', process.env.CG_SUBMISSION_ID) || me.submissions.find((s) => /strike zone/i.test(s.gameName))?.id;
