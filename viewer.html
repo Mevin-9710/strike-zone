@@ -23,6 +23,7 @@
   <script type="module">
     import * as THREE from 'three';
     import { GLTFLoader } from './lib/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from './lib/addons/libs/meshopt_decoder.module.js';
     import { OrbitControls } from './lib/addons/controls/OrbitControls.js';
     import { AbilityFX, RELEASE_AT } from './fx/abilities.js';
 
@@ -51,7 +52,7 @@
     let blind = 0;
     const fx = new AbilityFX(scene, { onFlash: k => { blind = Math.max(blind, k); } });
     let pending = null, manual = false;
-    const loader = new GLTFLoader();
+    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     const cache = {}, wcache = {};
     let current = null, mixer = null, action = null, curStem = null, curAnims = [];
     let weaponId = null, weaponMeta = [], weaponObj = null;

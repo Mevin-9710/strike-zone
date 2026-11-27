@@ -2,10 +2,11 @@
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from '../lib/addons/libs/meshopt_decoder.module.js';
 const kit = new URLSearchParams(location.search).get('kit') || 'ind';
 const r = new THREE.WebGLRenderer({ antialias: true }); r.setSize(1400, 800); document.body.appendChild(r.domElement);
 const s = new THREE.Scene(); s.background = new THREE.Color(0x8aa); s.add(new THREE.HemisphereLight(0xffffff, 0x666655, 2.2)); const d = new THREE.DirectionalLight(0xffffff, 1.5); d.position.set(3, 6, 5); s.add(d);
-const g = await new GLTFLoader().loadAsync(`../models/kenney/arch_${kit}.glb`);
+const g = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`../models/kenney/arch_${kit}.glb`);
 let x = 0; const names = [];
 for (const c of g.scene.children) { const b = new THREE.Box3().setFromObject(c); const sz = b.getSize(new THREE.Vector3()); const sc = 1.6 / Math.max(sz.x, sz.y, sz.z); c.scale.setScalar(sc); c.position.set((x % 8) * 2.2 - 8, Math.floor(x / 8) * -2.2, 0); c.position.y -= b.min.y * sc; c.position.x -= (b.min.x + sz.x / 2) * sc; x++; names.push(c.name); }
 s.add(g.scene); const cam = new THREE.PerspectiveCamera(35, 1400 / 800, 0.1, 100); cam.position.set(0, -1.5, 17); cam.lookAt(0, -1.5, 0); r.render(s, cam); document.title = names.join(',');

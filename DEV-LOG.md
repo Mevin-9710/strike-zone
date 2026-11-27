@@ -527,3 +527,11 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
   - Dead humanoids also fall to the floor (`world.move`) until they sink, so a bot killed mid-dash or on a ledge no longer hangs in the air.
   - Team DM spawns: `dmHomes()` takes the 6-12 ground spots nearest each team's base (`map.teamSpawns` A/B), and `dmSpot(side)` (re)spawns that team only there. It avoids stacking on a team-mate and corners with an enemy within 8 m. All 4 maps checked: start and respawn within ~12 m of the team's own base (bases 53-66 m apart). Free-for-all spawns are unchanged.
   - Boot b: 42.
+- 2026-11-27 · v43 (mobile conversion: the first load). Telemetry: ~15% of phone page loads never reach boot; phone boot median 4.1 s, p75 8.2 s, p90 12.8 s, and the first load was 14.0 MB.
+  - Every GLB the game loads is now meshopt-compressed (`tools/compress_models.sh`, gltf-transform 4.1.1, EXT_meshopt_compression). Belltower 2.8 → 1.1 MB, agents ~600 → ~355 KB each.
+  - `world/gltf.js` `makeLoader()` decodes the models and turns quantized attributes back into floats, so kit merging, collision and skins see the same data as before. Agents were checked side by side, original vs compressed: identical.
+  - `lib/three.core.js` and `lib/three.module.js` are now the official minified r180 builds (same version, 2.0 → 0.72 MB).
+  - Boot asset groups (weapons, props, kits, operative, enemies) now download in parallel instead of one group after another.
+  - First load: 14.0 → 6.8 MB. On a simulated 8 Mbps / 150 ms phone link, page open → in a match went from 16.1 s to 8.7 s.
+  - Re-run `tools/compress_models.sh` after exporting new GLBs from Blender. Raw GLBs still load, just bigger.
+  - Boot b: 43.

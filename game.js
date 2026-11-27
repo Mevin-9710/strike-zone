@@ -2,13 +2,14 @@
 // abilities that drive gameplay, objectives, story radio, style D HUD. See DEV-LOG.md.
 import { createFlow } from './game/menu-flow.js';
 import * as THREE from 'three';
-import { GLTFLoader } from './lib/addons/loaders/GLTFLoader.js';
+// (GLTF loading goes through world/gltf.js makeLoader since v43)
 import { World } from './world/collision.js';
 import { loadKenney, dressMap } from './world/kenney.js';
 import { loadArch } from './world/kenney-arch.js';
 import { crazy } from './game/crazy.js';
 import { buildM1, buildM2, buildM3, LIGHTING } from './world/maps.js';
 import { DM_MAPS, loadDmMap, dmMapReady, buildDmMap } from './world/dm-maps.js';
+import { makeLoader } from './world/gltf.js';
 import { buildLobbyRoom } from './world/lobby-room.js';
 import { AbilityFX } from './fx/abilities.js';
 import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons.js';
@@ -182,19 +183,22 @@ function resize() { camera.aspect = innerWidth / innerHeight; fovK = camera.aspe
 addEventListener('resize', resize); resize();
 
 // ---------- assets ----------
-const loader = new GLTFLoader();
+const loader = makeLoader();   // v43: meshopt-compressed models (world/gltf.js)
 const A = { weapons: {}, icons: {}, props: {}, enemies: null, rhea: null };
 async function loadAll() {
   const ids = Object.keys(WEAPONS), total = ids.length + 2 + 8 + 5 + 1 + Object.keys(ENEMY_TYPES).length; let done = 0;   // weapons + props + kenney kits + arch kits + operative + enemies
   const bar = $('lbar').firstElementChild, ldSent = {}, tick = () => { done++; const pc = Math.min(99, Math.round(done / total * 100)); bar.style.width = `${pc}%`; for (const m of [25, 50, 75]) if (pc >= m && !ldSent[m]) { ldSent[m] = 1; track('ld', { p: m }); } };
   const origLoad = loader.loadAsync.bind(loader);   // every GLB (weapons, kenney kits, arch, enemies, operative) advances the bar
   loader.loadAsync = async u => { try { return await origLoad(u); } finally { tick(); } };
-  await Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); }));
-  await Promise.all(['covenant_device', 'counter_charge'].map(async id => { const g = await loader.loadAsync(`models/props/${id}.glb`); g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); A.props[id] = g.scene; }));
-  await loadArch(loader);   // Kenney architecture (world/kenney-arch.js)
-  await loadKenney(loader);   // Kenney map props (world/kenney.js); falls back to procedural boxes if missing
-  A.ops = {}; const rhea = await loadOperative(loadout.operative in OPERATIVES ? loadout.operative : 'rhea'); A.rhea = rhea;
-  A.enemies = await loadEnemyAssets(loader, A.weapons);
+  // v43: all groups download in parallel (they used to load one group after another, so slow phone networks paid
+  // six round-trip waits). Enemies only need the weapon scenes to be in first.
+  A.ops = {};
+  const wP = Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); }));
+  const pP = Promise.all(['covenant_device', 'counter_charge'].map(async id => { const g = await loader.loadAsync(`models/props/${id}.glb`); g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); A.props[id] = g.scene; }));
+  const kP = Promise.all([loadArch(loader), loadKenney(loader)]);   // Kenney architecture (world/kenney-arch.js) + map props (world/kenney.js); fall back to procedural boxes if missing
+  const oP = loadOperative(loadout.operative in OPERATIVES ? loadout.operative : 'rhea').then(g => { A.rhea = g; });
+  const eP = wP.then(() => loadEnemyAssets(loader, A.weapons));
+  await Promise.all([wP, pP, kP, oP]); A.enemies = await eP;
   loader.loadAsync = origLoad; bar.style.width = '100%';
   for (const id of ids) A.icons[id] = renderIcon(A.weapons[id]);
   for (const m of Object.values(vm.models)) { toonify(m.scene); outline(m.scene, { thick: 0.0035 }); }
@@ -2383,7 +2387,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 42, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 43, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
