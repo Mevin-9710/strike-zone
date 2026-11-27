@@ -138,8 +138,13 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
     }
     const next = page.locator('button:visible').filter({ hasText: /^\s*(continue|next)\b/i }).first();
     if (!(await next.isVisible().catch(() => false))) { await log('no Continue/Next/Submit button found'); break; }
-    if (await next.isDisabled()) { await log('Continue is disabled: an answer is missing, see screenshot'); break; }
-    await next.click(); await log('click continue'); await page.waitForTimeout(3000);
+    if (await next.isDisabled()) { await log('Continue is disabled: an answer is missing, see screenshot'); process.exitCode = 1; break; }
+    // on the qa-continue page this Continue IS the final submit (updates are auto-approved)
+    if (cmd !== 'submit') { await log('reached the final Continue; explore mode stops here (nothing submitted)'); break; }
+    await next.click(); await log('click continue (submit)'); await page.waitForTimeout(6000); await shot(page, 'after_submit');
+    const ok = await page.getByText(/automatically approved|submitted|under review/i).first().isVisible().catch(() => false);
+    await log(ok ? 'SUBMITTED: portal confirmed (' + (await page.getByText(/automatically approved|submitted|under review/i).first().innerText().catch(() => '')).replace(/\s+/g, ' ') + ')' : 'submitted, but no confirmation text seen: check the screenshot');
+    break;
   }
   await browser.close();
 })().catch(async e => { await log('ERROR', e.message); process.exit(1); });
