@@ -186,7 +186,7 @@ addEventListener('resize', resize); resize();
 const loader = makeLoader();   // v43: meshopt-compressed models (world/gltf.js)
 const A = { weapons: {}, icons: {}, props: {}, enemies: null, rhea: null };
 async function loadAll() {
-  const ids = Object.keys(WEAPONS), total = ids.length + 2 + 8 + 5 + 1 + Object.keys(ENEMY_TYPES).length; let done = 0;   // weapons + props + kenney kits + arch kits + operative + enemies
+  const ids = Object.keys(WEAPONS), total = ids.length + 2 + 1 + Object.keys(ENEMY_TYPES).length; let done = 0;   // weapons + props + operative + enemies (v44: kits load in the background)
   const bar = $('lbar').firstElementChild, ldSent = {}, tick = () => { done++; const pc = Math.min(99, Math.round(done / total * 100)); bar.style.width = `${pc}%`; for (const m of [25, 50, 75]) if (pc >= m && !ldSent[m]) { ldSent[m] = 1; track('ld', { p: m }); } };
   const origLoad = loader.loadAsync.bind(loader);   // every GLB (weapons, kenney kits, arch, enemies, operative) advances the bar
   loader.loadAsync = async u => { try { return await origLoad(u); } finally { tick(); } };
@@ -195,10 +195,15 @@ async function loadAll() {
   A.ops = {};
   const wP = Promise.all(ids.map(async id => { const g = await loader.loadAsync(`models/weapons/${id}.glb`); A.weapons[id] = g.scene; vm.register(id, g.scene); }));
   const pP = Promise.all(['covenant_device', 'counter_charge'].map(async id => { const g = await loader.loadAsync(`models/props/${id}.glb`); g.scene.traverse(o => { if (o.isMesh) o.castShadow = true; }); A.props[id] = g.scene; }));
-  const kP = Promise.all([loadArch(loader), loadKenney(loader)]);   // Kenney architecture (world/kenney-arch.js) + map props (world/kenney.js); fall back to procedural boxes if missing
+  // Kenney architecture (world/kenney-arch.js) + map props (world/kenney.js); fall back to procedural boxes if missing
+  const kits = () => (A.kitsP ??= Promise.all([loadArch(loader), loadKenney(loader)]).catch(() => {}).then(() => { A.kits = true; }));
+  A.loadKits = kits;
   const oP = loadOperative(loadout.operative in OPERATIVES ? loadout.operative : 'rhea').then(g => { A.rhea = g; });
   const eP = wP.then(() => loadEnemyAssets(loader, A.weapons));
-  await Promise.all([wP, pP, kP, oP]); A.enemies = await eP;
+  // v44: the Kenney kits only dress the story maps, so they no longer hold up boot (first launch is a Deathmatch arena).
+  // They start downloading at the end of boot; a story map waits for them (startMissionNow). Tests keep them synchronous.
+  if (TEST) await kits();
+  await Promise.all([wP, pP, oP]); A.enemies = await eP;
   loader.loadAsync = origLoad; bar.style.width = '100%';
   for (const id of ids) A.icons[id] = renderIcon(A.weapons[id]);
   for (const m of Object.values(vm.models)) { toonify(m.scene); outline(m.scene, { thick: 0.0035 }); }
@@ -1550,6 +1555,10 @@ function startMissionNow(idx, opts) {
   if (opts.part === undefined && !opts.mode && !TEST) opts = { ...opts, part: partOf(idx) };   // resume at the saved part
   if (trialWeapon && !opts.primary) { opts = { ...opts, primary: trialWeapon }; track('trial', { k: 'use', w: trialWeapon }); trialWeapon = null; }
   const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice(), part: opts.part, dmMap: opts.dmMap };
+  if (o.dmMap == null && !A.kits) {                                               // v44: a story map needs the Kenney kits (still downloading in the background)
+    let el = $('dmLoad'); if (!el) { el = document.createElement('div'); el.id = 'dmLoad'; document.body.append(el); } el.textContent = 'LOADING MAP…';
+    A.loadKits().then(() => { $('dmLoad')?.remove(); startMissionNow(idx, opts); }); return;
+  }
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
   if (lobbyRoom) lobbyRoom.on = false;
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
@@ -2387,7 +2396,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 43, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 44, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
@@ -2399,6 +2408,7 @@ function lobbyModes() {                                                         
   const firstRun = !TEST && !Q.has('brief') && !Q.has('onboard') && progress === 0 && !onboardingDone() && !tutorialDone();
   playMode = (store.get('sz_mode', null) || RC.defaultMode) === 'dm' ? 'dm' : 'story';   // v15: Deathmatch is the default mode (remote switch)
   if (firstRun && playMode === 'dm' && RC.dmNewMaps && dmPreP) await Promise.race([dmPreP, new Promise(r => setTimeout(r, 8000))]);   // first launch goes straight into the arena, no lobby flash
+  setTimeout(() => A.loadKits(), firstRun ? 4000 : 0);                            // v44: story kits download after the first arena is in
   if (Q.has('brief')) openBriefing(); else if (!(firstRun && playMode === 'dm' && dmMapReady(DM_MAPS[DM.nextMap].id))) openLobby();
   if (Q.has('onboard')) startOnboarding(true);
   else if (firstRun) {                                                            // first launch: straight into the mission-1 drill, no menus (CG load time = page open -> gameplayStart)
