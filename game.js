@@ -708,7 +708,7 @@ function dmSetup() {
   for (const e of enemies) scene.remove(e.root); enemies = []; clearAllies();
   DM.tdm = teamsOn(); DM.score = { A: 0, B: 0 }; DM.hits = []; SS.ssA = null; document.body.classList.toggle('teams', DM.tdm);
   DM.target = dmGoal(dmLevel); DM.level = dmLevel;
-  { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; DM.graceN = n; DM.ease = Math.min(RC.dmEaseMax, RC.dmEaseStep * (Number(store.get('sz_dm_losses', 0)) || 0)); store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
+  { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; DM.graceN = n; DM.walk = DM.grace && RC.dmFirstFoe !== false ? 0 : -1; DM.ease = Math.min(RC.dmEaseMax, RC.dmEaseStep * (Number(store.get('sz_dm_losses', 0)) || 0)); store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
   Object.assign(DM, { rampage: false, alive0: 0, coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
   DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
   const names = CALLSIGNS.slice().sort(() => Math.random() - 0.5);
@@ -718,6 +718,27 @@ function dmSetup() {
   if (DM.tdm) { player.pos.copy(dmSpot([], null, null, false, -1)); player.vel.set(0, 0, 0); faceFoe(); }   // start on the blue side
   for (const r of DM.roster) dmBot(r);
   DM.boardDirty = true;
+}
+// v37 first 15 seconds: in a new player's first matches one red bot runs, unaware, to a spot in plain view ahead of
+// the player a few seconds in, so the first kill comes early. Bots still ignore the player during the calm window.
+function firstFoe(dt) {
+  const W2 = DM.walk;
+  if (W2 === 0) {
+    if (elapsed < 3 || !player.alive) return;
+    const eye = _spE.copy(player.pos); eye.y += CFG.eye; let spot = null;
+    for (const d of [13, 10, 7]) { _spH.set(eye.x - Math.sin(player.yaw) * d, eye.y, eye.z - Math.cos(player.yaw) * d);
+      if (!world.lineClear(eye, _spH)) continue; const n = world.nearestNode(_spH); if (!n) continue;
+      _spG.copy(n.pos); _spG.y += 1.4; if (Math.abs(n.pos.y - player.pos.y) < 1.5 && world.lineClear(eye, _spG)) { spot = n.pos.clone(); break; } }
+    let best = null, bd = Infinity;
+    if (spot) for (const e of enemies) { if (!e.alive || e.T.static || e.type === 'sniper') continue; const d = e.pos.distanceToSquared(spot); if (d < bd && d > 16) { bd = d; best = e; } }
+    if (!best || bd > 40 * 40) { DM.walk = -1; DM.walkLog = { why: spot ? 'nobot' : 'nospot' }; return; }
+    best.task = { pos: spot, t: 0, firstFoe: 1, warned: true }; best.state = 'patrol'; best.target = null;
+    DM.walk = { e: best, spot, t: 0 }; track('dm', { k: 'firstFoe', d: Math.round(Math.sqrt(bd)) });
+    return;
+  }
+  const w = W2, e = w.e; w.t += dt;
+  // arrived, hurt, or 12 s gone: it becomes a normal bot again, patrolling where the player can see it
+  if (!e.alive || e.lastHurtT < 0.3 || w.t > 12 || e.pos.distanceTo(w.spot) < 1.6) { DM.walkLog = { t: +w.t.toFixed(1), why: !e.alive ? 'dead' : e.lastHurtT < 0.3 ? 'hurt' : w.t > 12 ? 'timeout' : 'arrived' }; if (e.task?.firstFoe) e.task = null; e.post = w.spot; e.path = null; DM.walk = -1; }
 }
 function faceFoe() {                                                              // (re)spawn looking toward the enemy side / centre, not into a wall
   const T = map.teamSpawns, b = map.bounds, t = DM.tdm && T ? T.B : V((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
@@ -753,6 +774,7 @@ function dmTick(dt) {
   { const quiet = elapsed - Math.max(DM.lastK, DM.alive0 || 0);                 // stalling: no kill for a while -> the bots go on a rampage
     if (!DM.rampage && quiet > RC.dmStall * (DM.grace ? 1.5 : 1)) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
     if (DM.rampage) { director.set(director.threat + 0.01 * dt * 10); if (Math.random() < dt * 0.8) for (const e of enemies) if (e.alive && e.state !== 'combat') { e.alert(player.pos, 1); e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } } }
+  if (DM.walk != null && DM.walk !== -1) firstFoe(dt);
   if (RC.dmInfiniteAmmo) for (const id of W.slots) { const s = W.state[id]; if (s && s.reserve < 999) s.reserve = 999; }   // reloads never run dry
   if (DM.uavT > 0) for (const e of enemies) if (e.alive) e.revealT = 0.5;
   if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
@@ -1795,10 +1817,11 @@ function lockHint() {                                                           
   if (!running || touch || TEST || document.pointerLockElement || matchOver) return;
   track('lock', { k: 'hint' });
   running = false; paused = true; mouse.l = false; $('clickGo').classList.add('show'); crazy.gameplay(false);
+  const cc = $('ctlCard'); if (cc?.className === 'show') { cc.className = ''; clearTimeout(controlsCard.t); controlsCard.pending = true; }   // v37: the controls card waits for the click instead of fading unseen
 }
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
 document.addEventListener('pointerlockerror', () => { track('lock', { k: 'err' }); setTimeout(lockHint, 50); });
-$('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
+$('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); if (controlsCard.pending) { controlsCard.pending = false; controlsCard(); } e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { music.pause(false); $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
@@ -2165,7 +2188,7 @@ function frame(now) {
 }
 
 // ---------- test / debug API ----------
-window.__game = { RC, G, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
+window.__game = { RC, G, get dmWalk() { return DM.walkLog || (DM.walk && DM.walk.e ? { walking: +DM.walk.t.toFixed(1), dist: +DM.walk.e.pos.distanceTo(DM.walk.spot).toFixed(1) } : { walk: DM.walk, grace: DM.grace }); }, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
   errors, get ready() { return !!A.enemies; }, MISSIONS, WEAPONS, ABILITIES,
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
   start: (i, o = {}) => startMission(i, o), openBriefing, openLobby, openShop, openPass, openProfile, META, doSpray, detonateBarrel, revive,
@@ -2300,7 +2323,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 36, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 37, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
