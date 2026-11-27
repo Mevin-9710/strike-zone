@@ -12,6 +12,9 @@
 //   node tools/cg_upload.mjs metrics [--json f]    # Basic Launch score per platform + last 7 days (read-only)
 //   node tools/cg_upload.mjs upload [dir] [--id X] # upload files, attach them as a new build (draft)
 //        --dry  upload files but do not attach them   (sending for review stays a portal click for now)
+//   node tools/cg_upload.mjs art-status [--json f]  # current + pending cover art versions (read-only)
+//   node tools/cg_upload.mjs art [dir] [--dry]     # upload dir/cover_16x9.png, cover_2x3.png, cover_1x1.png as new
+//        cover art (the portal's Art tab "Save"); keeps the published preview videos. On 27 Nov the new art was published instantly (no review).
 // Defaults: dir=dist, --id from CG_SUBMISSION_ID or the submission named "Strike Zone".
 import { appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
@@ -203,6 +206,80 @@ async function metrics(me) {
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, md + '\n');
 }
 
+// ---------- cover art (portal "Art" tab, v2.137): images go to POST /upload (multipart), then
+// developerSubmissionUpdateArt({id, gameCovers:[{size, uploadedFile:{uploadId,path,size}}], gameVideos}).
+// The portal re-sends the published videos' original paths when only covers change, so we do the same.
+const ART_Q = `query($id: String!) { me { id submission(id: $id) { id gameName hasPendingArtUpdate artworkVersions {
+  id status isVariant createdAt updatedAt
+  covers { cover16x9 { ...C } cover2x3 { ...C } cover1x1 { ...C } }
+  videos { landscape { original thumbnail } portrait { original thumbnail } }
+  artFeedback { text createdAt authorName } } } } }
+  fragment C on ArtworkCover { path uploadId size temporaryUrl }`;
+const COVERS = { '16x9': [1920, 1080], '2x3': [800, 1200], '1x1': [800, 800] };
+function pngSize(buf) {   // width/height from the IHDR chunk (JPEG: from the SOF marker)
+  if (buf.readUInt32BE(0) === 0x89504e47) return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20), alpha: [4, 6].includes(buf[25]) };
+  for (let i = 2; i < buf.length - 9;) { if (buf[i] !== 0xff) { i++; continue; } const m = buf[i + 1], len = buf.readUInt16BE(i + 2);
+    if (m >= 0xc0 && m <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(m)) return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7), alpha: false }; i += 2 + len; }
+  throw new Error('not a png/jpeg');
+}
+async function artVersions(id) { return (await gql(ART_Q, { id }, 'read artwork')).me.submission; }
+async function artStatus(me) {
+  const id = subId(me); const sub = await artVersions(id);
+  const lines = [`## ${sub.gameName}: cover art`, '', `pending art update: ${sub.hasPendingArtUpdate}`, ''];
+  for (const v of sub.artworkVersions) {
+    lines.push(`- ${v.status}${v.isVariant ? ' (variant)' : ''} ${v.id} created ${String(v.createdAt).slice(0, 16)}`);
+    for (const k of ['cover16x9', 'cover2x3', 'cover1x1']) if (v.covers?.[k]) lines.push(`  - ${k}: ${v.covers[k].path} (${v.covers[k].size ?? '?'} B)`);
+    for (const f of v.artFeedback || []) lines.push(`  - feedback (${f.authorName}): ${f.text}`);
+  }
+  const md = lines.join('\n'); console.log(md);
+  if (opt('--json')) await writeFile(opt('--json'), JSON.stringify(sub, null, 2));
+  if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, md + '\n');
+}
+async function uploadImage(file, name) {
+  const body = new FormData(); body.append('file', new Blob([await readFile(file)], { type: name.endsWith('.png') ? 'image/png' : 'image/jpeg' }), name);
+  const r = await fetch(`${GRAPH}/upload?fileName=${encodeURIComponent(name)}`, { method: 'POST', body, headers: { Authorization: `Bearer ${await token()}` } });
+  const text = await r.text(); if (r.status !== 200) throw new Error(`upload ${name}: ${r.status} ${text.slice(0, 300)}`);
+  const j = JSON.parse(text); const u = Array.isArray(j) ? j[0] : j;
+  if (!u?.uploadId) throw new Error(`upload ${name}: no uploadId in ${text.slice(0, 200)}`);
+  return u;
+}
+async function art(me) {
+  const id = subId(me);
+  const dir = args[1] && !args[1].startsWith('--') ? args[1] : 'media/covers-v2';
+  const files = {};
+  for (const [k, [w, h]] of Object.entries(COVERS)) {
+    const f = [join(dir, `cover_${k}.png`), join(dir, `cover_${k}.jpg`)];
+    let path = null; for (const x of f) { try { await stat(x); path = x; break; } catch {} }
+    if (!path) throw new Error(`missing ${f[0]}`);
+    const buf = await readFile(path), d = pngSize(buf);
+    if (d.w !== w || d.h !== h) throw new Error(`${path} is ${d.w}x${d.h}, portal needs exactly ${w}x${h}`);
+    if (d.alpha) throw new Error(`${path} has an alpha channel; the portal rejects transparent covers (save as RGB)`);
+    files[k] = { path, size: buf.length };
+  }
+  const sub = await artVersions(id);
+  const pub = sub.artworkVersions.find((v) => v.status === 'PUBLISHED' && !v.isVariant) || sub.artworkVersions.find((v) => v.status === 'PUBLISHED');
+  console.log(`submission ${id} "${sub.gameName}", pending art update: ${sub.hasPendingArtUpdate}, published art ${pub?.id || '-'}`);
+  if (sub.hasPendingArtUpdate && !flag('--force')) throw new Error('an art update is already waiting for review; pass --force to replace it');
+  const gameVideos = {
+    videoOriginal: pub?.videos?.landscape?.original ?? null, videoThumbnail: pub?.videos?.landscape?.original ?? null,
+    portraitVideoOriginal: pub?.videos?.portrait?.original ?? null, portraitVideoThumbnail: pub?.videos?.portrait?.original ?? null,
+  };
+  if (flag('--dry')) { console.log('dry run, would upload', JSON.stringify(files), 'videos kept', JSON.stringify(gameVideos)); return; }
+  const gameCovers = [];
+  const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  for (const [k, f] of Object.entries(files)) {
+    const name = `strike-zone-${k}-${stamp}${f.path.slice(-4)}`;
+    const u = await uploadImage(f.path, name);
+    console.log(`  uploaded ${k}: ${name} (${f.size} B) -> ${u.uploadId}`);
+    gameCovers.push({ size: k, uploadedFile: { uploadId: u.uploadId, path: name, size: f.size } });
+  }
+  const r = await gql(`mutation($input: DeveloperSubmissionUpdateArtInput!) { developerSubmissionUpdateArt(input: $input) { id hasPendingArtUpdate } }`,
+    { input: { id, gameCovers, gameVideos } }, 'save art', 1);
+  console.log(`art saved: ${r.developerSubmissionUpdateArt.hasPendingArtUpdate ? "waiting for CrazyGames art review" : "published right away (no review pending)"}`);
+  await artStatus(me);
+}
+const subId = (me) => opt('--id', process.env.CG_SUBMISSION_ID) || me.submissions.find((s) => /strike zone/i.test(s.gameName))?.id;
+
 async function main() {
   const me = (await gql(LIST, undefined, 'list submissions')).me;
   if (cmd === 'check') {
@@ -211,6 +288,8 @@ async function main() {
     return;
   }
   if (cmd === 'metrics') return metrics(me);
+  if (cmd === 'art-status') return artStatus(me);
+  if (cmd === 'art') return art(me);
   if (cmd !== 'upload') throw new Error('unknown command ' + cmd);
   const id = opt('--id', process.env.CG_SUBMISSION_ID)
     || me.submissions.find((s) => /strike zone/i.test(s.gameName))?.id;
