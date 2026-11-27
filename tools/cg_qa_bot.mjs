@@ -105,7 +105,16 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   // Continue in the QA tool opens the portal's qa-continue page in a new tab; the QA tab hands it the
   // measured results by postMessage, so the QA tab must stay open
   const qaTab = page;
-  const [cont] = await Promise.all([ctx.waitForEvent('page', { timeout: 30000 }), clickText(page, /^\s*continue\s*$/i, { timeout: 30000 })]);
+  // the crazygames.com cookie banner can cover the QA panel; answer it with the minimal choice ('Only Essential')
+  const consent = async () => { const b = page.locator('button:visible').filter({ hasText: /^\s*only essential\s*$/i }).first();
+    if (await b.isVisible().catch(() => false)) { await b.click().catch(() => {}); await log('cookie banner: Only Essential'); await page.waitForTimeout(1000); } };
+  await consent();
+  let cont = null;
+  for (let tries = 0; tries < 3 && !cont; tries++) {
+    if (tries) { await consent(); await log(`Continue opened no tab, retry ${tries}`); await shot(page, `qa_retry${tries}`); }
+    [cont] = await Promise.all([ctx.waitForEvent('page', { timeout: 30000 }).catch(() => null), clickText(page, /^\s*continue\s*$/i, { timeout: 30000 })]);
+  }
+  if (!cont) throw new Error('QA tool Continue never opened the qa-continue tab');
   page = cont; await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(6000); await shot(qaTab, 'qa_tool_done'); await shot(page, 'qa_continue');
   // walk the QA steps: Continue / Next until the checklist + notes + Submit page
   for (let step = 0; step < 6; step++) {

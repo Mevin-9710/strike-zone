@@ -222,3 +222,13 @@ body.touch #mmlabel{display:none}
 #endGift b{display:block;color:#ffcf3a;font-weight:800;letter-spacing:.14em;font-size:15px}
 #endGift small{display:block;color:#e8edf0;font-size:13px}
 @media (max-height:420px){#endGift{margin:4px auto 0;padding:3px 10px}#endGift img{width:72px;height:27px}#endGift b{font-size:13px}#endGift small{font-size:11px}}
+
+/* v36 (cryzen study item 6): Tab board with solid team-colour headers, a navy centre panel, your row in cyan */
+#tabBoard .bcol{background:rgba(30,35,51,.88);border:0;border-radius:6px;overflow:hidden}
+#tabBoard .bcol.ta .bt{background:#2f6bff;border:0}#tabBoard .bcol.tb .bt{background:#e3141b;border:0}
+#tabBoard .bcol.ta .bt b,#tabBoard .bcol.tb .bt b{color:#fff}
+#tabBoard .br.me{background:rgba(54,214,240,.22);color:#36d6f0;box-shadow:inset 3px 0 0 #36d6f0}
+#tabBoard .bmid{background:rgba(30,35,51,.88);border-radius:6px;padding:calc(var(--u)*.9) calc(var(--u)*1.2);display:flex;flex-direction:column;gap:4px;text-shadow:none;min-width:calc(var(--u)*11)}
+#tabBoard .bmid em{font-style:italic;color:#ffd23b;font-size:calc(var(--u)*.95)}
+#tabBoard .bmid span{color:#c9d2e3;font-size:calc(var(--u)*.85)}
+#tabBoard .bmid small{color:#fff;font-size:calc(var(--u)*2.4)}

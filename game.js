@@ -2225,7 +2225,7 @@ function boardHTML(compact) {
   const head = '<div class="br bh"><span></span><span>PLAYER</span><b>K</b><i>D</i></div>';
   if (!DM.tdm) return `<div class="bcol"><div class="bt">DEATHMATCH · FIRST TO ${dmTarget()}</div>${head}${rows.map(row).join('')}</div>`;
   const col = (ally, name, sc) => `<div class="bcol ${ally ? 'ta' : 'tb'}"><div class="bt"><span>${name}</span><b>${sc}</b></div>${compact ? '' : head}${rows.filter(r => r.ally === ally).map(row).join('')}</div>`;
-  return col(true, 'BLUE TEAM', DM.score.A) + (compact ? '' : `<div class="bmid">FIRST TO ${dmTarget()}<small>${mmss(clock)}</small></div>`) + col(false, 'RED TEAM', DM.score.B);
+  return col(true, 'BLUE TEAM', DM.score.A) + (compact ? '' : `<div class="bmid"><em>TEAM DEATHMATCH</em><span>${(mission?.title || '').toUpperCase()}</span><small>${mmss(clock)}</small><span>FIRST TO ${dmTarget()}</span></div>`) + col(false, 'RED TEAM', DM.score.B);
 }
 function showBoard(on) {
   const el = $('tabBoard'); if (!el) return;
@@ -2300,7 +2300,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 35, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 36, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
