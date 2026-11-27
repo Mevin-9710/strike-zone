@@ -50,7 +50,7 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   const s = await session(); await log(`auth ok (${s.uid})`);
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
+  let page = await ctx.newPage();
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
   page.on('console', m => { if (m.type() === 'error') log('console', m.text().slice(0, 200)); });
   page.on('response', r => { if (r.status() >= 400) log('http', r.status(), r.url().slice(0, 160)); });
@@ -79,7 +79,10 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
 
   await clickText(page, /game versions/i); await page.waitForTimeout(3000); await shot(page, 'versions');
   // Version History: the newest draft row (top) has 'Submit update', which opens the QA flow
-  await clickText(page, /^\s*submit update\s*$/i); await page.waitForTimeout(4000); await shot(page, 'submit_update');
+  // 'Submit update' opens the QA tool in a new tab
+  const [qa] = await Promise.all([ctx.waitForEvent('page', { timeout: 30000 }), clickText(page, /^\s*submit update\s*$/i)]);
+  page = qa; page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
+  await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(3000); await shot(page, 'qa_tab');
   if (await page.locator('button:visible, a:visible').filter({ hasText: /go to qa/i }).count()) await clickText(page, /go to qa/i);
   await page.waitForTimeout(3000); await shot(page, 'qa_open');
 
