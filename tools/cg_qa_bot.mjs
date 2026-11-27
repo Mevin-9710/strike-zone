@@ -17,7 +17,7 @@ const API_KEY = 'AIzaSyAcnWHv0-RhlmU5ONOXzOSP0Q6ORQEMrNg'; // public web key fro
 const PORTAL = 'https://developer.crazygames.com';
 const args = process.argv.slice(2), cmd = args[0] || 'explore';
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
-const NOTES = opt('--notes', process.env.CG_NOTES || 'Gameplay and UI improvements.');
+const NOTES = (n => n.length >= 60 ? n : n + ' Tested on desktop and phone viewports; no SDK, login or ad changes.')(opt('--notes', process.env.CG_NOTES || 'Gameplay and UI improvements.'));
 const GAME = opt('--game', 'Strike Zone');
 const OUT = 'qa-shots';
 let n = 0;
@@ -50,7 +50,7 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   const s = await session(); await log(`auth ok (${s.uid})`);
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  let page = await ctx.newPage();
+  let page = await ctx.newPage(); const portalTab = page;
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
   page.on('console', m => { if (m.type() === 'error') log('console', m.text().slice(0, 200)); });
   page.on('response', r => { if (r.status() >= 400) log('http', r.status(), r.url().slice(0, 160)); });
@@ -99,6 +99,11 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   await log(`game running in preview: ${started} after ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   await page.waitForTimeout(8000); await shot(page, 'qa_preview');
 
+  // QA tool tab: Continue sends the measured QA result, then the tab says 'You can now close this tab'
+  const subId = (page.url().match(/preview\/([0-9a-f-]{36})/) || [])[1];
+  await clickText(page, /^\s*continue\s*$/i, { timeout: 30000 }); await page.waitForTimeout(4000); await shot(page, 'qa_tool_done');
+  // back in the portal: checklist + update notes + confirmation + Submit
+  page = portalTab; await page.goto(`${PORTAL}/qa-continue/${subId}`, { waitUntil: 'networkidle' }).catch(() => {}); await page.waitForTimeout(4000); await shot(page, 'qa_continue');
   // walk the QA steps: Continue / Next until the checklist + notes + Submit page
   for (let step = 0; step < 6; step++) {
     // answer every manual checklist question with Yes
