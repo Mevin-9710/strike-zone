@@ -13,8 +13,10 @@
 //   node tools/cg_upload.mjs upload [dir] [--id X] # upload files, attach them as a new build (draft)
 //        --dry  upload files but do not attach them   (sending for review stays a portal click for now)
 //   node tools/cg_upload.mjs art-status [--json f]  # current + pending cover art versions (read-only)
-//   node tools/cg_upload.mjs art [dir] [--dry]     # upload dir/cover_16x9.png, cover_2x3.png, cover_1x1.png as new
-//        cover art (the portal's Art tab "Save"); keeps the published preview videos. On 27 Nov the new art was published instantly (no review).
+//   node tools/cg_upload.mjs art [dir] [--dry] [--only covers|videos]
+//        upload dir/cover_16x9.png, cover_2x3.png, cover_1x1.png and/or video_landscape.mp4 (16:9 1080p) and
+//        video_portrait.mp4 (2:3, e.g. 1080x1620) as new art (the portal's Art tab "Save"). Whatever is missing
+//        is kept from the published art. On 27 Nov new art was published instantly (no review).
 // Defaults: dir=dist, --id from CG_SUBMISSION_ID or the submission named "Strike Zone".
 import { appendFile, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
@@ -236,42 +238,65 @@ async function artStatus(me) {
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, md + '\n');
 }
 async function uploadImage(file, name) {
-  const body = new FormData(); body.append('file', new Blob([await readFile(file)], { type: name.endsWith('.png') ? 'image/png' : 'image/jpeg' }), name);
+  const body = new FormData(); body.append('file', new Blob([await readFile(file)], { type: name.endsWith('.png') ? 'image/png' : name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg' }), name);
   const r = await fetch(`${GRAPH}/upload?fileName=${encodeURIComponent(name)}`, { method: 'POST', body, headers: { Authorization: `Bearer ${await token()}` } });
   const text = await r.text(); if (r.status !== 200) throw new Error(`upload ${name}: ${r.status} ${text.slice(0, 300)}`);
   const j = JSON.parse(text); const u = Array.isArray(j) ? j[0] : j;
   if (!u?.uploadId) throw new Error(`upload ${name}: no uploadId in ${text.slice(0, 200)}`);
   return u;
 }
+const VIDEO_BOX = { landscape: { width: 364, height: 208 }, portrait: { width: 233, height: 350 } };   // portal preview boxes (v2.137)
+async function fileIf(...c) { for (const x of c) { try { await stat(x); return x; } catch {} } return null; }
 async function art(me) {
-  const id = subId(me);
+  const id = subId(me), slug = me.submissions.find((s) => s.id === id)?.slug;
   const dir = args[1] && !args[1].startsWith('--') ? args[1] : 'media/covers-v2';
-  const files = {};
-  for (const [k, [w, h]] of Object.entries(COVERS)) {
-    const f = [join(dir, `cover_${k}.png`), join(dir, `cover_${k}.jpg`)];
-    let path = null; for (const x of f) { try { await stat(x); path = x; break; } catch {} }
-    if (!path) throw new Error(`missing ${f[0]}`);
+  const only = opt('--only', 'all');   // all | covers | videos
+  const files = {}, vids = {};
+  if (only !== 'videos') for (const [k, [w, h]] of Object.entries(COVERS)) {
+    const path = await fileIf(join(dir, `cover_${k}.png`), join(dir, `cover_${k}.jpg`));
+    if (!path) { if (only === 'covers') throw new Error(`missing ${join(dir, `cover_${k}.png`)}`); continue; }
     const buf = await readFile(path), d = pngSize(buf);
     if (d.w !== w || d.h !== h) throw new Error(`${path} is ${d.w}x${d.h}, portal needs exactly ${w}x${h}`);
     if (d.alpha) throw new Error(`${path} has an alpha channel; the portal rejects transparent covers (save as RGB)`);
     files[k] = { path, size: buf.length };
   }
+  if (only !== 'covers') for (const o of ['landscape', 'portrait']) {
+    const path = await fileIf(join(dir, `video_${o}.mp4`));
+    if (!path) continue;
+    const size = (await stat(path)).size; if (size > 50 * 1048576) throw new Error(`${path} is over 50 MB`);
+    vids[o] = { path, size };
+  }
+  if (!Object.keys(files).length && !Object.keys(vids).length) throw new Error(`nothing to upload in ${dir}`);
   const sub = await artVersions(id);
   const pub = sub.artworkVersions.find((v) => v.status === 'PUBLISHED' && !v.isVariant) || sub.artworkVersions.find((v) => v.status === 'PUBLISHED');
-  console.log(`submission ${id} "${sub.gameName}", pending art update: ${sub.hasPendingArtUpdate}, published art ${pub?.id || '-'}`);
+  console.log(`submission ${id} "${sub.gameName}" (${slug}), pending art update: ${sub.hasPendingArtUpdate}, published art ${pub?.id || '-'}`);
   if (sub.hasPendingArtUpdate && !flag('--force')) throw new Error('an art update is already waiting for review; pass --force to replace it');
+  // like the portal: anything not re-uploaded is resent from the published version
   const gameVideos = {
     videoOriginal: pub?.videos?.landscape?.original ?? null, videoThumbnail: pub?.videos?.landscape?.original ?? null,
     portraitVideoOriginal: pub?.videos?.portrait?.original ?? null, portraitVideoThumbnail: pub?.videos?.portrait?.original ?? null,
   };
-  if (flag('--dry')) { console.log('dry run, would upload', JSON.stringify(files), 'videos kept', JSON.stringify(gameVideos)); return; }
-  const gameCovers = [];
+  const keep = (k) => { const c = pub?.covers?.['cover' + k]; return c?.uploadId ? { size: k, uploadedFile: { uploadId: c.uploadId, path: c.path, size: c.size } } : null; };
+  if (flag('--dry')) { console.log('dry run, would upload', JSON.stringify({ covers: files, videos: vids }), 'current videos', JSON.stringify(gameVideos)); return; }
   const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  for (const [k, f] of Object.entries(files)) {
+  const gameCovers = [];
+  for (const k of Object.keys(COVERS)) {
+    const f = files[k];
+    if (!f) { const c = keep(k); if (c) gameCovers.push(c); continue; }
     const name = `strike-zone-${k}-${stamp}${f.path.slice(-4)}`;
     const u = await uploadImage(f.path, name);
-    console.log(`  uploaded ${k}: ${name} (${f.size} B) -> ${u.uploadId}`);
+    console.log(`  uploaded cover ${k}: ${name} (${f.size} B) -> ${u.uploadId}`);
     gameCovers.push({ size: k, uploadedFile: { uploadId: u.uploadId, path: name, size: f.size } });
+  }
+  for (const [o, f] of Object.entries(vids)) {
+    const name = `strike-zone-${o}-${stamp}.mp4`;
+    const u = await uploadImage(f.path, name);   // same multipart /upload endpoint the portal's video box uses
+    console.log(`  uploaded video ${o}: ${name} (${(f.size / 1048576).toFixed(1)} MB) -> ${u.uploadId}, converting...`);
+    const r = (await gql(`mutation($input: VideoThumbnailCreateInput!) { videoThumbnailCreate(input: $input) { thumbnail original } }`,
+      { input: { uploadId: u.uploadId, slug, ...VIDEO_BOX[o] } }, `convert ${o} video`, 2)).videoThumbnailCreate;
+    console.log(`  converted ${o}: ${r.original}`);
+    if (o === 'landscape') Object.assign(gameVideos, { videoOriginal: r.original, videoThumbnail: r.thumbnail });
+    else Object.assign(gameVideos, { portraitVideoOriginal: r.original, portraitVideoThumbnail: r.thumbnail });
   }
   const r = await gql(`mutation($input: DeveloperSubmissionUpdateArtInput!) { developerSubmissionUpdateArt(input: $input) { id hasPendingArtUpdate } }`,
     { input: { id, gameCovers, gameVideos } }, 'save art', 1);

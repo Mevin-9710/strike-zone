@@ -16,8 +16,16 @@ const get = async (u) => { const r = await fetch(u); if (!r.ok) throw new Error(
 const { version } = JSON.parse(await get('https://graph.crazygames.com/devportal-version'));
 const base = `https://builds.crazygames.com/devportal/v${version}/`;
 const main = await get(base + 'bundle.js');
-const chunks = [...new Set(main.match(/static\/js\/[\w-]+\.js/g) || [])];
-const all = main + (await Promise.all(chunks.map((c) => get(base + c).catch(() => '')))).join('\n');
+// chunks referenced by the bundle, plus the chunks those import (the art/video form lives two levels down)
+const seen = new Set(), texts = [];
+let next = [...new Set(main.match(/static\/js\/[\w-]+\.js/g) || [])].map((c) => c.split('/').pop());
+for (let depth = 0; depth < 3 && next.length; depth++) {
+  next = next.filter((c) => !seen.has(c)); next.forEach((c) => seen.add(c));
+  const got = await Promise.all(next.map((c) => get(base + 'static/js/' + c).catch(() => '')));
+  texts.push(...got);
+  next = [...new Set(got.join('\n').match(/["'`]\.\/[\w-]+\.js["'`]/g) || [])].map((x) => x.slice(3, -1));
+}
+const all = main + texts.join('\n');
 
 const inputFields = (name, kind = 'INPUT_OBJECT') => {
   const i = all.indexOf(`"kind":"${kind}","name":"${name}","description"`);
@@ -65,6 +73,7 @@ const fp = {
     DeveloperSubmissionUpdateArtInput: inputFields('DeveloperSubmissionUpdateArtInput'),
     GameCoverWithUploadedFileInput: inputFields('GameCoverWithUploadedFileInput'),
     ArtVideoInput: inputFields('ArtVideoInput'),
+    videoThumbnailCreate: has('mutation createVideoThumbnail($input: VideoThumbnailCreateInput!)') || has('videoThumbnailCreate(input:'),
     coverSizes: has('landscape (1920x1080), portrait (800x1200), and square (800x800)'),
   },
 };
