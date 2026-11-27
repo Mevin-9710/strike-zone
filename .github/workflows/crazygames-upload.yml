@@ -6,10 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check = login + list submissions only; metrics = read Basic Launch score + daily stats; dry = upload files but do not attach; upload = upload and attach as new build'
+        description: 'check = login + list submissions; metrics = Basic Launch score + daily stats; dry = upload files, do not attach; upload = upload + attach as new build; qa-explore = open the portal QA tool on the newest build, screenshot each step, no submit; qa-submit = run the QA tool and submit; ship = upload, then qa-submit'
         type: choice
-        options: [check, metrics, dry, upload]
+        options: [check, metrics, dry, upload, qa-explore, qa-submit, ship]
         default: check
+      notes:
+        description: 'Update notes for qa-submit / ship'
+        type: string
+        default: 'Gameplay and UI improvements.'
 jobs:
   upload:
     runs-on: ubuntu-latest
@@ -23,7 +27,7 @@ jobs:
       - name: Portal flow unchanged?
         run: node tools/cg_portal_check.mjs
       - name: Build dist
-        if: inputs.mode == 'dry' || inputs.mode == 'upload'
+        if: inputs.mode == 'dry' || inputs.mode == 'upload' || inputs.mode == 'ship'
         run: bash tools/build_dist.sh
       - name: CrazyGames ${{ inputs.mode }}
         env:
@@ -34,8 +38,26 @@ jobs:
             check)  node tools/cg_upload.mjs check ;;
             metrics) node tools/cg_upload.mjs metrics --json cg-metrics.json ;;
             dry)    node tools/cg_upload.mjs upload dist --dry ;;
-            upload) node tools/cg_upload.mjs upload dist ;;
+            upload|ship) node tools/cg_upload.mjs upload dist ;;
+            *) echo "no upload step for ${{ inputs.mode }}" ;;
           esac
+      - name: Install headless browser
+        if: startsWith(inputs.mode, 'qa') || inputs.mode == 'ship'
+        run: |
+          npm i --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+      - name: Portal QA tool + submit
+        if: startsWith(inputs.mode, 'qa') || inputs.mode == 'ship'
+        env:
+          CG_REFRESH_TOKEN: ${{ secrets.CG_REFRESH_TOKEN }}
+          CG_NOTES: ${{ inputs.notes }}
+        run: node tools/cg_qa_bot.mjs ${{ inputs.mode == 'qa-explore' && 'explore' || 'submit' }}
+      - name: Save QA screenshots
+        if: always() && (startsWith(inputs.mode, 'qa') || inputs.mode == 'ship')
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-shots
+          path: qa-shots
       - name: Save metrics
         if: inputs.mode == 'metrics'
         uses: actions/upload-artifact@v4
