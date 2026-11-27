@@ -1539,7 +1539,7 @@ function startMissionNow(idx, opts) {
   if (!tutorial) crazy.armAds();
   firstContactT = mode || tutorial || TEST ? -1 : RC.contactAfter;
   if (!TEST && !mode) invT = Math.max(invT, RC.startGrace);                          // a few safe seconds to get bearings                // no contact yet? a squad comes looking for you                                          // mission 2: force a first fight within ~15 s
-  if (mode !== 'survival') radioOnce('start'); musicFinal = false; sfx.reset(); music.start(); sfx.spawn(); ambience.start(mission.id.startsWith('dm_') ? mission.id.slice(3) : 'story'); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? (DM.tdm ? 'TEAM DEATHMATCH · GO!' : 'DEATHMATCH · GO!') : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
+  if (mode !== 'survival') radioOnce('start'); musicFinal = false; sfx.reset(); music.start(); sfx.spawn(); ambience.start(mission.id.startsWith('dm_') ? mission.id.slice(3) : 'story'); startAnn = { txt: mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? (DM.tdm ? 'TEAM DEATHMATCH · GO!' : 'DEATHMATCH · GO!') : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', at: performance.now() }; FX.announce(startAnn.txt, 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* iOS: no fullscreen API */ } }
   else if (!TEST) lockMouse();
   if (returnGifts && mode === 'dm') {                                               // v31: back on a new day: the gift is equipped right away
@@ -1813,15 +1813,18 @@ document.addEventListener('mousemove', e => {
 // Pointer lock needs a user gesture: after an auto-start (next part / mission) the request is refused, so show a
 // "click to continue" card instead of a dead mouse; the click itself grabs the mouse.
 function lockMouse() { try { const r = canvas.requestPointerLock?.(); r?.catch?.(() => setTimeout(lockHint, 50)); } catch (e) { /* refused */ } setTimeout(lockHint, 250); }
+let startAnn = null;   // v38: the match-start banner is held while the desktop PLAY gate is up, then replayed after the click
 function lockHint() {                                                           // lock refused while playing: freeze + ask for a click
   if (!running || touch || TEST || document.pointerLockElement || matchOver) return;
   track('lock', { k: 'hint' });
   running = false; paused = true; mouse.l = false; $('clickGo').classList.add('show'); crazy.gameplay(false);
-  const cc = $('ctlCard'); if (cc?.className === 'show') { cc.className = ''; clearTimeout(controlsCard.t); controlsCard.pending = true; }   // v37: the controls card waits for the click instead of fading unseen
+  const cc = $('ctlCard'); if (cc?.className === 'show') { cc.className = ''; clearTimeout(controlsCard.t); controlsCard.pending = true; }
+  if (startAnn && performance.now() - startAnn.at < 3000) { FX.announce('', 'info'); startAnn.pending = true; }   // v37: the controls card waits for the click instead of fading unseen
 }
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement) pause(); });
+document.addEventListener('visibilitychange', () => { if ($('clickGo').classList.contains('show')) track('lock', { k: 'vis', h: document.hidden ? 1 : 0 }); });   // v38: do gate leavers tab away?
 document.addEventListener('pointerlockerror', () => { track('lock', { k: 'err' }); setTimeout(lockHint, 50); });
-$('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); if (controlsCard.pending) { controlsCard.pending = false; controlsCard(); } e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
+$('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); if (controlsCard.pending) { controlsCard.pending = false; controlsCard(); } if (startAnn?.pending) { startAnn.pending = false; FX.announce(startAnn.txt, 'start'); } e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
 $('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
 $('resume').onclick = () => { music.pause(false); $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
@@ -2323,7 +2326,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 37, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 38, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
