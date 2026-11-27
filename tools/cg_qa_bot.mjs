@@ -77,7 +77,13 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   await clickText(page, new RegExp(GAME, 'i')).catch(async () => { await page.getByText(GAME, { exact: false }).first().click(); await log('click game text'); });
   await page.waitForTimeout(4000); await shot(page, 'submission');
 
-  await clickText(page, /game versions/i); await page.waitForTimeout(3000); await shot(page, 'versions');
+  // the tab can be slow to render right after an upload (27 Nov: two ship runs timed out here): fall back to the tab URL
+  await clickText(page, /game versions/i, { timeout: 30000 }).catch(async () => {
+    const id = (page.url().match(/games\/([0-9a-f-]{36})/) || [])[1]; if (!id) throw new Error('game versions tab not found and no game id in ' + page.url());
+    await log('game versions tab not found, opening ?tab=versions directly');
+    await page.goto(`${PORTAL}/games/${id}?tab=versions`, { waitUntil: 'networkidle' }).catch(() => {}); await page.waitForTimeout(4000);
+  });
+  await page.waitForTimeout(3000); await shot(page, 'versions');
   // Version History: the newest draft row (top) has 'Submit update', which opens the QA flow
   // 'Submit update' opens the QA tool in a new tab
   const [qa] = await Promise.all([ctx.waitForEvent('page', { timeout: 30000 }), clickText(page, /^\s*submit update\s*$/i)]);
