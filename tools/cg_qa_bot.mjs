@@ -109,10 +109,21 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   page = cont; await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(6000); await shot(qaTab, 'qa_tool_done'); await shot(page, 'qa_continue');
   // walk the QA steps: Continue / Next until the checklist + notes + Submit page
   for (let step = 0; step < 6; step++) {
-    // answer every manual checklist question with Yes
-    const yes = page.getByRole('radio', { name: /^yes$/i }).or(page.getByRole('button', { name: /^yes$/i }));
-    const ny = await yes.count(); for (let i = 0; i < ny; i++) await yes.nth(i).click().catch(() => {});
-    if (ny) await log(`answered yes x${ny}`);
+    // answer every manual checklist question. Default 'Yes' (Mevin's standing answer); a question whose
+    // honest answer differs is listed in ANSWERS (label regex -> button text)
+    const ANSWERS = [[/terms\s*&\s*conditions|privacy policy/i, process.env.CG_QA_PRIVACY || 'N/A']];
+    const done = await page.evaluate((answers) => {
+      const out = []; const yesBtns = [...document.querySelectorAll('button, [role=button], div, span')].filter(e => e.childElementCount === 0 && e.textContent.trim() === 'Yes' && e.offsetParent !== null);
+      for (const y of yesBtns) {
+        let row = y; for (let i = 0; i < 6 && row.parentElement; i++) { row = row.parentElement; if (row.innerText.replace(/Yes|No|N\/A/g, '').trim().length > 8) break; }
+        const label = row.innerText.split('\n')[0].trim(); let want = 'Yes';
+        for (const [re, a] of answers) if (new RegExp(re, 'i').test(row.innerText)) want = a;
+        const target = want === 'Yes' ? y : [...row.querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim() === want);
+        if (target) { (target.closest('button') || target).click(); out.push(`${label.slice(0, 60)} -> ${want}`); }
+      }
+      return out;
+    }, ANSWERS.map(([re, a]) => [re.source, a]));
+    if (done.length) await log('answered:\n   ' + done.join('\n   '));
     const notes = page.locator('textarea').first();
     if (await notes.isVisible().catch(() => false) && !(await notes.inputValue())) { await notes.fill(NOTES); await log('filled notes'); }
     const boxes = page.getByRole('checkbox'); const nb = await boxes.count();
@@ -125,8 +136,9 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
       if (await submit.isDisabled()) throw new Error('Submit is disabled: check the last screenshot');
       await submit.click(); await page.waitForTimeout(6000); await shot(page, 'submitted'); await log('SUBMITTED'); break;
     }
-    const next = page.getByRole('button', { name: /^(continue|next)/i }).first();
+    const next = page.locator('button:visible').filter({ hasText: /^\s*(continue|next)\b/i }).first();
     if (!(await next.isVisible().catch(() => false))) { await log('no Continue/Next/Submit button found'); break; }
+    if (await next.isDisabled()) { await log('Continue is disabled: an answer is missing, see screenshot'); break; }
     await next.click(); await log('click continue'); await page.waitForTimeout(3000);
   }
   await browser.close();
