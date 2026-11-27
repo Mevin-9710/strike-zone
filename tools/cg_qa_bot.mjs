@@ -40,7 +40,7 @@ async function shot(page, name) {
 
 // click the first visible element whose text matches (button-like first, then any)
 async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
-  const loc = page.getByRole('button', { name: re, exact }).or(page.getByRole('link', { name: re, exact })).first();
+  const loc = page.locator('button, a, [role=tab], [role=button]').filter({ hasText: re }).filter({ visible: true }).first();
   await loc.waitFor({ state: 'visible', timeout }); await loc.click(); await log(`click ${re}`);
 }
 
