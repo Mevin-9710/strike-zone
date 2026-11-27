@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'check = login + list submissions; metrics = Basic Launch score + daily stats; dry = upload files, do not attach; upload = upload + attach as new build; qa-explore = open the portal QA tool on the newest build, screenshot each step, no submit; qa-submit = run the QA tool and submit; ship = upload, then qa-submit'
+        description: 'check = login + list submissions; metrics = Basic Launch score + daily stats; dry = upload files, do not attach; upload = upload + attach as new build; qa-explore = open the portal QA tool on the newest build, screenshot each step, no submit; qa-submit = run the QA tool and submit; ship = upload, then qa-submit; art-status = list cover art versions (read-only); art-dry = check the new covers, no upload; art = upload media/covers-v2 as new cover art (CrazyGames reviews it, game builds unaffected)'
         type: choice
-        options: [check, metrics, dry, upload, qa-explore, qa-submit, ship]
+        options: [check, metrics, dry, upload, qa-explore, qa-submit, ship, art-status, art-dry, art]
         default: check
       notes:
         description: 'Update notes for qa-submit / ship'
@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: 22
       - name: Portal flow unchanged?
-        run: node tools/cg_portal_check.mjs
+        run: node tools/cg_portal_check.mjs ${{ startsWith(inputs.mode, 'art') && '--art' || '' }}
       - name: Build dist
         if: inputs.mode == 'dry' || inputs.mode == 'upload' || inputs.mode == 'ship'
         run: bash tools/build_dist.sh
@@ -39,6 +39,9 @@ jobs:
             metrics) node tools/cg_upload.mjs metrics --json cg-metrics.json ;;
             dry)    node tools/cg_upload.mjs upload dist --dry ;;
             upload|ship) node tools/cg_upload.mjs upload dist ;;
+            art-status) node tools/cg_upload.mjs art-status --json cg-art.json ;;
+            art-dry) node tools/cg_upload.mjs art media/covers-v2 --dry ;;
+            art)    node tools/cg_upload.mjs art media/covers-v2 ;;
             *) echo "no upload step for ${{ inputs.mode }}" ;;
           esac
       - name: Install headless browser
@@ -64,3 +67,10 @@ jobs:
         with:
           name: cg-metrics
           path: cg-metrics.json
+      - name: Save art status
+        if: startsWith(inputs.mode, 'art')
+        uses: actions/upload-artifact@v4
+        with:
+          name: cg-art
+          path: cg-art.json
+          if-no-files-found: ignore

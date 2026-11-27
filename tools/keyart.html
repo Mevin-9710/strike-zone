@@ -1,0 +1,191 @@
+<!doctype html><meta charset=utf8>
+<title>keyart</title>
+<style>
+@font-face{font-family:Oswald;src:url(../fonts/Oswald.ttf)}
+html,body{margin:0;background:#000;overflow:hidden}
+#wrap{position:relative;width:100vw;height:100vh;overflow:hidden}
+#wrap canvas{position:absolute;inset:0;display:block}
+</style>
+<div id=wrap></div>
+<script type="importmap">{"imports":{"three":"../lib/three.module.js"}}</script>
+<script type="module">
+// Key art studio: renders the CrazyGames covers from the real game assets (operatives, guns, DM arena).
+// Three layers: blurred arena backdrop (own camera) -> sharp characters + FX (transparent) -> 2D grade + title.
+//   ?fmt=16x9|2x3|1x1  &map=lantern|belltower|neon|sandkeep  &notitle=1
+// Shoot all three with tools/keyart_shoot.cjs (supersampled), sizes 1920x1080 / 800x1200 / 800x800.
+import * as THREE from 'three';
+import { GLTFLoader } from '../lib/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from '../lib/addons/libs/meshopt_decoder.module.js';   // v43: models are meshopt-compressed
+import * as SU from '../lib/addons/utils/SkeletonUtils.js';
+import { calibrateGun } from '../game/enemies.js';
+import { toonify, outline } from '../game/toon.js';
+
+const q = new URLSearchParams(location.search);
+const FMT = q.get('fmt') || '16x9', MAP = q.get('map') || 'lantern';
+const W = innerWidth, H = innerHeight, DPR = devicePixelRatio;
+const wrap = document.getElementById('wrap');
+const R = (alpha) => { const r = new THREE.WebGLRenderer({ antialias: true, alpha, preserveDrawingBuffer: true }); r.setPixelRatio(DPR); r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace; wrap.append(r.domElement); return r; };
+const num = (k, d) => q.has(k) ? +q.get(k) : d;
+
+// ================= layout per format (stage space: camera looks down -z, hero left, reds right)
+const LAY = {
+  '16x9': { fov: 30, cam: [0, 1.3, 5.1], look: [0.55, 1.33, 0], fl: 0.6,
+    hero: { n: 'rhea', pos: [-0.42, 0, 2.15], yaw: 0.6 },
+    allies: [],
+    reds: [{ n: 'enemy_guard', pos: [2.25, 0, -1.4], yaw: -0.95, t: 0.15 }, { n: 'enemy_heavy', pos: [3.9, 0, -3.9], yaw: -0.8, gun: 'grinder_lmg', t: 0.1 }, { n: 'enemy_commander', pos: [5.6, 0, -7.5], yaw: -0.7, t: 0.3, gun: 'warden_br' }],
+    bg: { cam: [8, 6, 26], look: [4, 3, 0] }, title: { y: 0.875, size: 0.2, lines: ['STRIKE ZONE'], x: 0.62 } },
+  '2x3': { fov: 40, cam: [0.15, 1.33, 4.3], look: [0.25, 1.62, 0], fl: 0.55,
+    hero: { n: 'rhea', pos: [-0.05, 0, 1.6], yaw: 0.45 },
+    allies: [],
+    reds: [{ n: 'enemy_guard', pos: [1.9, 0, -2.6], yaw: -0.85, t: 0.15 }, { n: 'enemy_heavy', pos: [3.6, 0, -6.5], yaw: -0.7, gun: 'grinder_lmg', t: 0.1 }],
+    bg: { cam: [8, 6, 26], look: [4, 2.2, 0] }, title: { y: 0.245, size: 0.235, lines: ['STRIKE', 'ZONE'], x: 0.5 } },
+  '1x1': { fov: 36, cam: [0.3, 1.3, 4.5], look: [0.42, 1.42, 0], fl: 0.6,
+    hero: { n: 'rhea', pos: [-0.1, 0, 1.8], yaw: 0.62 },
+    allies: [],
+    reds: [{ n: 'enemy_guard', pos: [2.1, 0, -2.0], yaw: -0.9, t: 0.15 }, { n: 'enemy_heavy', pos: [3.9, 0, -5.8], yaw: -0.75, gun: 'grinder_lmg', t: 0.1 }],
+    bg: { cam: [8, 6, 26], look: [4, 2.6, 0] }, title: { y: 0.265, size: 0.155, lines: ['STRIKE', 'ZONE'], x: 0.5 } },
+}[FMT];
+
+// ================= sky: saturated blue, warm sun glow on the right (cool sky vs warm light)
+function skyTex() {
+  const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 1024; const g = cv.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 1024);
+  gr.addColorStop(0, '#1a4fd6'); gr.addColorStop(0.45, '#3f95ff'); gr.addColorStop(0.75, '#8fcbff'); gr.addColorStop(1, '#ffe0a8');
+  g.fillStyle = gr; g.fillRect(0, 0, 1024, 1024);
+  const sx = num('sunx', 0.72) * 1024, sy = num('suny', 0.55) * 1024, sg = g.createRadialGradient(sx, sy, 0, sx, sy, 560);
+  sg.addColorStop(0, 'rgba(255,250,225,1)'); sg.addColorStop(0.07, 'rgba(255,228,150,.95)'); sg.addColorStop(0.32, 'rgba(255,170,80,.4)'); sg.addColorStop(1, 'rgba(255,150,70,0)');
+  g.fillStyle = sg; g.fillRect(0, 0, 1024, 1024);
+  g.fillStyle = 'rgba(255,255,255,.92)';
+  for (const [x, y, s] of [[0.1, 0.18, 1], [0.32, 0.1, 0.7], [0.86, 0.2, 1.2], [0.58, 0.28, 0.6]])
+    for (let k = 0; k < 6; k++) { g.beginPath(); g.ellipse(x * 1024 + (k - 2.5) * 34 * s, y * 1024 + Math.sin(k * 1.7) * 12 * s, 58 * s, 32 * s, 0, 0, Math.PI * 2); g.fill(); }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+const L = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder); const load = (p) => L.loadAsync('../' + p);
+const CEN = { lantern: [35, 0.4, 20], belltower: [30, 0, 22], neon: [32, 0, 24], sandkeep: [35, 0, 22] }[MAP] || [35, 0, 20];
+
+// ================= layer 1: arena backdrop, rendered small and blurred (depth of field)
+{
+  const r = R(false); r.setPixelRatio(DPR * num('bgres', 0.5)); r.setSize(W, H);
+  r.domElement.style.filter = `blur(${num('blur', 3.5) * Math.min(W, H) / 1080}px) saturate(1.25) brightness(1.04)`;
+  r.domElement.style.transform = 'scale(1.04)';
+  const sc = new THREE.Scene(); sc.background = skyTex(); sc.fog = new THREE.Fog(0x9fd0ff, 30, 120);
+  sc.add(new THREE.HemisphereLight(0xd8ecff, 0x7a6048, 1.6));
+  const d = new THREE.DirectionalLight(0xffe6c0, 2.2); d.position.set(CEN[0] + 20, 30, CEN[2] - 10); d.target.position.set(...CEN); sc.add(d, d.target);
+  const arena = (await load(`models/dm/${MAP}.glb`)).scene; sc.add(arena); toonify(arena);
+  const cam = new THREE.PerspectiveCamera(LAY.fov + 6, W / H, 0.1, 400);
+  const B = q.has('bgc') ? { cam: q.get('bgc').split(',').map(Number), look: q.get('bgl').split(',').map(Number) } : LAY.bg; cam.position.set(CEN[0] + B.cam[0], CEN[1] + B.cam[1], CEN[2] + B.cam[2]); cam.lookAt(CEN[0] + B.look[0], CEN[1] + B.look[1], CEN[2] + B.look[2]);
+  r.render(sc, cam);
+}
+
+// ================= layer 2: characters + FX on a transparent canvas
+const r = R(true); r.setClearColor(0x000000, 0); r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+const sc = new THREE.Scene();
+sc.add(new THREE.HemisphereLight(0xe4f0ff, 0x6d5a48, num('hemi', 0.85)));
+const key = new THREE.DirectionalLight(0xfff1dc, num('key', 2.0)); key.position.set(4, 9, 7); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
+Object.assign(key.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 0.5, far: 40 }); key.shadow.bias = -0.0005; sc.add(key, key.target);
+const rimB = new THREE.DirectionalLight(0x6cc2ff, num('rimb', 1.3)); rimB.position.set(-6, 4, -6); sc.add(rimB);
+const rimR = new THREE.DirectionalLight(0xff6a4a, 2.4); rimR.position.set(7, 4, -8); sc.add(rimR);
+// shadow catcher: only the soft contact shadows land on the blurred backdrop
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.32 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; sc.add(ground);
+
+const guns = {}; for (const n of ['ar7_lance', 'grinder_lmg', 'warden_br', 'hailstorm_mg']) guns[n] = (await load(`models/weapons/${n}.glb`)).scene;
+const GL = {}; const glb = async (n) => (GL[n] ??= await load(`models/rigged/${n}.glb`));
+async function actor(name, { pos, yaw = 0, clip = 'shoot', t = 0.12, gun = 'ar7_lance', team = 'blue', gunScale = 1 }) {
+  const g = await glb(name); const root = SU.clone(g.scene); root.position.set(...pos); root.rotation.y = yaw; sc.add(root);
+  const mx = new THREE.AnimationMixer(root); const c = g.animations.find(a => a.name === clip); if (c) mx.clipAction(c).play(); mx.update(t);
+  if (gun) { const off = calibrateGun(g, 'shoot'); const w = guns[gun].clone(true); w.matrixAutoUpdate = false; w.matrix.copy(off); if (gunScale !== 1) w.matrix.multiply(new THREE.Matrix4().makeScale(gunScale, gunScale, gunScale)); root.getObjectByName('handR').add(w); }
+  root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
+  const enemy = team === 'red';
+  toonify(root, { rim: enemy ? 0xff6a5a : 0x8fd8ff });
+  outline(root, { thick: num('ol', 0.024), color: enemy ? 0xff2a3a : 0x2f9bff, force: true });
+  root.updateMatrixWorld(true);
+  const v = (n) => { const p = new THREE.Vector3(); root.getObjectByName(n)?.getWorldPosition(p); return p; };
+  const fwd = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  return { root, hand: v('handR'), head: v('head'), chest: v('chest'), fwd };
+}
+
+// ---- FX: additive sprites + tracers (bloom without a post pass)
+function tex(draw) { const cv = document.createElement('canvas'); cv.width = cv.height = 256; draw(cv.getContext('2d')); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; }
+const glow = (stops) => tex(g => { const gr = g.createRadialGradient(128, 128, 0, 128, 128, 128); for (const [o, c] of stops) gr.addColorStop(o, c); g.fillStyle = gr; g.fillRect(0, 0, 256, 256); });
+const star = (core, mid) => tex(g => { g.translate(128, 128); const gr = g.createRadialGradient(0, 0, 0, 0, 0, 128); gr.addColorStop(0, '#fffbe6'); gr.addColorStop(0.25, core); gr.addColorStop(0.6, mid); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr;
+  for (let i = 0; i < 8; i++) { g.rotate(Math.PI / 4); g.beginPath(); g.moveTo(0, -12); g.lineTo(i % 2 ? 90 : 128, 0); g.lineTo(0, 12); g.fill(); } g.beginPath(); g.arc(0, 0, 38, 0, Math.PI * 2); g.fill(); });
+const T = {
+  glow: glow([[0, 'rgba(255,250,220,1)'], [0.2, 'rgba(255,200,80,.75)'], [1, 'rgba(255,120,20,0)']]),
+  red: glow([[0, 'rgba(255,230,220,1)'], [0.25, 'rgba(255,70,40,.75)'], [1, 'rgba(255,0,0,0)']]),
+  smoke: glow([[0, 'rgba(255,255,255,.7)'], [0.5, 'rgba(235,240,250,.3)'], [1, 'rgba(230,235,245,0)']]),
+  star: star('#ffd54a', 'rgba(255,120,20,.6)'), starR: star('#ff8a5a', 'rgba(255,40,20,.6)'),
+};
+function sprite(t, p, s, { add = true, rot = 0, op = 1 } = {}) {
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending, depthWrite: false, transparent: true, opacity: op, rotation: rot }));
+  sp.position.copy(p); sp.scale.setScalar(s); sc.add(sp); return sp;
+}
+function tracer(a, b, color, w = 0.03, op = 0.95) {
+  const d = b.clone().sub(a), len = d.length(); const mat = new THREE.MeshBasicMaterial({ color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: op });
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.35, w, len, 8, 1, true), mat);
+  m.position.copy(a).addScaledVector(d, 0.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.clone().normalize()); sc.add(m);
+  const h = m.clone(); h.material = mat.clone(); h.material.opacity = op * 0.22; h.scale.set(4, 1, 4); sc.add(h);
+}
+function flash(p, s, red = false) {
+  sprite(red ? T.red : T.glow, p, 2.0 * s, { op: 0.85 }); sprite(red ? T.starR : T.star, p, 1.15 * s, { rot: 0.3 });
+  const l = new THREE.PointLight(red ? 0xff4020 : 0xffb040, num('pl', 1.6) * s, 4, 1.5); l.position.copy(p); sc.add(l);
+}
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+function sparks(p, n, color = 0xffc850) { for (let i = 0; i < n; i++) { const dir = new THREE.Vector3(rnd() - .5, rnd() * .9 - .1, rnd() - .5).normalize(); tracer(p.clone().addScaledVector(dir, 0.05), p.clone().addScaledVector(dir, 0.18 + rnd() * 0.35), color, 0.012); } }
+function shells(p, dir, n) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xf0b83a, metalness: 0.7, roughness: 0.3, emissive: 0x6a4500 });
+  for (let i = 0; i < n; i++) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.075, 8), mat); m.position.copy(p).addScaledVector(dir, 0.1 + i * 0.09).add(new THREE.Vector3(0, 0.12 + i * 0.07, 0.03 * i)); m.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3); sc.add(m); }
+}
+
+const hero = await actor(LAY.hero.n, { ...LAY.hero, gun: 'ar7_lance', gunScale: num('gs', 1.3) });
+for (const a of LAY.allies) await actor(a.n, a);
+const reds = []; for (const e of LAY.reds) reds.push(await actor(e.n, { ...e, team: 'red' }));
+
+const muzzle = (a, f) => a.hand.clone().addScaledVector(a.fwd, f).add(new THREE.Vector3(0, 0.04, 0));
+const hm = muzzle(hero, num('mf', 0.98));
+flash(hm, num('fl', LAY.fl ?? 0.85)); shells(hero.hand.clone().add(new THREE.Vector3(0, 0.05, 0)), new THREE.Vector3(-hero.fwd.z, 0, hero.fwd.x).negate(), 4);
+const tgt = reds[0].chest.clone();
+tracer(hm.clone().lerp(tgt, 0.08), tgt.clone().lerp(hm, 0.05), 0xffd070, 0.032);
+sparks(tgt.clone().addScaledVector(reds[0].fwd, 0.2), 16); sprite(T.glow, tgt.clone().addScaledVector(reds[0].fwd, 0.2), 0.8, { op: 0.7 });
+reds.forEach((e, i) => { const m = muzzle(e, 0.72); flash(m, 0.7 - i * 0.12, true); if (i < 1) { const pass = hero.head.clone().add(new THREE.Vector3(-0.7 - i * 0.4, 0.3 + i * 0.25, 0.4)); tracer(m.clone().lerp(pass, 0.12), m.clone().lerp(pass, 0.8), 0xff5a3c, 0.022, 0.85); } });
+for (const [x, y, z, s] of [[-5, 0.6, -6, 3], [5.5, 0.4, -3, 2.2], [7, 0.8, -10, 4], [-2, 0.3, -10, 3]]) for (let i = 0; i < 3; i++) sprite(T.smoke, new THREE.Vector3(x + (rnd() - .5) * s, y + rnd() * s * 0.3, z + (rnd() - .5) * s), s * (0.7 + rnd() * 0.5), { add: false, op: num('smoke', 0.22), rot: rnd() * 6 });
+for (let i = 0; i < 46; i++) sprite(T.glow, new THREE.Vector3((rnd() - .5) * 14, 0.2 + rnd() * 4.5, 3 - rnd() * 14), 0.04 + rnd() * 0.07, { op: 0.85 });
+
+const cam = new THREE.PerspectiveCamera(LAY.fov, W / H, 0.05, 200); cam.position.set(...LAY.cam); cam.lookAt(...LAY.look);
+r.render(sc, cam);
+
+// ================= layer 3: grade, light streaks, title (2D canvas)
+const cv = document.createElement('canvas'); cv.width = W * DPR; cv.height = H * DPR; cv.style.width = W + 'px'; cv.style.height = H + 'px'; wrap.append(cv);
+const g = cv.getContext('2d'); g.scale(DPR, DPR);
+const vg = g.createRadialGradient(W * 0.45, H * 0.42, Math.min(W, H) * 0.3, W * 0.5, H * 0.5, Math.hypot(W, H) * 0.62);
+vg.addColorStop(0, 'rgba(8,14,40,0)'); vg.addColorStop(1, 'rgba(8,14,40,.6)'); g.fillStyle = vg; g.fillRect(0, 0, W, H);
+// team light wash: blue from the hero's side, red from the enemy side (screen blend keeps it luminous)
+g.globalCompositeOperation = 'screen';
+for (const [x, y, c] of [[0.05, 0.35, 'rgba(40,120,255,.38)'], [0.98, 0.45, 'rgba(255,50,40,.32)']]) {
+  const rg = g.createRadialGradient(W * x, H * y, 0, W * x, H * y, Math.max(W, H) * 0.5); rg.addColorStop(0, c); rg.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = rg; g.fillRect(0, 0, W, H);
+}
+g.globalCompositeOperation = 'source-over';
+if (LAY.title.y < 0.5) { const top = g.createLinearGradient(0, 0, 0, H * 0.4); top.addColorStop(0, 'rgba(10,16,44,.55)'); top.addColorStop(1, 'rgba(10,16,44,0)'); g.fillStyle = top; g.fillRect(0, 0, W, H * 0.4); }
+const bot = g.createLinearGradient(0, H * 0.58, 0, H); bot.addColorStop(0, 'rgba(10,16,44,0)'); bot.addColorStop(1, 'rgba(10,16,44,.78)'); g.fillStyle = bot; g.fillRect(0, H * 0.58, W, H * 0.42);
+
+if (!q.has('notitle')) {
+  await document.fonts.load(`italic 700 100px Oswald`);
+  const TT = LAY.title, U = Math.min(W, H);
+  const fs = TT.size * (FMT === '16x9' ? H : W) * num('ts', 1);
+  g.save(); g.translate(W * TT.x, H * TT.y); g.rotate(-0.06); g.transform(1, 0, -0.18, 1, 0, 0);
+  g.font = `700 ${fs}px Oswald`; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.lineJoin = 'round';
+  const lh = fs * 0.92, n = TT.lines.length;
+  TT.lines.forEach((line, i) => {
+    const y = (i - (n - 1)) * lh + fs * 0.36;
+    // chunky extrude (navy), then outline, then gradient face with a top highlight
+    for (let k = Math.round(fs * 0.09); k > 0; k -= 1) { g.fillStyle = '#0b1230'; g.fillText(line, k * 0.35, y + k); }
+    g.strokeStyle = '#0b1230'; g.lineWidth = fs * 0.13; g.strokeText(line, 0, y);
+    const gr = g.createLinearGradient(0, y - fs * 0.72, 0, y); gr.addColorStop(0, '#fff6a0'); gr.addColorStop(0.42, '#ffd23b'); gr.addColorStop(1, '#ff8a1c');
+    g.fillStyle = gr; g.fillText(line, 0, y);
+    g.save(); g.globalCompositeOperation = 'source-atop'; g.restore();
+    g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = fs * 0.012; g.strokeText(line, 0, y - fs * 0.008);
+  });
+  g.restore();
+}
+document.title = 'done';
+</script>
