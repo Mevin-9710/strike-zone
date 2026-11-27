@@ -8,7 +8,7 @@ const T = window.__szT || {};                       // set by the inline <head> 
 const sid = T.sid || Math.random().toString(36).slice(2, 10);
 const t0 = 0, jsAt = performance.now();               // t = seconds since page open (navigation start)
 const dev = T.dev || ((matchMedia('(pointer:coarse)').matches ? 'touch' : 'desk') + (innerWidth < innerHeight ? '-p' : '-l'));
-T.js = true; T.stage = 'js';
+T.js = true; T.stage = 'js'; document.getElementById('lretry')?.remove();   // v45: retry button from the slow-load fallback
 export const stage = s => { T.stage = s; };
 let q = [], where = 'boot';
 export const at = w => { where = w; };

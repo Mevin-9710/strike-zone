@@ -548,3 +548,8 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
   - Tests 116/120: the known 3, plus "deathmatch ends with REMATCH". That test fails whenever blue leads at the forced timeout (the button then reads NEXT LEVEL). It is order-dependent and v44 doesn't touch the end screen.
   - Packaged dist/ booted into a match before shipping.
   - Boot b: 44.
+- 2026-11-27 · v45 (pre-boot rescue). Telemetry since 25 Nov: 14% of sessions on desktop and phone never ran any game JS. They sat on a frozen loading card for 10-100 s+. Changes:
+  - build_dist.sh rewrites `from 'three'` to relative paths, so dist no longer needs import maps (iOS < 16.4 and Chrome < 89 lack them). It fails if a bare import is left, and adds `<link rel="modulepreload">` for the 37 static modules.
+  - Loading card: moving shimmer on the bar, "Slow connection, still loading…" at 12 s, and TAP TO RETRY at 35 s or 1.5 s after a script fails. telemetry.js removes the button once JS runs.
+  - Inline telemetry: `page` gains `im` (import-map support) and a coarse OS/browser string. New `err0`, `slow0` and `retry0` events fire before game JS runs.
+  - Boot tag b:45. Verified: dist boots with the import map stripped, and a 404 on a module shows the retry button.
