@@ -246,3 +246,26 @@ body.touch #mmlabel{display:none}
 }
 #end[data-pg="2"]:has(#upBox:not([style*="none"])) #endQ{display:none!important}   /* an upgrade to spend: quests wait for the lobby */
 @media (max-height:480px){#end[data-pg="1"] #endMore{margin:4px auto 0;padding:6px 40px}#end[data-pg="1"] #dbl{margin-top:2px}}
+/* v41 phone landscape: round action buttons on an arc around a big FIRE button (cryzen-style thumb arc, our palette) */
+@media (orientation:landscape){
+  body.touch #touch .tb{left:auto!important;top:auto!important;border-radius:50%!important}
+  body.touch #touch #tfire{width:calc(84px*var(--ts))!important;height:calc(84px*var(--ts))!important;right:calc(78px*var(--ts))!important;bottom:calc(62px*var(--ts))!important;font-size:calc(15px*var(--ts))!important;box-shadow:0 0 0 calc(4px*var(--ts)) rgba(255,210,59,.25)!important}
+  body.touch #touch #tjump{width:calc(56px*var(--ts))!important;height:calc(56px*var(--ts))!important;right:calc(184px*var(--ts))!important;bottom:calc(33px*var(--ts))!important}
+  body.touch #touch #treload{width:calc(52px*var(--ts))!important;height:calc(52px*var(--ts))!important;right:calc(190px*var(--ts))!important;bottom:calc(113px*var(--ts))!important}
+  body.touch #touch #tab1{width:calc(48px*var(--ts))!important;height:calc(48px*var(--ts))!important;right:calc(150px*var(--ts))!important;bottom:calc(167px*var(--ts))!important}
+  body.touch #touch #tab0{width:calc(48px*var(--ts))!important;height:calc(48px*var(--ts))!important;right:calc(92px*var(--ts))!important;bottom:calc(182px*var(--ts))!important}
+  body.touch #touch #taim{width:calc(54px*var(--ts))!important;height:calc(54px*var(--ts))!important;right:calc(30px*var(--ts))!important;bottom:calc(157px*var(--ts))!important}
+  body.touch #touch #taim,body.touch #touch #treload{background:rgba(47,107,255,.55)!important}
+}
+/* v41 lobby: 7-day reward strip inside the crate panel */
+#lCrate{flex-direction:column;align-items:stretch!important;gap:calc(var(--u)*.4)!important}
+#lCrate .dh{display:flex;align-items:center;gap:8px}
+#lCrate .days{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+#lCrate .d{display:flex;flex-direction:column;align-items:center;justify-content:center;font-style:normal;border-radius:4px;padding:3px 0;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);min-width:0}
+#lCrate .d b{font-size:calc(var(--u)*.55);letter-spacing:.02em;color:var(--kt);white-space:nowrap}
+#lCrate .d em{font-style:normal;font-size:calc(var(--u)*.8);color:var(--ky);font-weight:800}
+#lCrate .d .ic{width:calc(var(--u)*1.1);height:calc(var(--u)*1.1);color:#3ad07a}
+#lCrate .d.got{background:rgba(58,208,122,.18);border-color:rgba(58,208,122,.5)}
+#lCrate .d.now{background:var(--ky);border-color:var(--ky)}#lCrate .d.now b,#lCrate .d.now em{color:#111}
+#lCrate .d.nx{border-color:#36d6f0;background:rgba(54,214,240,.15)}#lCrate .d.nx b{color:#36d6f0}
+#lCrate .d.big:not(.got):not(.now){background:linear-gradient(180deg,rgba(255,154,60,.35),rgba(227,20,27,.25));border-color:#ff9a3c}
