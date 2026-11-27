@@ -9,6 +9,7 @@ import { loadArch } from './world/kenney-arch.js';
 import { crazy } from './game/crazy.js';
 import { buildM1, buildM2, buildM3, LIGHTING } from './world/maps.js';
 import { DM_MAPS, loadDmMap, dmMapReady, buildDmMap } from './world/dm-maps.js';
+import { buildLobbyRoom } from './world/lobby-room.js';
 import { AbilityFX } from './fx/abilities.js';
 import { WEAPONS, PRIMARIES, SIDEARMS, Viewmodel, starTex } from './game/weapons.js';
 import { ENEMY_TYPES, Enemy, loadEnemyAssets, calibrateGun, buildCharAssets } from './game/enemies.js';
@@ -1367,6 +1368,7 @@ function render() {
   updateCamera();
   renderer.info.autoReset = false; renderer.info.reset();
   renderer.clear();
+  if (lobbyRoom?.on && !running) { if (lobbyRoom.asp !== camera.aspect) { lobbyRoom.asp = camera.aspect; lobbyRoom.frame(camera.aspect); } renderer.render(lobbyRoom.scene, lobbyRoom.cam); return; }
   if (scene) {
     camera.updateMatrixWorld(); _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_pv);
     const far2 = camera.far * camera.far;
@@ -1523,6 +1525,7 @@ function startMissionNow(idx, opts) {
   if (trialWeapon && !opts.primary) { opts = { ...opts, primary: trialWeapon }; track('trial', { k: 'use', w: trialWeapon }); trialWeapon = null; }
   const o = { route: opts.route ?? selRoute, primary: opts.primary ?? loadout.primary, sidearm: opts.sidearm ?? loadout.sidearm, abilities: opts.abilities ?? selAbilities.slice(), part: opts.part, dmMap: opts.dmMap };
   if (preview) { preview.root.parent?.remove(preview.root); preview = null; }
+  if (lobbyRoom) lobbyRoom.on = false;
   mode = opts.mode || null; lastStart = { idx, opts: { ...opts, tutorial: false } }; clearInterval(autoNextT);
   buildMission(idx, o); xpDoubled = false;
   if (mode === 'survival') survivalSetup();
@@ -1961,12 +1964,21 @@ function startOnboarding(force) {
 $('setClose').onclick = () => $('settings').classList.remove('show');
 
 // ---------- briefing preview: the chosen operative, armed, idling; ability picks play their clip + effect ----------
-let preview = null;
+let preview = null, lobbyRoom = null;
+{ // v40: in the lobby room, drag empty space to turn your operative, tap them to show off a move
+  let drag = null; const free = e => !e.target.closest?.('button,a,input,select,textarea,.pnl,.card,.panel.show .row') && lobbyRoom?.on && !running && preview;
+  addEventListener('pointerdown', e => { if (free(e)) drag = { x: e.clientX, y: e.clientY, moved: 0 }; });
+  addEventListener('pointermove', e => { if (!drag || !preview) return; const dx = e.clientX - drag.x; drag.x = e.clientX; drag.moved += Math.abs(dx); setPreview.turn = (setPreview.turn || 0) + dx * 0.012; preview.root.rotation.y = lobbyRoom.faceYaw + setPreview.turn; });
+  addEventListener('pointerup', e => { if (!drag) return; const tap = drag.moved < 6; drag = null; if (!tap || !preview) return;
+    const r = canvas.getBoundingClientRect(), nx = (e.clientX - r.left) / r.width, ny = (e.clientY - r.top) / r.height;
+    if (Math.abs(nx - 0.5) < 0.12 && ny > 0.2 && ny < 0.95) { const m = ['ab_smoke', 'ab_flash', 'ab_decoy', 'ab_sensor', 'ab_shield']; preview.perform(m[(Math.random() * m.length) | 0]); track('ui', { k: 'lobbyTap' }); } });
+}
 async function setPreview() {
   const id = loadout.operative, gltf = await loadOperative(id);
   A.rhea = gltf;
   if (preview) { preview.root.parent?.remove(preview.root); preview.mixer.stopAllAction(); }
-  if (running || !scene) return;
+  const inRoom = lobbyRoom?.on;
+  if (running || (!scene && !inRoom)) return;
   const root = SkeletonUtils.clone(gltf.scene); toonify(root, { rim: 0x8fd8ff }); outline(root, { thick: 0.02 });
   root.traverse(o => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
   const wid = loadout.primary, pist = SIDEARMS.includes(wid);
@@ -1975,15 +1987,15 @@ async function setPreview() {
   root.getObjectByName('handR').add(gun);
   const pc = META.charmMesh(META.profile.charm); if (pc) { const bx = new THREE.Box3().setFromObject(A.weapons[wid]); pc.scale.setScalar(1.6); pc.position.set(bx.max.x + 0.01, (bx.min.y + bx.max.y) / 2, bx.min.z + (bx.max.z - bx.min.z) * 0.3); gun.add(pc); }
   const fwd = V(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
-  const at = player.pos.clone().addScaledVector(fwd, 3.4).addScaledVector(V(-fwd.z, 0, fwd.x), -1.55 * Math.min(1.4, camera.aspect / 1.4));
-  const g = world.groundHeight(at.x, at.z, 0.3, at.y + 1, 2); at.y = Number.isFinite(g) ? g : player.pos.y;
-  root.position.copy(at); root.rotation.y = Math.atan2(-fwd.x, -fwd.z) + 0.35;
-  scene.add(root);
+  const at = inRoom ? lobbyRoom.spot.clone() : player.pos.clone().addScaledVector(fwd, 3.4).addScaledVector(V(-fwd.z, 0, fwd.x), -1.55 * Math.min(1.4, camera.aspect / 1.4));
+  if (inRoom) { at.copy(lobbyRoom.spot); root.position.copy(at); root.rotation.y = lobbyRoom.faceYaw + (setPreview.turn || 0); lobbyRoom.scene.add(root); }
+  else { const g = world.groundHeight(at.x, at.z, 0.3, at.y + 1, 2); at.y = Number.isFinite(g) ? g : player.pos.y;
+    root.position.copy(at); root.rotation.y = Math.atan2(-fwd.x, -fwd.z) + 0.35; scene.add(root); }
   const mixer = new THREE.AnimationMixer(root), clips = Object.fromEntries(gltf.animations.map(c => [c.name, c]));
   const base = pist ? 'idle_pistol' : 'idle_rifle';
   let cur = mixer.clipAction(clips[base]); cur.play(); mixer.update(0);
   let pending = null;
-  const pfx = new AbilityFX(scene, { ground: () => at.y });
+  const pfx = new AbilityFX(inRoom ? lobbyRoom.scene : scene, { ground: () => at.y });
   preview = {
     root, mixer, gun,
     perform(name) {
@@ -2053,6 +2065,7 @@ function openLobby() {
   only('lobby'); at('lobby'); stage('lobby');
   const lc = TEST || !startMissionNow.n ? null : MODES.loginClaim();             // v14: login reward lands after the first match, not on boot
   if (lc) { META.profile.coins += lc.coins; META.saveProfile(); sfx.coin?.(); loginBanner(lc); track('ui', { k: 'login', d: lc.day }); }
+  lobbyRoom ??= buildLobbyRoom(); lobbyRoom.on = true;   // v40: the lobby has its own fixed room, not the frozen last match
   lobbyDaylight(); chips(); setPreview(); modeButtons(); lobbyV14(); loadBotSkins();
 }
 function lobbyDaylight() {                                                         // bright midday look behind the lobby (scene is rebuilt on mission start)
@@ -2345,7 +2358,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 39, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 40, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

@@ -110,13 +110,9 @@ def turret_bones():
     return {n: (Vector(a), Vector(t), p) for n, (a, t, p) in b.items()}
 
 
-def build_rig(name, parts, classify, bones):
-    for o in parts:
-        bone = classify(centroid(o))
-        vg = o.vertex_groups.new(name=bone)
-        vg.add(list(range(len(o.data.vertices))), 1.0, 'REPLACE')
-    select_only(parts); bpy.ops.object.join()
-    mesh = bpy.context.object; mesh.name = name
+def build_rig(name, parts, classify, bones, smooth_body=False):
+    """Rigid parts get 100% of one bone. v33: with smooth_body, the largest part (the fused, sculpted body
+    surface) gets smooth automatic (bone heat) weights instead, so shoulders, elbows and knees bend as one skin."""
     arm = bpy.data.armatures.new(name + '_rig')
     rig = bpy.data.objects.new(name + '_rig', arm)
     bpy.context.scene.collection.objects.link(rig)
@@ -126,6 +122,27 @@ def build_rig(name, parts, classify, bones):
     for n, (_, _, p) in bones.items():
         if p: arm.edit_bones[n].parent = arm.edit_bones[p]
     bpy.ops.object.mode_set(mode='OBJECT')
+    body = max(parts, key=lambda o: len(o.data.vertices)) if smooth_body else None
+    if body is not None and len(body.data.vertices) < 1500: body = None
+    if body is not None:
+        select_only([body, rig], rig)
+        bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+        ok = len(body.vertex_groups) > 0 and any(len(v.groups) for v in body.data.vertices[:50])
+        print(f'SMOOTHSKIN {name} groups={len(body.vertex_groups)} ok={ok}')
+        select_only([body]); bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
+        for md in list(body.modifiers): body.modifiers.remove(md)
+        bpy.ops.object.vertex_group_limit_total(group_select_mode='ALL', limit=4)
+        bpy.ops.object.vertex_group_normalize_all(lock_active=False)
+        if not ok:
+            for g in list(body.vertex_groups): body.vertex_groups.remove(g)
+            body = None
+    for o in parts:
+        if o is body: continue
+        bone = classify(centroid(o))
+        vg = o.vertex_groups.get(bone) or o.vertex_groups.new(name=bone)
+        vg.add(list(range(len(o.data.vertices))), 1.0, 'REPLACE')
+    select_only(parts, body or parts[0]); bpy.ops.object.join()
+    mesh = bpy.context.object; mesh.name = name
     mesh.parent = rig
     mod = mesh.modifiers.new('Armature', 'ARMATURE'); mod.object = rig
     for pb in rig.pose.bones:
@@ -410,7 +427,7 @@ def build(stem):
         rig, mesh, used = build_rig(stem, parts, classify_turret, turret_bones()); turret_clips(rig)
     else:
         h, B = HUMANOIDS[stem]
-        rig, mesh, used = build_rig(stem, parts, lambda c: classify_humanoid(c, h, B), humanoid_bones(h, B))
+        rig, mesh, used = build_rig(stem, parts, lambda c: classify_humanoid(c, h, B), humanoid_bones(h, B), smooth_body=True)
         humanoid_clips(rig, h, B)
     return rig, mesh, used
 
