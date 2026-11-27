@@ -8,14 +8,23 @@ import { Kit } from './kit.js';
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 export const DM_MAPS = [
   { id: 'belltower', title: 'Belltower Square', time: 'noon', w: 60, d: 44, a: [3.4, 0, 21.9], b: [56.6, 0, 21.9] },
-  { id: 'lantern', title: 'Lantern Canal', time: 'sunset', w: 70, d: 40, a: [4.5, 0.4, 20], b: [65.5, 0.4, 20] },
-  { id: 'neon', title: 'Neon Alley', time: 'sunset', w: 64, d: 48, a: [5, 0, 24], b: [59, 0, 24] },
+  { id: 'lantern', title: 'Lantern Canal', time: 'clear', w: 70, d: 40, a: [4.5, 0.4, 20], b: [65.5, 0.4, 20] },
+  { id: 'neon', title: 'Neon Alley', time: 'evening', w: 64, d: 48, a: [5, 0, 24], b: [59, 0, 24] },
   { id: 'sandkeep', title: 'Sandkeep', time: 'noon', w: 56, d: 56, a: [4.5, 0, 51.5], b: [51.5, 0, 4.5] },
 ];
 const P = {}, R = {};
 export function loadDmMap(id) {
   if (!P[id]) P[id] = Promise.all([new GLTFLoader().loadAsync(`models/dm/${id}.glb`), fetch(`models/dm/${id}.json`).then(r => r.json())])
-    .then(([g, data]) => { g.scene.traverse(o => { if (o.isMesh) { o.castShadow = !o.material.transparent; o.receiveShadow = true; o.matrixAutoUpdate = false; o.updateMatrix(); } }); return (R[id] = { scene: g.scene, data }); })
+    .then(([g, data]) => { const def = DM_MAPS.find(d => d.id === id), bb = new THREE.Box3();
+      g.scene.updateMatrixWorld(true);
+      g.scene.traverse(o => { if (o.isMesh) {
+        // v34: the prototypes' flat spawn-pad quads read as a solid neon slab at your feet; keep them as a soft translucent tint
+        bb.setFromObject(o); if (def && bb.max.y - bb.min.y < 0.05 && [def.a, def.b].some(p => p[0] > bb.min.x && p[0] < bb.max.x && p[2] > bb.min.z && p[2] < bb.max.z) && bb.max.x - bb.min.x < 14) {
+          o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.18; o.material.depthWrite = false; o.renderOrder = 1; }
+        // v34: Neon Alley's near-black walls swallowed bots and read as one muddy hue; lift dark materials to a mid tone
+        if (id === 'neon' && o.material.color && !o.material.transparent && !o.material.userData.lift) { o.material.userData.lift = 1; const h = {}; o.material.color.getHSL(h); if (h.l < 0.24) o.material.color.setHSL(h.h, h.s, 0.12 + h.l * 0.6); }
+        o.castShadow = !o.material.transparent; o.receiveShadow = true; o.matrixAutoUpdate = false; o.updateMatrix(); } });
+      return (R[id] = { scene: g.scene, data }); })
     .catch(e => { delete P[id]; throw e; });
   return P[id];
 }

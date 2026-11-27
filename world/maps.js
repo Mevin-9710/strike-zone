@@ -213,5 +213,7 @@ export const LIGHTING = {
   night: { sky: 0x1b2440, fog: [0x1d2542, 45, 200], hemi: [0x7f9cff, 0x1a1a26, 0.75], sun: [0xbfd0ff, 0.6], sunPos: [-40, 60, 30] },
   overcast: { sky: 0xa7b4bf, fog: [0xa3adb6, 55, 230], hemi: [0xe2e8ee, 0x6a6a64, 1.45], sun: [0xf0f0f0, 1.1], sunPos: [20, 70, -40] },
   sunset: { sky: 0xff9a6b, fog: [0xf0a07a, 60, 240], hemi: [0xffd2b0, 0x4a3a50, 1.2], sun: [0xff8040, 1.7], sunPos: [-80, 20, -20] },
+  clear: { sky: 0x6cb6ff, fog: [0xc4e2ff, 80, 300], hemi: [0xeef6ff, 0x9a8466, 1.55], sun: [0xfff0d8, 2.2], sunPos: [-60, 70, 30] },   // v34: cool sky vs warm geometry (Lantern)
+  evening: { sky: 0x5b7fe0, fog: [0x8a9ad6, 60, 250], hemi: [0xdfe6ff, 0x6a5c6c, 2.6], sun: [0xffbf8a, 1.7], sunPos: [-80, 30, -20] },  // v34: blue hour, warm signs pop (Neon)
   dusk: { sky: 0x4a3b6b, fog: [0x3f3557, 50, 220], hemi: [0x8f78c7, 0x2a2430, 0.85], sun: [0xff8a5c, 0.9], sunPos: [80, 18, -30] },
 };
