@@ -232,3 +232,17 @@ body.touch #mmlabel{display:none}
 #tabBoard .bmid em{font-style:italic;color:#ffd23b;font-size:calc(var(--u)*.95)}
 #tabBoard .bmid span{color:#c9d2e3;font-size:calc(var(--u)*.85)}
 #tabBoard .bmid small{color:#fff;font-size:calc(var(--u)*2.4)}
+
+/* v39: the end screen is two screens that never scroll. 1 = result (tiles, coins, XP, upgrades) + CONTINUE, 2 = what next (rematch, gift, quests, ads, feedback) */
+#end .card{overflow:hidden!important}
+#end:not([data-pg="2"]) :is(#endPlay,#endGift,#endQ,#fbEnd,#upBox){display:none!important}
+#end[data-pg="2"] :is(.tiles,#beatBest,#endCoins,#endXP,#dbl,#endMore,#endText,#endStats,#debrief,#endAds){display:none!important}
+#end.dm #endText,#end.dm #endStats{display:none!important}
+#endMore{display:block;margin:12px auto 4px;font-size:calc(var(--u)*1.8);padding:10px 48px}
+#end .card{animation:szEndIn .35s ease-out}#end[data-pg="2"] .card{animation:szEndIn2 .3s ease-out}
+@keyframes szEndIn{from{opacity:0;transform:translateY(18px) scale(.97)}}@keyframes szEndIn2{from{opacity:0;transform:translateX(30px)}}
+@media (max-height:480px),(max-height:700px) and (orientation:portrait){
+  #end[data-pg="2"] #endQ{display:none!important}
+}
+#end[data-pg="2"]:has(#upBox:not([style*="none"])) #endQ{display:none!important}   /* an upgrade to spend: quests wait for the lobby */
+@media (max-height:480px){#end[data-pg="1"] #endMore{margin:4px auto 0;padding:6px 40px}#end[data-pg="1"] #dbl{margin-top:2px}}

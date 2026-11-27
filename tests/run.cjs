@@ -115,7 +115,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     const u = await pg.evaluate(() => {
       const g = __game; g.start(0, { primary: 'ar7_lance' }); g.killAll(); g.step(0.5);
       const p = g.map.points[0]; g.teleport(p.x + 1.2, p.y, p.z); g.key('KeyE', true); g.step(6); g.key('KeyE', false);
-      const shown = getComputedStyle(document.getElementById('upBox')).display !== 'none', pts = g.META.profile.upPoints;
+      document.getElementById('endMore')?.click(); const shown = getComputedStyle(document.getElementById('upBox')).display !== 'none', pts = g.META.profile.upPoints;
       document.getElementById('upDmg').click();
       const after = { pts: g.META.profile.upPoints, rank: g.META.upg('ar7_lance').dmg, mult: g.META.dmgMult('ar7_lance') };
       g.META.profile.upPoints = 1; g.META.upgrade('ar7_lance', 'ammo');
