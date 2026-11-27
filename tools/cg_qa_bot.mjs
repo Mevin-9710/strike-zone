@@ -102,9 +102,11 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   // QA tool tab: Continue sends the measured QA result, then the tab says 'You can now close this tab'
   const subId = (page.url().match(/preview\/([0-9a-f-]{36})/) || [])[1];
   const buildId = new URL(page.url()).searchParams.get('gameBuildId'); await log(`submission ${subId}, build ${buildId}`);
-  await clickText(page, /^\s*continue\s*$/i, { timeout: 30000 }); await page.waitForTimeout(4000); await shot(page, 'qa_tool_done');
-  // back in the portal: checklist + update notes + confirmation + Submit
-  page = portalTab; await page.goto(`${PORTAL}/qa-continue/${subId}?buildId=${buildId}`, { waitUntil: 'networkidle' }).catch(() => {}); await page.waitForTimeout(4000); await shot(page, 'qa_continue');
+  // Continue in the QA tool opens the portal's qa-continue page in a new tab; the QA tab hands it the
+  // measured results by postMessage, so the QA tab must stay open
+  const qaTab = page;
+  const [cont] = await Promise.all([ctx.waitForEvent('page', { timeout: 30000 }), clickText(page, /^\s*continue\s*$/i, { timeout: 30000 })]);
+  page = cont; await page.waitForLoadState('domcontentloaded'); await page.waitForTimeout(6000); await shot(qaTab, 'qa_tool_done'); await shot(page, 'qa_continue');
   // walk the QA steps: Continue / Next until the checklist + notes + Submit page
   for (let step = 0; step < 6; step++) {
     // answer every manual checklist question with Yes
