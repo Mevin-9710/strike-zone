@@ -583,7 +583,7 @@ function enemyAbility(e, kind) {
 let firstContactT = -1;
 // ---------- modes: 'daily' (seeded mission, streak bonus) and 'survival' (endless waves, no objective) ----------
 let mode = null, wave = 0, waveT = 0, survBestV = 0;
-let lastStart = { idx: 0, opts: {} }, autoNextT = 0;
+let lastStart = { idx: 0, opts: {} }, autoNextT = 0, returnGifts = null;
 const fails = {};                                   // per-mission fail streak this session: 2+ fails = easier next try
 function survivalSetup() {
   for (const d of devices) d.g.visible = false;
@@ -721,7 +721,14 @@ function dmSetup() {
 }
 function faceFoe() {                                                              // (re)spawn looking toward the enemy side / centre, not into a wall
   const T = map.teamSpawns, b = map.bounds, t = DM.tdm && T ? T.B : V((b.min.x + b.max.x) / 2, 0, (b.min.z + b.max.z) / 2);
-  player.yaw = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
+  const fy = Math.atan2(-(t.x - player.pos.x), -(t.z - player.pos.z)); player.pitch = 0;
+  _spE.copy(player.pos).y += CFG.eye; let by = fy, bs = -Infinity;                  // v30.1: look down the most open line near the foe side, never into a wall (SZ-03)
+  for (let i = 0; i < 16; i++) {
+    const yaw = fy + (i - 8) / 16 * Math.PI * 2; let free = 0;
+    for (const d of [3, 6, 10, 15, 22]) { _spH.set(_spE.x - Math.sin(yaw) * d, _spE.y, _spE.z - Math.cos(yaw) * d); if (!world.lineClear(_spE, _spH)) break; free = d; }
+    const sc = free + Math.cos(yaw - fy) * 6; if (sc > bs) { bs = sc; by = yaw; }
+  }
+  player.yaw = by;
 }
 function spreadGoal(e, to) {                                                    // v29: bots fan out instead of all running to the same spot
   const pool = DM.pool; if (pool?.length && Math.random() < 0.23) return pool[(Math.random() * pool.length) | 0];   // v29.1: spread cut 35%
@@ -1513,7 +1520,17 @@ function startMissionNow(idx, opts) {
   if (mode !== 'survival') radioOnce('start'); musicFinal = false; sfx.reset(); music.start(); sfx.spawn(); ambience.start(mission.id.startsWith('dm_') ? mission.id.slice(3) : 'story'); FX.announce(mode === 'survival' ? 'WAVE 1' : mode === 'dm' ? (DM.tdm ? 'TEAM DEATHMATCH · GO!' : 'DEATHMATCH · GO!') : mode === 'daily' ? 'DAILY CHALLENGE' : 'MISSION START', 'start');
   if (touch) { touch.show(true); touch.setAbilities(picks.map(p => ABILITIES[p].icon + ' ' + ABILITIES[p].name.toUpperCase().slice(0, 5))); try { document.documentElement.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* iOS: no fullscreen API */ } }
   else if (!TEST) lockMouse();
+  if (returnGifts && mode === 'dm') {                                               // v31: back on a new day: the gift is equipped right away
+    const g = returnGifts[returnGifts.length - 1], lo = DM_LOADOUTS.find(l => l[1] === g.id); returnGifts = null;
+    if (lo) { DM.next = [lo[1], lo[2]]; dmApplyLoadout(); matchXP.swap = 0; }
+    FX.announce(`WELCOME BACK · ${g.cls} UNLOCKED`, 'start'); giftToast(g);
+  }
   crazy.gameplay(true);
+}
+function giftToast(g) {
+  const d = document.createElement('div'); d.className = 'questToast';
+  d.innerHTML = `${icon('check')}<b>${g.cls} CLASS UNLOCKED</b><span></span>`; d.lastChild.textContent = `${WEAPONS[g.id].name} is yours to keep.`;
+  document.body.append(d); sfx.coin?.(); setTimeout(() => d.remove(), 5000);
 }
 $('dcGo').onclick = dcRespawnNow;
 function endMatch() { $('dcard').classList.remove('show'); tutorial?.abort(); ambience.stop(); touch?.show(false); running = false; matchOver = true; mouse.l = mouse.r = false; keys = {}; document.exitPointerLock?.(); crazy.gameplay(false); }
@@ -1619,8 +1636,16 @@ function showEnd(title, text, nextIdx, { death = false, failed = false } = {}) {
   } else $('next').textContent = 'NEXT MISSION';
   $('next').onclick = () => { unlockAudio(); selected = nextIdx; const nm = MISSIONS[nextIdx]; const route = !nm.routes ? 'default' : nm.routes[selRoute] ? selRoute : 'stealth'; startMission(nextIdx, { route, abilities: [] }); };   // straight in with the current kit; LOBBY to change it
   if (RC.v14ui) endV14(add); else $('end').classList.remove('v14e');
-  if (mode === 'dm') $('dmEnd').after($('endPlay')); else $('endQ').after($('endPlay'));   // v30: DM rematch/lobby sit right under the result tiles, always on screen (phones too)
+  if (mode === 'dm') $('dmEnd').after($('endPlay')); else $('endQ').after($('endPlay'));
+  giftCard();   // v30: DM rematch/lobby sit right under the result tiles, always on screen (phones too)
   $('end').classList.add('show'); $('end').querySelector('.card').scrollTop = 0;
+}
+function giftCard() {                                                              // v31: the unlock waiting tomorrow, right under the play buttons
+  const el = $('endGift'), un = META.unlocked(progress).weapons, g = MODES.nextGift(id => un.has(id));
+  $('endPlay').after(el);
+  if (!g) { el.style.display = 'none'; return; }
+  el.style.display = ''; el.innerHTML = `<img src="${A.icons[g.id] || ''}" alt=""><span><b>COME BACK TOMORROW</b><small>The ${g.cls} class unlocks: ${WEAPONS[g.id].name}, yours to keep</small></span>`;
+  if (!giftCard.sent) { giftCard.sent = 1; track('gift', { k: 'shown', id: g.id }); }
 }
 function endV14(add) {                                                              // v14 end screen: coin count-up, timed double offer, quest bars
   const E = $('end'); E.classList.add('v14e'); $('adXP').style.display = 'none';
@@ -1801,7 +1826,8 @@ function quitAsk() {
 function setAsk(el, k) {                                                           // same dialog: 'quit' (Quit to lobby) or 'exit' (mouse heading out of the game)
   el.dataset.k = k; const q = k === 'exit';
   el.querySelector('h2').textContent = q ? 'LEAVING ALREADY?' : 'LEAVE THE MATCH?';
-  el.querySelector('p').textContent = q ? 'Before you go: one line on what we should improve helps a lot.' : 'Your progress in this match will be lost.';
+  const un = META.unlocked(progress).weapons, g = MODES.nextGift(id => un.has(id));   // v31: remind what is waiting tomorrow
+  el.querySelector('p').textContent = (g ? `Come back tomorrow: the ${g.cls} class (${WEAPONS[g.id].name}) unlocks for free. ` : '') + (q ? 'Before you go: one line on what we should improve helps a lot.' : 'Your progress in this match will be lost.');
   $('qaStay').textContent = q ? 'NO THANKS' : 'STAY'; $('qaLeave').textContent = q ? 'SEND' : 'LEAVE';
   const c = $('qaChips'); c.textContent = '';
   if (!store.get('sz_fb_rq', 0)) c.append(fbChipRow(q ? 'What made you want to leave?' : 'Why are you leaving?', FB_QUIT, k));
@@ -2233,7 +2259,11 @@ function pauseFill() {
   $('pzList').innerHTML = dm ? boardHTML(true) : `<div class="bcol"><div class="bt">${(mission?.title || '').toUpperCase()}</div><div class="br me">${icon('user')}<span>YOU</span><b>${stats.kills}</b><i></i></div></div>`;
   const cur = dm ? (DM.tdm ? 'tdm' : 'dm') : 'story';
   $('pzModes').innerHTML = PZ_MODES.map(([k, n, ic, sub]) => `<div class="pzm m-${k}${k === cur ? ' cur' : ''}"><div class="art">${icon(ic)}</div><div class="nm">${icon(ic)}<span>${n}<small>${sub}</small></span><button data-m="${k}">${k === cur ? 'RESTART' : 'PLAY'}</button></div></div>`).join('');
-  $('pzModes').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => pzPlay(b.dataset.m));
+  $('pzModes').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => {   // v30.1: restart / mode switch needs a second tap (players lost running matches to one stray click)
+    if (b.dataset.arm) { pzPlay(b.dataset.m); return; }
+    const t0 = b.textContent; b.dataset.arm = 1; b.textContent = 'SURE? TAP AGAIN'; b.classList.add('arm'); track('ui', { k: 'pzArm', m: b.dataset.m });
+    setTimeout(() => { delete b.dataset.arm; b.textContent = t0; b.classList.remove('arm'); }, 2500);
+  });
   const lo = $('pzLo'); lo.innerHTML = '';
   $('pzLoH').style.display = dm ? '' : 'none';
   if (dm) DM_LOADOUTS.forEach(([name, p], i) => { if (!dcOk(p)) return; const b = document.createElement('button'); b.className = p === (DM.next?.[0] || W.slots[0]) ? 'on' : ''; b.innerHTML = `<img src="${A.icons[p] || ''}" alt=""><span>${name}</span>`; b.onclick = () => { DM.next = [DM_LOADOUTS[i][1], DM_LOADOUTS[i][2]]; dmApplyLoadout(); pauseFill(); track('ui', { k: 'pzLoadout', w: p }); }; lo.append(b); });
@@ -2270,10 +2300,11 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 30, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 31, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
+  const visitDay = MODES.visitDay(), gifts = TEST && !Q.has('gifts') ? [] : MODES.claimGifts(visitDay); if (gifts.length) { returnGifts = gifts; track('gift', { k: 'claim', day: visitDay, ids: gifts.map(g => g.id).join(',') }); }   // v31
   const un = META.unlocked(progress);
   if (!DEBUG) { if (!un.weapons.has(loadout.primary)) loadout.primary = 'ar7_lance'; if (!un.weapons.has(loadout.sidearm)) loadout.sidearm = 'vex_p9'; if (!un.operatives.has(loadout.operative)) loadout.operative = 'rhea'; }
   buildMission(Math.min(progress, MISSIONS.length - 1));             // a live backdrop behind the lobby

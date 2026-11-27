@@ -216,3 +216,9 @@ body.touch #mmlabel{display:none}
 .fbChips button.on{background:var(--ky)!important;color:#111!important}
 .fbChips[data-done] button:not(.on){opacity:.4}
 #fbEnd .fbT{margin-top:6px}
+/* v31: return gift card on the end screen (what unlocks tomorrow) */
+#endGift{display:flex;align-items:center;gap:12px;margin:8px auto 2px;max-width:520px;padding:6px 14px;border:2px solid #ffcf3a;border-radius:8px;background:linear-gradient(90deg,rgba(255,207,58,.18),rgba(255,207,58,.04));text-align:left}
+#endGift img{width:96px;height:36px;object-fit:contain;flex:none}
+#endGift b{display:block;color:#ffcf3a;font-weight:800;letter-spacing:.14em;font-size:15px}
+#endGift small{display:block;color:#e8edf0;font-size:13px}
+@media (max-height:420px){#endGift{margin:4px auto 0;padding:3px 10px}#endGift img{width:72px;height:27px}#endGift b{font-size:13px}#endGift small{font-size:11px}}
