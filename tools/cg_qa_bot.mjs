@@ -51,7 +51,11 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   page.on('pageerror', e => log('pageerror', e.message.slice(0, 200)));
-  await page.goto(PORTAL + '/login', { waitUntil: 'domcontentloaded' });
+  page.on('console', m => { if (m.type() === 'error') log('console', m.text().slice(0, 200)); });
+  page.on('response', r => { if (r.status() >= 400) log('http', r.status(), r.url().slice(0, 160)); });
+  page.on('requestfailed', r => log('reqfail', r.url().slice(0, 160), r.failure()?.errorText || ''));
+  await page.goto(PORTAL + '/login', { waitUntil: 'networkidle' }).catch(() => {});
+  await page.waitForTimeout(2000); await shot(page, 'login_before_auth');
   // Firebase web auth persistence: IndexedDB firebaseLocalStorageDb/firebaseLocalStorage
   await page.evaluate(async ({ s, API_KEY }) => {
     const key = `firebase:authUser:${API_KEY}:[DEFAULT]`;
@@ -64,7 +68,9 @@ async function clickText(page, re, { timeout = 20000, exact = false } = {}) {
     });
   }, { s, API_KEY });
   await page.goto(PORTAL + '/games', { waitUntil: 'networkidle' }).catch(() => {});
-  await page.waitForTimeout(3000); await shot(page, 'games');
+  await page.waitForTimeout(3000);
+  for (let i = 0; i < 3 && await page.getByText(/temporarily unavailable/i).isVisible().catch(() => false); i++) { await log('portal says temporarily unavailable, retrying in 20 s'); await page.waitForTimeout(20000); await page.reload({ waitUntil: 'networkidle' }).catch(() => {}); await page.waitForTimeout(3000); }
+  await shot(page, 'games');
   if (/login/.test(page.url())) throw new Error('not logged in (auth injection failed)');
 
   await clickText(page, new RegExp(GAME, 'i')).catch(async () => { await page.getByText(GAME, { exact: false }).first().click(); await log('click game text'); });
