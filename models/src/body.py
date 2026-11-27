@@ -10,7 +10,7 @@ from mathutils import Vector
 
 # part ids (stored per face while building)
 SKIN, NECK, TORSO, HIPS, UARM, FARM, GLOVE, THIGH, SHIN, BOOT = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
-HAIR, HELMET, ACC, DARK, METAL, LENS, PACK, SHOULDER = 11, 12, 13, 14, 15, 16, 17, 18
+HAIR, HELMET, ACC, DARK, METAL, LENS, PACK, SHOULDER, HOOD = 11, 12, 13, 14, 15, 16, 17, 18, 19
 GLOW = 99
 HEAD_C = (0, -0.004, 1.71)
 HEAD_R = (0.134, 0.143, 0.156)
@@ -102,49 +102,109 @@ class Kit:
 
 
 # ---------------------------------------------------------------- shared humanoid body
+def head_shape(x, y, z):
+    """Sculpted head on unit coords: long cranium, flat temples and face plane, brow ridge, eye sockets,
+    cheekbones, tapered jaw with a forward chin. Shared by the head and anything that hugs it (hair)."""
+    if y > 0: y *= 1.10                                          # cranium reaches back
+    x *= 1 - 0.08 * (1 - z * z)                                  # flat temples / sides
+    if z < 0:
+        x *= 1 - 0.30 * (-z) ** 1.3                              # jaw taper
+        y *= 1 - 0.12 * (-z)
+        if y < 0: y -= 0.10 * (-z)                               # chin forward
+    if y < -0.6: y = -0.6 + (y + 0.6) * 0.55                     # flatter face plane
+    if y < 0 and 0.12 < z < 0.42:                                # brow ridge
+        y -= 0.06 * math.sin(math.pi * (z - 0.12) / 0.30) * max(0.0, 1 - abs(x))
+    if y < 0:
+        for ex in (-0.37, 0.37):                                 # eye sockets
+            d = math.hypot(x - ex, z - 0.05)
+            if d < 0.24: y += 0.05 * (1 - d / 0.24)
+        if -0.35 < z < 0.05 and abs(x) > 0.45: y -= 0.04 * (1 - abs(z + 0.15) / 0.2) if abs(z + 0.15) < 0.2 else 0   # cheekbones
+    return x, y, z * 1.06
+
+
 def humanoid(K, B=1.0, head=True, ears=True, nose=True, torso_bulk=1.0, chest=1.0):
-    """Base body. Returns (sx, lx). Joint positions match rig.py's skeleton exactly."""
+    """Base body. Returns (sx, lx). Joint positions match rig.py's skeleton exactly.
+    The skin parts are later fused into one continuous surface by sculpt()."""
     sx, lx = 0.25 * B, 0.11 * B
     t = (0.5 + 0.5 * B) * 1.16              # limb thickness scale (chunky toy proportions)
     tb = torso_bulk
-    # torso (chest region) - tapered soft box, broader at the top, slight chest curve
+    gap = 0.014                             # keep left/right legs apart so the remesh does not fuse them
     def torso_def(x, y, z):
         k = (z + 1) / 2
-        x *= 0.80 + 0.20 * k
-        if y < 0: y *= 1.0 + 0.10 * chest * math.sin(math.pi * min(1, k * 1.2))
+        x *= 0.78 + 0.22 * k ** 0.8                              # waist -> broad chest
+        if y < 0: y *= 1.0 + 0.12 * chest * math.sin(math.pi * min(1, k * 1.15))   # chest
+        if y > 0: y *= 1.0 + 0.06 * math.sin(math.pi * k)       # back
+        if z > 0.35: z -= 0.42 * x * x * (z - 0.35)               # trapezius slope from neck to shoulders
         return x, y, z
-    K.blob((0, 0.0, 1.285), (0.222 * B * tb, 0.136 * tb, 0.228), TORSO, e=0.55, seg=20, rings=12, deform=torso_def)
-    # hips
-    K.blob((0, 0.0, 1.0), (0.185 * B, 0.118, 0.092), HIPS, e=0.6, seg=16, rings=8)
-    # shoulders (ride the chest bone)
+    K.blob((0, 0.0, 1.29), (0.222 * B * tb, 0.136 * tb, 0.235), TORSO, e=0.62, seg=24, rings=14, deform=torso_def)
+    K.blob((0, 0.0, 1.0), (0.18 * B, 0.115, 0.10), HIPS, e=0.7, seg=18, rings=10,
+           deform=lambda x, y, z: (x, y * (1.08 if y > 0 else 1.0), z))                   # seat
+    for k in (-1, 1):                                                                       # deltoids
+        K.blob((k * (sx + 0.015), 0.0, 1.425), (0.085 * t, 0.084 * t, 0.078 * t), SHOULDER, e=1.0, seg=14, rings=10,
+               deform=lambda x, y, z: (x, y, z if z > 0 else z * 0.8))
+        K.blob((k * (sx - 0.08), 0.0, 1.47), (0.07, 0.07, 0.05), TORSO, e=1.0, seg=12, rings=8)      # trapezius bridge
     for k in (-1, 1):
-        K.blob((k * sx, 0, 1.432), (0.082 * t, 0.088 * t, 0.082 * t), SHOULDER, e=0.9, seg=12, rings=8)
-    # arms
+        K.caps((k * (sx + 0.03), 0, 1.425), (k * (sx + 0.30), 0, 1.42), 0.070 * t, 0.056 * t, UARM, sx=1.0, sy=1.08, bulge=0.10, ref=(0, 0, 1))
+        K.caps((k * (sx + 0.30), 0, 1.42), (k * (sx + 0.535), 0, 1.42), 0.058 * t, 0.046 * t, FARM, bulge=0.14, ref=(0, 0, 1))
+        K.blob((k * (sx + 0.615), -0.004, 1.42), (0.066, 0.058 * t, 0.064 * t), GLOVE, e=0.75, seg=14, rings=10)
+        K.blob((k * (sx + 0.59), -0.058 * t, 1.425), (0.03, 0.03, 0.024), GLOVE, e=0.9, seg=8, rings=6)   # thumb
     for k in (-1, 1):
-        K.caps((k * (sx + 0.02), 0, 1.428), (k * (sx + 0.30), 0, 1.42), 0.072 * t, 0.062 * t, UARM, sx=1.0, sy=1.05, bulge=0.07, ref=(0, 0, 1))
-        K.caps((k * (sx + 0.30), 0, 1.42), (k * (sx + 0.535), 0, 1.42), 0.062 * t, 0.052 * t, FARM, bulge=0.10, ref=(0, 0, 1))
-        K.blob((k * (sx + 0.615), -0.004, 1.42), (0.066, 0.062 * t, 0.066 * t), GLOVE, e=0.7, seg=12, rings=8)
-        K.blob((k * (sx + 0.595), -0.062 * t, 1.425), (0.028, 0.03, 0.024), GLOVE, e=0.8, seg=8, rings=6)   # thumb
-    # legs
-    for k in (-1, 1):
-        K.caps((k * lx, 0, 0.93), (k * lx, 0, 0.54), 0.097 * t, 0.080 * t, THIGH, bulge=0.05)
-        K.caps((k * lx, 0, 0.535), (k * lx, 0.005, 0.175), 0.086 * t, 0.068 * t, SHIN, bulge=0.07)
+        rt = min(0.097 * t, lx - gap)
+        K.caps((k * lx, 0, 0.93), (k * lx, 0, 0.54), rt, min(0.078 * t, lx - gap), THIGH, bulge=0.06)
+        K.caps((k * lx, 0, 0.535), (k * lx, 0.005, 0.175), min(0.080 * t, lx - gap), 0.062 * t, SHIN, bulge=0.10, sy=1.08)
         def boot_def(x, y, z):
-            if y < 0: z = z - 0.25 * (1 - z) * (-y) * 0.5 - 0.0     # toe slopes down
+            if y < 0: z = z - 0.25 * (1 - z) * (-y) * 0.5
             return x, y, z
-        K.blob((k * lx, -0.038, 0.095), (0.088 * t, 0.16, 0.098), BOOT, e=0.55, seg=14, rings=8, deform=boot_def)
-    # neck + head
-    K.caps((0, 0.005, 1.505), (0, 0.005, 1.595), 0.058, 0.055, NECK, seg=10, hemi=2, mid=1)
+        K.blob((k * lx, -0.038, 0.095), (min(0.088 * t, lx - gap), 0.16, 0.098), BOOT, e=0.6, seg=16, rings=10, deform=boot_def)
+    K.caps((0, 0.008, 1.50), (0, 0.004, 1.60), 0.064, 0.056, NECK, seg=12, hemi=2, mid=1)
     if head:
-        def head_def(x, y, z):
-            if z < 0: x *= 1 - 0.16 * (-z); y *= 1 - 0.06 * (-z)     # narrower jaw
-            return x, y, z
-        K.blob(HEAD_C, HEAD_R, SKIN, e=0.85, seg=20, rings=14, deform=head_def)
+        K.blob(HEAD_C, HEAD_R, SKIN, e=0.9, seg=26, rings=18, deform=head_shape)
         if ears:
-            for k in (-1, 1): K.blob((k * (HEAD_R[0] - 0.003), 0.012, 1.70), (0.02, 0.034, 0.045), SKIN, e=0.9, seg=8, rings=6)
+            for k in (-1, 1): K.blob((k * (HEAD_R[0] - 0.012), 0.014, 1.70), (0.022, 0.036, 0.048), SKIN, e=0.9, seg=10, rings=6)
         if nose:
-            K.blob((0, -HEAD_R[1] + 0.006, 1.69), (0.02, 0.02, 0.028), SKIN, e=0.9, seg=8, rings=6, deform=lambda x, y, z: (x, y, z) if y > 0 else (x * (1 - 0.3 * (1 - z) / 2), y, z))
+            K.blob((0, -0.118, 1.692), (0.017, 0.024, 0.027), SKIN, e=0.9, seg=10, rings=8,
+                   deform=lambda x, y, z: (x * (1 - 0.35 * (1 - z) / 2), y, z))
     return sx, lx
+
+
+BODY_PIDS = {SKIN, NECK, TORSO, HIPS, UARM, FARM, GLOVE, THIGH, SHIN, BOOT, SHOULDER}
+
+
+def sculpt(K, voxel=0.0105, target_tris=6000, smooth=4):
+    """Fuse the body's skin parts into ONE continuous surface (voxel remesh = clay union), soften it,
+    decimate to budget, then give each face the part id of the nearest original part (for painting)."""
+    from mathutils.bvhtree import BVHTree
+    body, gear = [], []
+    for o in K.parts:
+        pid = o.data.attributes['pid'].data[0].value
+        (body if pid in BODY_PIDS else gear).append((o, pid))
+    refs = []
+    for o, pid in body:
+        me = o.data; refs.append((pid, BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons])))
+    bpy.ops.object.select_all(action='DESELECT')
+    for o, _ in body: o.select_set(True)
+    bpy.context.view_layer.objects.active = body[0][0]
+    bpy.ops.object.join(); ob = bpy.context.object
+    m = ob.modifiers.new('r', 'REMESH'); m.mode = 'VOXEL'; m.voxel_size = voxel; m.adaptivity = 0.0
+    bpy.ops.object.modifier_apply(modifier='r')
+    m = ob.modifiers.new('s', 'SMOOTH'); m.factor = 0.5; m.iterations = smooth
+    bpy.ops.object.modifier_apply(modifier='s')
+    tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+    m = ob.modifiers.new('d', 'DECIMATE'); m.ratio = min(1.0, target_tris / max(tris, 1))
+    bpy.ops.object.modifier_apply(modifier='d')
+    me = ob.data
+    for p in me.polygons: p.use_smooth = True
+    pids = []
+    for p in me.polygons:
+        c = p.center; best, bd = SKIN, 1e9
+        for pid, bvh in refs:
+            hit = bvh.find_nearest(c)
+            if hit[0] is not None and hit[3] < bd: bd, best = hit[3], pid
+        pids.append(best)
+    if 'pid' in me.attributes: me.attributes.remove(me.attributes['pid'])
+    a = me.attributes.new('pid', 'INT', 'FACE'); a.data.foreach_set('value', pids)
+    K.parts = [ob] + [o for o, _ in gear]
+    return ob
 
 
 # ---------------------------------------------------------------- noise (cheap, deterministic)
