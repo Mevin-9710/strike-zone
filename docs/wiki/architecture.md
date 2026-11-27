@@ -21,7 +21,7 @@ Everything is served statically, so you must use `tools/serve.py` (no-cache) to 
 | mentor.js | Amara mentor bot used in the tutorial |
 | radio.js / story-data.js | Radio queue, briefings, debriefs, event chatter, speakers |
 | feel.js | Damage numbers, kill banners, streaks, XP pops, objective arrow, vignette |
-| audio.js | Procedural SFX and music |
+| audio.js | Audio engine: mixer buses (sfx/music/ui/ambience), per-arena reverb, ducking, distance falloff, 10 sampled guns, adaptive streamed music (menu/match/final minute), arena ambience, volume + mute settings (sz_audio). Assets: sfx/ via tools/import_audio.sh |
 | touch.js | Touch stick/look/buttons, `isTouchDevice()` (`?touch=1` forces it) |
 | crazy.js | CrazyGames SDK v3 wrapper (see crazygames.md) |
 | toon.js | Toon shading and ink outlines |
