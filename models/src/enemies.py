@@ -1,4 +1,5 @@
-# Meridian Covenant enemies. Single red tone (shades of one hue only).
+# Meridian Covenant mechs (drone, turret). Single red tone (shades of one hue only).
+# Humanoid enemies are built by agents.py since v32.
 # Run: blender -b -P enemies.py -- <outdir> [keys...]
 import bpy, sys, math, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -65,30 +66,6 @@ class Kit:
 
 R90 = math.radians(90)
 
-def sniper(K):
-    for x in (-1, 1):
-        K.box((0.11*x, 0, 0.72), (0.15, 0.17, 0.40), 'dark')
-        K.box((0.11*x, 0, 0.33), (0.13, 0.15, 0.40), 'dark')
-        K.box((0.11*x, -0.03, 0.07), (0.14, 0.24, 0.14), 'deep')
-        K.box((0.12*x, 0.02, 0.80), (0.20, 0.25, 0.46), 'base', 0.02)   # long coat tails
-    K.box((0, 0, 1.03), (0.36, 0.21, 0.05), 'deep', 0.005)
-    K.box((0, 0, 1.27), (0.38, 0.22, 0.44), 'base')
-    K.box((0, -0.02, 1.38), (0.40, 0.24, 0.16), 'base')
-    K.box((0, 0.02, 1.50), (0.52, 0.30, 0.08), 'light', 0.03)          # shoulder cape
-    K.box((0, -0.125, 1.25), (0.06, 0.01, 0.36), 'light', 0)           # front seam
-    for x in (-1, 1):
-        K.box((0.42*x, 0, 1.42), (0.26, 0.12, 0.12), 'base')
-        K.box((0.67*x, 0, 1.42), (0.26, 0.10, 0.10), 'dark')
-        K.box((0.85*x, 0, 1.42), (0.10, 0.09, 0.08), 'deep')
-    K.box((0, 0, 1.56), (0.09, 0.09, 0.06), 'deep', 0)
-    K.box((0, 0.02, 1.71), (0.25, 0.25, 0.28), 'base', 0.05)            # hood
-    K.box((0, -0.10, 1.66), (0.19, 0.04, 0.16), 'deep', 0.02)           # face mask
-    K.cyl((0.04, -0.13, 1.70), 0.035, 0.05, 'glow', rot=(R90,0,0))      # single scope eye
-    # rifle on back
-    K.box((0, 0.17, 1.25), (0.05, 0.05, 1.05), 'deep', 0.005, rot=(0, math.radians(30), 0))
-    K.cyl((-0.10, 0.20, 1.45), 0.03, 0.22, 'dark', rot=(0, math.radians(30), 0))
-    K.box((0, 0.13, 1.25), (0.42, 0.02, 0.04), 'light', 0, rot=(0, math.radians(30), 0))  # strap
-
 def drone(K):
     K.box((0, 0, 1.4), (0.40, 0.40, 0.14), 'base', 0.04)
     K.box((0, 0, 1.49), (0.24, 0.24, 0.06), 'dark', 0.02)
@@ -119,63 +96,9 @@ def turret(K):
     K.box((0.20, 0, 0.88), (0.04, 0.30, 0.10), 'light', 0.01)
 
 
-def body(K, bulk=1.0, coat=None):
-    B = bulk
-    for x in (-1, 1):
-        K.box((0.11*x*B, 0, 0.72), (0.15*B, 0.17, 0.40), 'dark')
-        K.box((0.11*x*B, 0, 0.33), (0.13*B, 0.15, 0.40), 'dark')
-        K.box((0.11*x*B, -0.03, 0.07), (0.14*B, 0.24, 0.14), 'deep')
-        if coat: K.box((0.12*x*B, 0.02, 0.80), (0.21*B, 0.26, 0.46), coat, 0.02)
-    K.box((0, 0, 1.03), (0.36*B, 0.21, 0.05), 'deep', 0.005)
-    K.box((0, 0, 1.27), (0.38*B, 0.22, 0.44), 'base')
-    K.box((0, -0.02, 1.38), (0.40*B, 0.24, 0.16), 'base')
-    sx = 0.25*B
-    for x in (-1, 1):
-        K.box((sx*x, 0, 1.42), (0.14, 0.18, 0.14), 'base')
-        K.box(((sx+0.17)*x, 0, 1.42), (0.26, 0.12*B, 0.12*B), 'base')
-        K.box(((sx+0.42)*x, 0, 1.42), (0.26, 0.10*B, 0.10*B), 'dark')
-        K.box(((sx+0.60)*x, 0, 1.42), (0.10, 0.09, 0.08), 'deep')
-    K.box((0, 0, 1.56), (0.09, 0.09, 0.06), 'deep', 0)
-    for x in (-1, 1):
-        K.box((0.13*x*B, -0.115, 1.0), (0.08, 0.05, 0.08), 'dark', 0.015)            # belt pouches
-        K.box(((sx+0.53)*x, 0, 1.42), (0.035, 0.13, 0.12), 'light', 0.01)          # glove cuffs
-        K.box((0.08*x*B, -0.116, 1.3), (0.03, 0.01, 0.36), 'deep', 0)              # chest straps
-    K.box((0, -0.12, 1.03), (0.06, 0.012, 0.045), 'light', 0.005)                  # buckle
-    return sx
+# Humanoid enemies (guard, heavy, sniper, commander) moved to agents.py in v32 (smooth bodies, painted outfits).
 
-def guard(K):
-    body(K)
-    K.box((0, -0.03, 1.30), (0.42, 0.27, 0.34), 'light', 0.03)          # vest
-    K.box((0, -0.17, 1.22), (0.30, 0.02, 0.10), 'dark', 0.005)           # mag pouches
-    K.box((0, 0, 1.70), (0.23, 0.25, 0.24), 'base', 0.04)                # helmet
-    K.box((0, -0.12, 1.66), (0.19, 0.03, 0.06), 'deep', 0.01)            # visor band
-    K.box((0, -0.135, 1.66), (0.15, 0.01, 0.02), 'glow', 0)
-    K.box((0, 0.17, 1.25), (0.06, 0.08, 0.80), 'deep', 0.005, rot=(0, math.radians(-35), 0))   # rifle on back
-
-def heavy(K):
-    sx = body(K, 1.35)
-    K.box((0, -0.03, 1.30), (0.58, 0.32, 0.44), 'light', 0.04)          # plate armor
-    for x in (-1, 1):
-        K.box((sx*x, 0, 1.52), (0.26, 0.28, 0.12), 'light', 0.04)        # pauldrons
-        K.box((0.15*x, -0.11, 0.52), (0.14, 0.04, 0.14), 'light', 0.02)  # knee plates
-    K.box((0, 0, 1.72), (0.28, 0.29, 0.26), 'base', 0.05)                # full helm
-    K.box((0, -0.15, 1.71), (0.22, 0.02, 0.04), 'glow', 0)
-    K.box((0, -0.15, 1.62), (0.16, 0.03, 0.08), 'deep', 0.01)
-    K.cyl((0.24, 0.32, 1.28), 0.06, 0.80, 'deep')                         # heavy cannon on back
-    K.box((0, 0.22, 1.30), (0.34, 0.14, 0.40), 'dark', 0.03)             # backpack generator
-
-def commander(K):
-    body(K, 1.05, coat='base')
-    K.box((0, 0.02, 1.52), (0.56, 0.30, 0.08), 'light', 0.03)          # mantle
-    K.box((0, -0.125, 1.28), (0.05, 0.01, 0.42), 'light', 0)
-    for x in (-1, 1): K.box((0.13*x, -0.13, 1.40), (0.06, 0.01, 0.06), 'glow', 0)   # rank lights
-    K.box((0, 0, 1.68), (0.19, 0.21, 0.22), 'light', 0.03)               # head (mask)
-    K.box((0, 0.01, 1.81), (0.21, 0.23, 0.05), 'deep', 0.01)             # slicked hair
-    K.box((0, -0.105, 1.69), (0.15, 0.01, 0.03), 'glow', 0)              # visor
-    K.box((0, 0.03, 1.66), (0.27, 0.26, 0.10), 'base', 0.02)             # high collar
-    K.cyl((-0.20, -0.04, 0.95), 0.03, 0.18, 'deep')                      # sidearm
-
-ENEMIES = {'sniper': (sniper, 2.6, 1.05), 'guard': (guard, 2.6, 1.05), 'heavy': (heavy, 2.9, 1.05), 'commander': (commander, 2.6, 1.05), 'drone': (drone, 1.3, 1.38), 'turret': (turret, 1.6, 0.55)}
+ENEMIES = {'drone': (drone, 1.3, 1.38), 'turret': (turret, 1.6, 0.55)}
 
 def render(key, scale, zc):
     sc = bpy.context.scene
@@ -200,7 +123,6 @@ def render(key, scale, zc):
 for key, (fn, scale, zc) in ENEMIES.items():
     if ONLY and key not in ONLY: continue
     clear(); K = Kit(mats(key)); fn(K)
-    if key in ('guard', 'heavy', 'sniper', 'commander'): K.toy(0.25 * {'heavy': 1.35, 'commander': 1.05}.get(key, 1.0))
     ob = K.join(key)
     paint(ob, ao_dist=0.4, grad=0.32, grime=0.16, seed=len(key))
     tris = sum(len(p.vertices) - 2 for p in ob.data.polygons)

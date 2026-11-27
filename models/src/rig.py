@@ -33,7 +33,7 @@ def select_only(objs, active=None):
 
 
 def import_parts(path):
-    bpy.ops.import_scene.gltf(filepath=path)
+    bpy.ops.import_scene.gltf(filepath=path, merge_vertices=True)   # v32.1: textured parts split at UV seams otherwise (stray slivers)
     mesh = [o for o in bpy.context.selected_objects if o.type == 'MESH'][0]
     select_only([mesh])
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
