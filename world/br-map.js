@@ -96,7 +96,7 @@ function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6d2b79f5) >>>
 
 export function buildBrIsland(world, scene) {
   const k = new Kit(world, scene), R = rng(9191), f = c => k.mat('flat', { color: c });
-  const regions = [], rects = [];                                  // rects: footprints to keep clear of filler props
+  const regions = [], rects = [], flats = [];                                  // rects: footprints to keep clear of filler props
   const keep = (x0, z0, x1, z1, pad = 0) => rects.push([x0 - pad, z0 - pad, x1 + pad, z1 + pad]);
   const free = (x, z, r = 1) => x > 12 + r && z > 12 + r && x < S - 12 - r && z < S - 12 - r && !rects.some(q => x + r > q[0] && x - r < q[2] && z + r > q[1] && z - r < q[3]);
 
@@ -162,16 +162,6 @@ export function buildBrIsland(world, scene) {
   for (const h of [CAN, MKT]) for (const [x0, z0, x1, z1] of [[C - h, C - h, C + h, C - h], [C - h, C + h, C + h, C + h], [C - h, C - h, C - h, C + h], [C + h, C - h, C + h, C + h]]) {
     const hz = z0 === z1; k.box((x0 + x1) / 2, -0.4, (z0 + z1) / 2, hz ? x1 - x0 + 1 : 1, 0.45, hz ? 1 : z1 - z0 + 1, f(PAL.bank), { collide: false });
   }
-  {                                                                // grass: one octagon shape with holes for the arenas and the canal ring (no seams)
-    const e = 10, cut = 18, sh = new THREE.Shape([[e + cut, e], [S - e - cut, e], [S - e, e + cut], [S - e, S - e - cut], [S - e - cut, S - e], [e + cut, S - e], [e, S - e - cut], [e, e + cut]].map(([x, z]) => new THREE.Vector2(x, z)));
-    const hole = (x0, z0, x1, z1) => sh.holes.push(new THREE.Path([new THREE.Vector2(x0, z0), new THREE.Vector2(x0, z1), new THREE.Vector2(x1, z1), new THREE.Vector2(x1, z0)]));
-    for (const [id, ox, oz] of BR_REGIONS) { const d = DM_MAPS.find(q => q.id === id); hole(ox - 0.5, oz - 0.5, ox + d.w + 0.5, oz + d.d + 0.5); }
-    hole(a - 1.5, a - 1.5, b + 1.5, b + 1.5);
-    const geo = new THREE.ShapeGeometry(sh); geo.rotateX(Math.PI / 2);   // shape x/y -> world x/z, facing up
-    const gm = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: PAL.grass, side: THREE.DoubleSide }));
-    gm.position.y = 0.015; gm.receiveShadow = true; k.root.add(gm);
-    k.minimap.push({ x0: e, z0: e, x1: S - e, z1: S - e, y: 0, kind: 'grass' });
-  }
 
   // ---------- market island ----------
   k.box(C, 0, C, MKT * 2, 0.03, MKT * 2, f(PAL.tile), { collide: false });
@@ -214,7 +204,7 @@ export function buildBrIsland(world, scene) {
     for (let t = 2; t < (along ? X1 - X0 : Z1 - Z0) - 2; t += 5) {
       if (along) k.box(X0 + t, 0, (Z0 + Z1) / 2, 2.4, 0.045, 0.3, f(PAL.stripe), { collide: false }); else k.box((X0 + X1) / 2, 0, Z0 + t, 0.3, 0.045, 2.4, f(PAL.stripe), { collide: false });
     }
-    keep(X0, Z0, X1, Z1, 0.5);
+    keep(X0, Z0, X1, Z1, 0.5); flats.push([X0, Z0, X1, Z1]);
   };
   road(C, 14, C, a - 1); road(C, b + 1, C, S - 14); road(14, C, a - 1, C); road(b + 1, C, S - 14, C);   // the cross
   road(78, 40, C - 4, 40);                                          // Belltower east gate
@@ -239,16 +229,106 @@ export function buildBrIsland(world, scene) {
   keep(170, 84, 222, 150, 0);
   // watchtowers (5 m platform, stairs)
   for (const [x, z] of [[96, 70], [150, 150], [88, 150], [186, 76], [40, 70]]) { tower(k, f, x, z); keep(x - 4, z - 4, x + 4, z + 9, 1); }
-  // scatter: trees, rocks, crate stacks on free grass
-  let n = 0;
-  for (let i = 0; i < 1200 && n < 150; i++) {
-    const x = 16 + R() * (S - 32), z = 16 + R() * (S - 32); if (!free(x, z, 2.4)) continue;
-    const r = R(); n++;
-    if (r < 0.55) tree(k, f, x, z, R); else if (r < 0.78) rock(k, f, x, z, R); else crates(k, f, x, z, R);
-    keep(x - 1.6, z - 1.6, x + 1.6, z + 1.6, 1.2);
+  // ---------- biomes: every arena's own ground colour fades smoothly into the land around it ----------
+  const BIO = { belltower: { near: 0xd88a4a, far: 0xc2b04a, tree: 'autumn', rock: 0xc98f6a },   // terracotta -> golden meadow
+    sandkeep: { near: 0xe6a24a, far: 0xe8c26a, tree: 'desert', rock: 0xd8a868 },                   // desert sand + dunes
+    lantern: { near: 0x7a6440, far: 0x2f8a4a, tree: 'pine', rock: 0x7f8f86 },                      // muddy bank -> deep forest
+    neon: { near: 0x3d4258, far: 0x5a4f8a, tree: 'neon', rock: 0x4a5068 } };                       // slate -> violet dusk
+  const MEADOW = new THREE.Color(0x58b847), BEACH = new THREE.Color(0xf0c46a), tmp = new THREE.Color(), tmp2 = new THREE.Color();
+  const sstep = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+  const rdist = (r, x, z) => Math.hypot(Math.max(r.x0 - x, 0, x - r.x1), Math.max(r.z0 - z, 0, z - r.z1));
+  const hsh = (x, z) => { const h = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return h - Math.floor(h); };
+  const vnoise = (x, z) => { const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi, u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
+    return (hsh(xi, zi) * (1 - u) + hsh(xi + 1, zi) * u) * (1 - v) + (hsh(xi, zi + 1) * (1 - u) + hsh(xi + 1, zi + 1) * u) * v; };
+  const fbm = (x, z) => vnoise(x / 23, z / 23) * 0.6 + vnoise(x / 9 + 7, z / 9 + 3) * 0.3 + vnoise(x / 4 + 1, z / 4 + 9) * 0.1;
+  const biomeOf = (x, z) => { let best = null, bd = 1e9; for (const r of regions) { const d = rdist(r, x, z) - hsh(r.x0, r.z0) * 0; if (d < bd) { bd = d; best = r; } } return { r: best, d: bd, b: BIO[best.id] }; };
+  const groundCol = (x, z, out) => {
+    let wsum = 0; out.setRGB(0, 0, 0);
+    for (const r of regions) {
+      const B = BIO[r.id], d = rdist(r, x, z) + (fbm(x, z) - 0.5) * 22;     // noisy edge so the fade is not a ring
+      const w = 1 - sstep(8, 62, d); if (w <= 0) continue;
+      tmp.setHex(B.far).lerp(tmp2.setHex(B.near), 1 - sstep(0, 16, d));
+      out.r += tmp.r * w; out.g += tmp.g * w; out.b += tmp.b * w; wsum += w;
+    }
+    const m = Math.max(0, 1 - wsum); out.r += MEADOW.r * m; out.g += MEADOW.g * m; out.b += MEADOW.b * m; out.multiplyScalar(1 / Math.max(1, wsum + m));
+    const n = fbm(x * 1.7, z * 1.7); out.multiplyScalar(0.88 + n * 0.24);             // soft patches
+    const edge = Math.min(x, z, S - x, S - z) + (vnoise(x / 11, z / 11) - 0.5) * 6;
+    out.lerp(BEACH, sstep(17, 9, edge));                                              // beach
+    return out;
+  };
+  // flat near roads, arenas, the canal and props; gentle rolling ground elsewhere (visual only, colliders stay at y 0)
+  const flatD = (x, z) => { let d = 1e9; for (const q of flats) d = Math.min(d, Math.hypot(Math.max(q[0] - x, 0, x - q[2]), Math.max(q[1] - z, 0, z - q[3])));
+    for (const r of regions) d = Math.min(d, rdist(r, x, z)); return Math.min(d, Math.hypot(Math.max(a - 2 - x, 0, x - b - 2), Math.max(a - 2 - z, 0, z - b - 2))); };
+  {
+    const G = 2, N = S / G, pos = [], col = [], idx = [], vid = new Int32Array((N + 1) * (N + 1)).fill(-1), c = new THREE.Color();
+    const inside = (x, z) => regions.some(r => x > r.x0 - 0.3 && x < r.x1 + 0.3 && z > r.z0 - 0.3 && z < r.z1 + 0.3) || (x > a - 1.5 && x < b + 1.5 && z > a - 1.5 && z < b + 1.5);
+    const vert = (i, j) => { const k2 = j * (N + 1) + i; if (vid[k2] >= 0) return vid[k2]; const x = i * G, z = j * G;
+      const edge = Math.min(x, z, S - x, S - z), h = 0.015 + 0.38 * sstep(3, 12, flatD(x, z)) * sstep(8, 18, edge) * fbm(x * 1.3 + 50, z * 1.3);
+      pos.push(x, h, z); groundCol(x, z, c); col.push(c.r, c.g, c.b); return (vid[k2] = pos.length / 3 - 1); };
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const cx = (i + 0.5) * G, cz = (j + 0.5) * G; if (inside(cx, cz)) continue;
+      const v0 = vert(i, j), v1 = vert(i + 1, j), v2 = vert(i, j + 1), v3 = vert(i + 1, j + 1); idx.push(v0, v2, v1, v1, v2, v3);
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    const gm = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })); gm.receiveShadow = true; k.root.add(gm);
+    k.minimap.push({ x0: 10, z0: 10, x1: S - 10, z1: S - 10, y: 0, kind: 'grass' });
   }
-  // beach: palm-ish trees + loungers for colour
-  for (let i = 0; i < 26; i++) { const t = i / 26 * Math.PI * 2, x = C + Math.cos(t) * 108, z = C + Math.sin(t) * 108; if (free(x, z, 2)) { tree(k, f, x, z, R, true); keep(x - 2, z - 2, x + 2, z + 2); } }
+
+  // mountains ringing the island (in the sea, backdrop + frame), one vertex-coloured mesh: green foot, rock, snow cap
+  {
+    const parts = [], foot = new THREE.Color(0x4a9a48), rockC = new THREE.Color(0x9a8f88), snow = new THREE.Color(0xf4f7fb), c = new THREE.Color();
+    for (let i = 0; i < 26; i++) {
+      const t = i / 26 * Math.PI * 2 + R() * 0.12, rad = 262 + R() * 50, x = C + Math.cos(t) * rad, z = C + Math.sin(t) * rad;
+      const hgt = 55 + R() * 60, wid = 42 + R() * 30, g = new THREE.ConeGeometry(wid, hgt, 7, 4).toNonIndexed(), p = g.attributes.position, cols = [];
+      for (let v = 0; v < p.count; v++) { const y = p.getY(v), f2 = (y + hgt / 2) / hgt; if (f2 > 0.02 && f2 < 0.98) { const jx = hsh(p.getX(v) + i, y) - 0.5, jz = hsh(y, p.getZ(v) - i) - 0.5; p.setX(v, p.getX(v) + jx * wid * 0.25); p.setZ(v, p.getZ(v) + jz * wid * 0.25); } }
+      g.computeVertexNormals();
+      for (let v = 0; v < p.count; v += 3) { const fy = ((p.getY(v) + p.getY(v + 1) + p.getY(v + 2)) / 3 + hgt / 2) / hgt;
+        c.copy(fy < 0.28 ? foot : fy < 0.72 ? rockC : snow); if (fy >= 0.28 && fy < 0.72) c.lerp(foot, 0.15 * hsh(v, i)); for (let q = 0; q < 3; q++) cols.push(c.r, c.g, c.b); }
+      g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); g.deleteAttribute('uv'); g.translate(x, hgt / 2 - 3, z); parts.push(g);
+    }
+    const merged = mergeGeos(parts), mm = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })); k.root.add(mm);
+  }
+
+  // huge boulders and outcrops: break up the open ground, lean on arena walls (not in front of gates), cover for BR fights
+  const boulders = [];
+  const boulder = (x, z, s, color) => {
+    const g = new THREE.IcosahedronGeometry(s, 1), p = g.attributes.position, cc = new THREE.Color(color), cols = [];
+    const jit = (px, py, pz) => 0.8 + hsh(Math.round(px * 7) + x, Math.round(py * 7) * 3 + Math.round(pz * 7) + z) * 0.4;
+    for (let v = 0; v < p.count; v++) { const q = jit(p.getX(v), p.getY(v), p.getZ(v)); p.setXYZ(v, p.getX(v) * q, p.getY(v) * q * 0.72, p.getZ(v) * q); }
+    for (let v = 0; v < p.count; v += 3) { const sh2 = 0.82 + hsh(v + x, z) * 0.3; for (let q = 0; q < 3; q++) cols.push(cc.r * sh2, cc.g * sh2, cc.b * sh2); }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3)); g.deleteAttribute('uv'); g.translate(x, s * 0.35, z); g.computeVertexNormals(); boulders.push(g);
+    world.addBox(V(x - s * 0.62, 0, z - s * 0.62), V(x + s * 0.62, s * 0.95, z + s * 0.62)); keep(x - s, z - s, x + s, z + s, 1.5); flats.push([x - s, z - s, x + s, z + s]);
+  };
+  let nb = 0;
+  for (let i = 0; i < 900 && nb < 26; i++) {
+    const x = 20 + R() * (S - 40), z = 20 + R() * (S - 40), s = 3.5 + R() * 4.5; if (!free(x, z, s + 1.5)) continue;
+    const { b: B, d } = biomeOf(x, z); boulder(x, z, s, d < 70 ? B.rock : 0x8d98a8); nb++;
+    if (R() < 0.6) { const t = R() * 6.3, s2 = s * (0.4 + R() * 0.3), x2 = x + Math.cos(t) * s * 1.1, z2 = z + Math.sin(t) * s * 1.1; if (free(x2, z2, s2)) boulder(x2, z2, s2, d < 70 ? B.rock : 0x8d98a8); }
+  }
+  for (const r of regions) {                                                          // outcrops hugging the outside of each arena wall
+    const B = BIO[r.id], gates = GATES[r.id].map(g => gateBox(DM_MAPS.find(q => q.id === r.id), g));
+    for (let i = 0; i < 40; i++) {
+      const side = (R() * 4) | 0, t = R(), x = side < 2 ? r.x0 + t * (r.x1 - r.x0) : side === 2 ? r.x0 - 3 : r.x1 + 3, z = side >= 2 ? r.z0 + t * (r.z1 - r.z0) : side === 0 ? r.z0 - 3 : r.z1 + 3;
+      const lx = x - r.x0, lz = z - r.z0; if (gates.some(g => lx > g[0] - 8 && lx < g[3] + 8 && lz > g[2] - 8 && lz < g[5] + 8)) continue;
+      const s = 2 + R() * 2.5; if (x < 12 || z < 12 || x > S - 12 || z > S - 12) continue;
+      if (flats.some(q => x + s > q[0] && x - s < q[2] && z + s > q[1] && z - s < q[3])) continue;
+      boulder(x, z, s, B.rock);
+    }
+  }
+  if (boulders.length) k.root.add(new THREE.Mesh(mergeGeos(boulders), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true })));
+
+  // scatter: trees (style follows the biome), rocks, crate stacks
+  let n = 0;
+  for (let i = 0; i < 3000 && n < 260; i++) {
+    const x = 14 + R() * (S - 28), z = 14 + R() * (S - 28); if (!free(x, z, 2.2)) continue;
+    const r = R(), { b: B, d } = biomeOf(x, z), edge = Math.min(x, z, S - x, S - z); n++;
+    const style = edge < 17 ? 'palm' : d < 55 + R() * 20 ? B.tree : 'meadow';
+    if (r < 0.72) tree(k, f, x, z, R, style); else if (r < 0.86) rock(k, f, x, z, R); else crates(k, f, x, z, R);
+    keep(x - 1.6, z - 1.6, x + 1.6, z + 1.6, 1.0);
+  }
+  // forest clumps: a few dense groves so the land reads as places, not a sprinkle
+  for (const r of regions) { const B = BIO[r.id], cx = (r.x0 + r.x1) / 2 < C ? r.x1 + 14 : r.x0 - 14, cz = (r.z0 + r.z1) / 2 < C ? r.z1 + 14 : r.z0 - 14;
+    for (let i = 0; i < 60; i++) { const x = cx + (R() - 0.5) * 26, z = cz + (R() - 0.5) * 26; if (!free(x, z, 1.8)) continue; tree(k, f, x, z, R, B.tree); keep(x - 1.3, z - 1.3, x + 1.3, z + 1.3, 0.6); } }
 
   k.finish();
   const spawnA = V(C, 0, C + MKT - 3);
@@ -265,12 +345,24 @@ export function buildBrIsland(world, scene) {
 }
 
 // ---------- props (flat vivid colours, merged per material) ----------
-function tree(k, f, x, z, R, palm = false) {
-  const h = palm ? 4.2 + R() * 1.5 : 2.2 + R() * 1.4;
-  k.cyl(x, 0, z, 0.22, h, f(PAL.trunk), { seg: 6 });
-  const l = f(R() < 0.5 ? PAL.leaf : PAL.leaf2);
+function mergeGeos(list) {                                          // non-indexed geometries with position/normal/color -> one
+  const out = new THREE.BufferGeometry();
+  for (const nm of ['position', 'normal', 'color']) { let n = 0; for (const g of list) n += g.attributes[nm].array.length; const arr = new Float32Array(n); let o = 0; for (const g of list) { arr.set(g.attributes[nm].array, o); o += g.attributes[nm].array.length; } out.setAttribute(nm, new THREE.BufferAttribute(arr, 3)); }
+  out.computeBoundingSphere(); return out;
+}
+// tree styles per biome: meadow (round green), palm (beach), autumn (Belltower), desert (Sandkeep: palms + cacti), pine (Lantern), neon (violet/cyan glow-leaf)
+const LEAF = { meadow: [0x2f9e3a, 0x5cc23f], autumn: [0xf08a24, 0xe9b93a, 0xd9553a], palm: [0x3fb04a, 0x5cc23f], pine: [0x1f6e3a, 0x2a8a46], neon: [0x8a4fe0, 0x2bc6d9, 0xd94fb0], cactus: [0x3f9e4a] };
+function tree(k, f, x, z, R, style = 'meadow') {
+  if (style === true) style = 'palm';
+  if (style === 'desert') style = R() < 0.55 ? 'cactus' : 'palm';
+  const pick = a => a[(R() * a.length) | 0], l = f(pick(LEAF[style] || LEAF.meadow));
+  if (style === 'cactus') { const h = 2 + R() * 1.6; k.cyl(x, 0, z, 0.35, h, l, { seg: 7 }); k.cyl(x + 0.55, h * 0.4, z, 0.22, h * 0.35, l, { seg: 6, collide: false }); k.box(x + 0.3, h * 0.4, z, 0.5, 0.3, 0.3, l, { collide: false }); if (R() < 0.6) { k.cyl(x - 0.5, h * 0.55, z, 0.2, h * 0.3, l, { seg: 6, collide: false }); k.box(x - 0.28, h * 0.55, z, 0.45, 0.28, 0.28, l, { collide: false }); } return; }
+  if (style === 'pine') { const h = 5 + R() * 3; k.cyl(x, 0, z, 0.25, h * 0.35, f(PAL.trunk), { seg: 6 }); for (let i = 0; i < 3; i++) k.cyl(x, h * (0.22 + i * 0.22), z, 2.2 - i * 0.6, h * 0.42, l, { seg: 7, r2: 0.05, collide: false }); return; }
+  const palm = style === 'palm', h = palm ? 4.2 + R() * 1.5 : style === 'neon' ? 2.6 + R() * 1.6 : 2.2 + R() * 1.4;
+  k.cyl(x, 0, z, 0.22, h, f(style === 'neon' ? 0x2a2440 : PAL.trunk), { seg: 6 });
   if (palm) { for (let i = 0; i < 5; i++) { const t = i / 5 * Math.PI * 2 + R(); k.box(x + Math.cos(t) * 1.1, h - 0.2, z + Math.sin(t) * 1.1, 2.2, 0.18, 0.7, l, { collide: false, rotY: t }); } k.blob(x, h, z, 0.6, l); return; }
-  k.blob(x, h + 0.9, z, 1.6 + R() * 0.5, l); k.blob(x + 0.6, h + 0.3, z + 0.4, 1.1, l); k.blob(x - 0.5, h + 0.5, z - 0.4, 1.0, l);
+  const sz = style === 'autumn' ? 1.3 : 1;
+  k.blob(x, h + 0.9, z, (1.6 + R() * 0.5) * sz, l); k.blob(x + 0.6, h + 0.3, z + 0.4, 1.1 * sz, l); k.blob(x - 0.5, h + 0.5, z - 0.4, 1.0 * sz, l);
 }
 function rock(k, f, x, z, R) {
   const s = 1.2 + R() * 1.6; k.box(x, 0, z, s * 1.4, s * 0.8, s, f(PAL.rock), { rotY: 0 }); k.box(x + s * 0.4, 0, z + s * 0.3, s * 0.7, s * 1.1, s * 0.7, f(0x8aa0b8));
