@@ -1772,8 +1772,8 @@ function weaponButtons(el, list, key) {
   for (const id of list) {
     const b = document.createElement('button'); b.className = `wcard${loadout[key] === id ? ' on' : ''}`; b.dataset.id = id;
     const lock = !META.unlocked(progress).weapons.has(id);
-    b.innerHTML = `<img src="${A.icons[id]}" alt=""><span>${lock ? '🔒 M' + META.unlockSource('weapons', id) : WEAPONS[id].name.toUpperCase()}</span>`;
-    if (lock && !DEBUG) { b.disabled = true; b.title = `Unlocks after mission ${META.unlockSource('weapons', id)}`; }
+    b.innerHTML = `<img src="${A.icons[id]}" alt=""><span>${lock ? '🔒 LV ' + META.unlockLevel(id) : WEAPONS[id].name.toUpperCase()}</span>`;
+    if (lock && !DEBUG) { b.disabled = true; b.title = `Unlocks at level ${META.unlockLevel(id)}`; }
     b.onclick = () => { loadout[key] = id; store.set('sz_loadout', loadout); weaponButtons(el, list, key); showStats(id); if (key === 'primary') setPreview(); };
     b.onmouseenter = () => showStats(id);
     el.append(b);
@@ -1803,7 +1803,7 @@ function selectMission(i) {
   $('start').disabled = i > progress && !DEBUG;
 }
 function refreshAb() { document.querySelectorAll('#abilities button').forEach(b => b.classList.toggle('on', selAbilities.includes(b.dataset.id))); $('start').disabled = selAbilities.length !== 2 || (selected > progress && !DEBUG); }
-function openBriefing(step = 'mode') {
+function openBriefing(step = 'agent') {
   $('missions').innerHTML = '';
   MISSIONS.forEach((m, i) => {
     if (i === 0 || i === 3 || i === 6 || i === 9) $('missions').insertAdjacentHTML('beforeend', `<div data-ch="${i / 3}" style="width:100%;font-size:calc(var(--u)*.9);margin-top:4px">CHAPTER ${i / 3 + 1}</div>`);
@@ -1829,7 +1829,8 @@ function buildChapters() {
     $('chapters').append(b);
   }
 }
-const flow = createFlow({ $, skip: id => id === 'agent' && [...META.unlocked(progress).operatives].length < 2 && !DEBUG, onExit: () => openLobby() });
+// rebrand: no campaign steps (mode/mission skipped)
+const flow = createFlow({ $, skip: id => id === 'mode' || id === 'mission' || (id === 'agent' && [...META.unlocked(progress).operatives].length < 2 && !DEBUG), onExit: () => openLobby() });
 
 // ---------- input ----------
 const isMenu = () => !running;
@@ -1882,7 +1883,7 @@ document.addEventListener('pointerlockchange', () => { if (!document.pointerLock
 document.addEventListener('visibilitychange', () => { if ($('clickGo').classList.contains('show')) track('lock', { k: 'vis', h: document.hidden ? 1 : 0 }); });   // v38: do gate leavers tab away?
 document.addEventListener('pointerlockerror', () => { track('lock', { k: 'err' }); setTimeout(lockHint, 50); });
 $('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' }); if (controlsCard.pending) { controlsCard.pending = false; controlsCard(); } if (startAnn?.pending) { startAnn.pending = false; FX.announce(startAnn.txt, 'start'); } e.preventDefault(); $('clickGo').classList.remove('show'); unlockAudio(); paused = false; running = true; last = performance.now(); crazy.gameplay(true); lockMouse(); });
-$('start').onclick = () => { unlockAudio(); document.dispatchEvent(new CustomEvent('sz:deploy', { detail: { index: selected } })); startMission(selected); };
+$('start').onclick = () => { unlockAudio(); dmStart(false); };   // rebrand: the loadout screen deploys into an arena match
 $('resume').onclick = () => { music.pause(false); $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
 $('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
@@ -1991,7 +1992,7 @@ function startOnboarding(force) {
       else if (panel === 'profile') openProfile(); else if (panel === 'settings') { openLobby(); settingsUI(); }
       else if (!$('brief').classList.contains('show') || flow.cur() !== panel) openBriefing(panel);
     },
-    onFinish(played) { $('settings').classList.remove('show'); if (played) { unlockAudio(); selected = 0; startMission(0); } else openLobby(); },
+    onFinish(played) { $('settings').classList.remove('show'); if (played) { unlockAudio(); dmStart(false); } else openLobby(); },
   });
   return onboard.start({ force });
 }
@@ -2055,7 +2056,7 @@ function operativeButtons() {
   $('operatives').innerHTML = '';
   for (const [id, name] of Object.entries(OPERATIVES)) {
     const b = document.createElement('button'); b.textContent = name.toUpperCase(); b.classList.toggle('on', loadout.operative === id);
-    if (!META.unlocked(progress).operatives.has(id)) { b.textContent = `🔒 ${name.toUpperCase()} · M${META.unlockSource('operatives', id)}`; if (!DEBUG) b.disabled = true; }
+    if (!META.unlocked(progress).operatives.has(id)) { b.textContent = `🔒 ${name.toUpperCase()} · LV ${META.unlockLevel(id)}`; if (!DEBUG) b.disabled = true; }
     b.onclick = () => { loadout.operative = id; store.set('sz_loadout', loadout); operativeButtons(); setPreview(); };
     $('operatives').append(b);
   }
@@ -2111,8 +2112,7 @@ function lobbyDaylight() {                                                      
 }
 const WICON = { pistol: 'pistol', revolver: 'pistol', assault: 'assault-rifle', 'machine gun': 'assault-rifle', sniper: 'sniper-rifle' };
 function lobbyV14() {
-  const i = Math.min(progress, MISSIONS.length - 1), pt = partOf(i);
-  $('lMission').textContent = playMode === 'dm' ? `${teamsOn() ? 'TEAM DEATHMATCH' : 'DEATHMATCH'} · LEVEL ${dmLevel} · FIRST TO ${dmGoal(dmLevel, teamsOn())}` : `LEVEL ${i + 1}${pt ? ' · PART ' + (pt + 1) : ''} · ${MISSIONS[i].title.toUpperCase()}`;
+  $('lMission').textContent = `${teamsOn() ? 'TEAM DEATHMATCH' : 'DEATHMATCH'} · LEVEL ${dmLevel} · FIRST TO ${dmGoal(dmLevel, teamsOn())}`;
   $('lPlay').innerHTML = `<span>${icon('play')} PLAY</span>`;
   { const b = store.get('sz_dm_best', 0); $('mStory').innerHTML = `${icon('flag')} STORY<small></small>`; $('mDm').innerHTML = `${icon('skull')} DEATHMATCH<small>${b ? 'BEST ' + b : ''}</small>`; }
   $('mStory').classList.toggle('on', playMode !== 'dm'); $('mDm').classList.toggle('on', playMode === 'dm'); lobbyModes();
@@ -2180,17 +2180,16 @@ function openPass() {
 function openProfile() {
   only('profile');
   const T = META.profile.totals, un = META.unlocked(progress);
-  $('profStats').textContent = `LEVEL ${META.level()} · ${META.profile.xp} XP · ◎ ${META.profile.coins}\nCampaign ${progress}/${MISSIONS.length} · Wins ${T.wins} · Kills ${T.kills} · Headshots ${T.heads} · Breaches ${T.breaches} · Intel ${META.profile.intel.length}`;
-  $('profUnlocks').textContent = [...PRIMARIES, ...SIDEARMS].map(w => `${WEAPONS[w].name}${un.weapons.has(w) ? ' ✓' : ` (M${META.unlockSource('weapons', w)})`}`).join(' · ') + '\n' + Object.entries(OPERATIVES).map(([o, n]) => `${n}${un.operatives.has(o) ? ' ✓' : ` (M${META.unlockSource('operatives', o)})`}`).join(' · ');
+  $('profStats').textContent = `LEVEL ${META.level()} · ${META.profile.xp} XP · ◎ ${META.profile.coins}\nWins ${T.wins} · Kills ${T.kills} · Headshots ${T.heads}`;
+  $('profUnlocks').textContent = [...PRIMARIES, ...SIDEARMS].map(w => `${WEAPONS[w].name}${un.weapons.has(w) ? ' ✓' : META.unlockLevel(w) ? ` (LV ${META.unlockLevel(w)})` : ''}`).join(' · ');
   const open = META.filesOpen();
   $('files').innerHTML = META.FILES.map(([t, b], i) => `<div class="file${i < open ? '' : ' lock'}"><b>${i < open ? t : '🔒 FILE ' + (i + 1)}</b><br>${i < open ? b : `Recover ${(i + 1) * 3} intel caches to open.`}</div>`).join('');
 }
 $('lPlay').onclick = () => {                                                       // first launch: PLAY drops straight into the mission-1 drill (tour stays in Settings)
   unlockAudio();
-  if (progress === 0 && !onboardingDone() && !tutorialDone()) { try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ } selected = 0; startMission(0); return; }
   track('lobby', { k: 'play', m: playMode });
-  if (playMode === 'dm') { dmStart(!store.get('sz_mode', null)); } else $('pStory').click();              // v14: mode is picked on the lobby toggle, PLAY starts at once
-}; $('mStory').onclick = () => { playMode = 'story'; store.set('sz_mode', playMode); lobbyV14(); }; $('mDm').onclick = () => { playMode = 'dm'; store.set('sz_mode', playMode); lobbyV14(); };
+  dmStart(!store.get('sz_mode', null));
+}; $('mDm').onclick = () => { playMode = 'dm'; store.set('sz_mode', playMode); lobbyV14(); };
 $('lCrate').onclick = () => { if (!startMissionNow.n) { unlockAudio(); $('lPlay').click(); } };
 { const R = { lShop: ['cart', 'SHOP'], lLoadout: ['backpack', 'LOADOUT'], lPass: ['star', 'PASS'], lProfile: ['rank', 'PROFILE'] };
   for (const [id, [ic, t]] of Object.entries(R)) $(id).innerHTML = `${icon(ic)}<span>${t}</span>`;
@@ -2346,7 +2345,7 @@ function killCam(dt) {                                                          
   const ex = e.pos.x - player.pos.x, ez = e.pos.z - player.pos.z, ty = Math.atan2(-ex, -ez), tp = Math.atan2(e.pos.y + 1.2 - player.pos.y - CFG.eye, Math.hypot(ex, ez));
   let d = ty - player.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.yaw += d * Math.min(1, dt * 4); player.pitch += (tp - player.pitch) * Math.min(1, dt * 4);
 }
-const PZ_MODES = [['tdm', 'TEAM DEATHMATCH', 'squad', '5 V 5 · BOTS'], ['dm', 'DEATHMATCH', 'skull', 'FREE FOR ALL'], ['story', 'STORY', 'flag', 'CAMPAIGN']];
+const PZ_MODES = [['tdm', 'TEAM DEATHMATCH', 'squad', '5 V 5 · BOTS'], ['dm', 'DEATHMATCH', 'skull', 'FREE FOR ALL']];   // rebrand: story campaign cut
 function pauseFill() {
   const dm = mode === 'dm';
   $('pzMap').textContent = (mission?.title || '').toUpperCase(); $('pzIc').innerHTML = icon(dm ? 'skull' : 'flag');
@@ -2366,15 +2365,14 @@ function pauseFill() {
 }
 function pzPlay(k) {
   track('ui', { k: 'pzMode', m: k }); $('pause').classList.remove('show'); paused = false; unlockAudio();
-  if (k === 'story') { playMode = 'story'; store.set('sz_mode', 'story'); endMatch(); startMission(Math.min(progress, MISSIONS.length - 1)); return; }
   playMode = 'dm'; store.set('sz_mode', 'dm'); store.set('sz_teams', k === 'tdm' ? 1 : 0); endMatch(); dmStart(false);
 }
 function lobbyModes() {                                                            // lobby: one SELECT MODE button + a pop-up list, giant PLAY
-  const cur = playMode === 'dm' ? (teamsOn() ? 'tdm' : 'dm') : 'story', M = { tdm: 'TEAM DEATHMATCH', dm: 'DEATHMATCH', story: 'STORY' };
+  const cur = teamsOn() ? 'tdm' : 'dm', M = { tdm: 'TEAM DEATHMATCH', dm: 'DEATHMATCH' };
   let el = $('lModeSel'); if (!el) { el = document.createElement('div'); el.id = 'lModeSel'; $('lMain').insertBefore(el, $('lPlay')); }
   el.innerHTML = `<button id="lmsBtn" class="lms"><span class="ar">▾</span><span>SELECT MODE<small>${M[cur]}</small></span></button><div id="lmsList">${PZ_MODES.map(([k, n, ic, sub]) => `<button data-m="${k}" class="${k === cur ? 'on' : ''}">${icon(ic)}<span>${n}<small>${sub}</small></span></button>`).join('')}</div>`;
   $('lmsBtn').onclick = () => el.classList.toggle('open');
-  el.querySelectorAll('#lmsList button').forEach(b => b.onclick = () => { const k = b.dataset.m; playMode = k === 'story' ? 'story' : 'dm'; store.set('sz_mode', playMode); if (k !== 'story') store.set('sz_teams', k === 'tdm' ? 1 : 0); el.classList.remove('open'); track('ui', { k: 'mode', m: k }); lobbyV14(); });
+  el.querySelectorAll('#lmsList button').forEach(b => b.onclick = () => { const k = b.dataset.m; playMode = 'dm'; store.set('sz_mode', playMode); store.set('sz_teams', k === 'tdm' ? 1 : 0); el.classList.remove('open'); track('ui', { k: 'mode', m: k }); lobbyV14(); });
   let nav = $('lNav'); if (!nav) {
     nav = document.createElement('div'); nav.id = 'lNav';
     nav.innerHTML = [['PLAY', null], ['LOADOUT', 'lLoadout'], ['SHOP', 'lShop'], ['PASS', 'lPass'], ['PROFILE', 'lProfile']].map(([n, id], i) => `<button class="${i ? '' : 'on'}" data-id="${id || ''}">${n}</button>`).join('');
@@ -2405,17 +2403,15 @@ function lobbyModes() {                                                         
   if (!DEBUG) { if (!un.weapons.has(loadout.primary)) loadout.primary = 'ar7_lance'; if (!un.weapons.has(loadout.sidearm)) loadout.sidearm = 'vex_p9'; if (!un.operatives.has(loadout.operative)) loadout.operative = 'rhea'; }
   buildMission(Math.min(progress, MISSIONS.length - 1));             // a live backdrop behind the lobby
   running = false;
-  const firstRun = !TEST && !Q.has('brief') && !Q.has('onboard') && progress === 0 && !onboardingDone() && !tutorialDone();
-  playMode = (store.get('sz_mode', null) || RC.defaultMode) === 'dm' ? 'dm' : 'story';   // v15: Deathmatch is the default mode (remote switch)
+  const firstRun = !TEST && !Q.has('brief') && !Q.has('onboard') && !store.get('sz_mode', null) && !onboardingDone() && !tutorialDone();
+  playMode = 'dm';                                                                // rebrand: arena modes only (story campaign cut)
   if (firstRun && playMode === 'dm' && RC.dmNewMaps && dmPreP) await Promise.race([dmPreP, new Promise(r => setTimeout(r, 8000))]);   // first launch goes straight into the arena, no lobby flash
-  setTimeout(() => A.loadKits(), firstRun ? 4000 : 0);                            // v44: story kits download after the first arena is in
   if (Q.has('brief')) openBriefing(); else if (!(firstRun && playMode === 'dm' && dmMapReady(DM_MAPS[DM.nextMap].id))) openLobby();
   if (Q.has('onboard')) startOnboarding(true);
   else if (firstRun) {                                                            // first launch: straight into the mission-1 drill, no menus (CG load time = page open -> gameplayStart)
     try { localStorage.setItem('sz_onboard_done', '1'); } catch { /* blocked */ }
     selected = 0;                                                                // first click on the canvas grabs the mouse + unlocks audio
-    if (playMode === 'dm') dmStart(true);   // v15: first launch = Deathmatch
-    else startMission(0);
+    dmStart(true);                                                               // first launch = a match
   }
   requestAnimationFrame(frame);
 })();

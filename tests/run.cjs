@@ -50,31 +50,18 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
     await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=tdm]');
     check('mode toggle switches the lobby to Deathmatch', await pg.evaluate(() => document.getElementById('mDm').classList.contains('on') && /DEATHMATCH/.test(document.getElementById('lMission').textContent)));
-    await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=story]');
     { const { ctx: dctx, pg: dpg } = await open(browser, { query: 'test=1' });
       const dm = await dpg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); const n0 = g.enemies.filter(e => e.alive).length; g.killAll(); g.step(4); const n1 = g.enemies.filter(e => e.alive).length;
         g.damage(500); g.step(0.2); const dead = !g.player.alive; g.step(3); return { n0, n1, dead, back: g.player.alive, hud: document.getElementById('obj').textContent, run: g.state.running }; });
       check('deathmatch: bots respawn, player respawns, HUD counts kills', dm.n0 >= 4 && dm.n1 >= 1 && dm.dead && dm.back && /DEATHMATCH/.test(dm.hud) && dm.run, JSON.stringify(dm));
       await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /RANK|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
       await dctx.close(); }
+    check('rebrand: SELECT MODE lists only arena modes (no story)', await pg.evaluate(() => [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',') === 'tdm,dm'));
     await pg.evaluate(() => __game.openBriefing());
-    check('briefing opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));
-    await pg.click('#chapters button >> nth=0');
-    check('chapter pick advances to mission step', await pg.isVisible('#stepMission') && !(await pg.isVisible('#stepMode')));
-    await pg.keyboard.press('Escape'); check('Esc goes back a step', await pg.isVisible('#stepMode'));
-    await pg.click('#chapters button >> nth=0');
-    await pg.click('#briefNext');
-    check('loadout step has DEPLOY', await pg.isVisible('#stepLoadout') && await pg.isVisible('#start'));
-    await pg.click('#briefBack'); await pg.click('#briefBack');
-    check('Back x2 reaches mode step', await pg.isVisible('#stepMode'));
-    await pg.click('#briefBack'); check('Back from mode returns to lobby', await pg.isVisible('#lobby'));
-    await pg.evaluate(() => __game.openBriefing());
-    const n = await pg.locator('#missions button').count(), locked = await pg.locator('#missions button:disabled').count();
-    check('campaign lists 12 missions', n === 12, `n=${n}`);
-    check('new profile: only mission 1 open', locked === 11, `locked=${locked}`);
-    check('story-locked weapons are disabled', (await pg.locator('#primaries button:disabled').count()) === 5);
-    check('story-locked operatives are disabled', (await pg.locator('#operatives button:disabled').count()) === 4);
+    check('rebrand: LOADOUT opens on the loadout step (no mode/mission steps)', await pg.isVisible('#stepLoadout') && !(await pg.isVisible('#stepMode')) && !(await pg.isVisible('#stepMission')));
+    check('level-locked weapons are disabled and show their level', (await pg.locator('#primaries button:disabled').count()) === 5 && /LV \d/.test(await pg.textContent('#primaries')));
     await pg.click('#briefBack'); check('briefing BACK returns to lobby', await pg.isVisible('#lobby'));
+    check('rebrand: story entry points hidden', await pg.evaluate(() => ['mStory', 'lDaily', 'lSurv', 'pStory'].every(id => getComputedStyle(document.getElementById(id)).display === 'none')));
     check('no errors on boot', pg.errors.length === 0, pg.errors.join(' | '));
     await ctx.close();
   }

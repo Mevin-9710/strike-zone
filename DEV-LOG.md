@@ -553,3 +553,9 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
   - Loading card: moving shimmer on the bar, "Slow connection, still loading…" at 12 s, and TAP TO RETRY at 35 s or 1.5 s after a script fails. telemetry.js removes the button once JS runs.
   - Inline telemetry: `page` gains `im` (import-map support) and a coarse OS/browser string. New `err0`, `slow0` and `retry0` events fire before game JS runs.
   - Boot tag b:45. Verified: dist boots with the import map stripped, and a 404 on a module shows the retry button.
+
+## Blastline rebrand, step 1: story campaign cut (28 Nov 2026)
+- Lobby, SELECT MODE, pause menu and first launch offer only Team Deathmatch and Free for All. Story, daily mission, survival, tutorial entry points hidden.
+- Briefing opens on the loadout step; DEPLOY starts an arena match. Kenney story kits no longer download at boot.
+- Operatives now unlock by level (Kade 2, Yuna 5, Tomas 7, Amara 9); locked gear shows its level instead of a mission number.
+- Story engine code is still in game.js (unreachable from the UI); removal comes in a later step. Tests: 111/114 (2 known charm/spray + outcome-dependent TDM boost).

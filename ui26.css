@@ -269,3 +269,6 @@ body.touch #mmlabel{display:none}
 #lCrate .d.now{background:var(--ky);border-color:var(--ky)}#lCrate .d.now b,#lCrate .d.now em{color:#111}
 #lCrate .d.nx{border-color:#36d6f0;background:rgba(54,214,240,.15)}#lCrate .d.nx b{color:#36d6f0}
 #lCrate .d.big:not(.got):not(.now){background:linear-gradient(180deg,rgba(255,154,60,.35),rgba(227,20,27,.25));border-color:#ff9a3c}
+
+/* rebrand: story campaign cut, story-only entry points hidden */
+#mStory, #lDaily, #lSurv, #pStory, #trySurv, #qMission, #next, #tpPlay, #profile h3, #profUnlocks + h3, #files { display: none !important; }
