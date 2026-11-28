@@ -13,7 +13,7 @@ export function serverUrl(Q, RC) {                      // ?mp=wss://host overri
 export function createNet() {
   const N = {
     ws: null, on: false, me: 0, team: 'A', host: false, room: '', mode: '', map: 0, round: 0, clock: 0, target: 0, score: { A: 0, B: 0 },
-    state: 'play', hill: null, hillOwn: '', ents: new Map(), handler: () => {}, ping: 0, sentT: 0, botT: 0, url: '',
+    state: 'play', hill: null, hillOwn: '', br: null, zone: null, zoneNext: 0, zoneShrink: 0, alive: 0, ents: new Map(), handler: () => {}, ping: 0, sentT: 0, botT: 0, url: '',
     connect(url, opts) {
       N.close(); N.url = url;
       return new Promise((res, rej) => {
@@ -58,11 +58,12 @@ export function createNet() {
     },
   };
   function welcome(m) {
-    Object.assign(N, { on: true, me: m.you, team: m.team, host: m.host, room: m.room, mode: m.mode, map: m.map, round: m.round, clock: m.clock, target: m.target, score: m.score, state: m.state, hill: m.hill, hillOwn: m.hillOwn || '' });
+    Object.assign(N, { on: true, me: m.you, team: m.team, host: m.host, room: m.room, mode: m.mode, map: m.map, round: m.round, clock: m.clock, target: m.target, score: m.score, state: m.state, hill: m.hill, hillOwn: m.hillOwn || '', br: m.br || null, alive: m.br?.alive || 0, zone: null });
     N.ents.clear(); for (const e of m.ents) N.ents.set(e.id, { ...e, buf: [] });
   }
   function snap(m) {
     N.clock = m.c; if (m.sc) N.score = m.sc;
+    if (m.z) { N.zone = m.z; N.zoneNext = m.zn; N.zoneShrink = m.zs; N.alive = m.al; }
     const t = performance.now() / 1000;
     for (const q of m.e) {
       const e = N.ents.get(q[0]); if (!e) continue;
@@ -76,12 +77,14 @@ export function createNet() {
     else if (m.t === 'del') N.ents.delete(m.id);
     else if (m.t === 'host') N.host = true;
     else if (m.t === 'dmg') { const v = N.ents.get(m.v); if (v) v.hp = m.hp; }
-    else if (m.t === 'kill') { N.score = m.score; const s = N.ents.get(m.s), v = N.ents.get(m.v); if (s) s.k = m.sk; if (v) { v.d = m.vd; v.alive = false; v.hp = 0; } }
+    else if (m.t === 'kill') { N.score = m.score; const s = N.ents.get(m.s), v = N.ents.get(m.v); if (s) s.k = m.sk; if (v) { v.d = m.vd; v.alive = false; v.hp = 0; } if (m.alive) N.alive = m.alive; }
+    else if (m.t === 'zone') { if (N.br) Object.assign(N.br, { ph: m.ph, to: m.to, dps: m.dps }); }
+    else if (m.t === 'took') { if (N.br) N.br.taken.push(m.i); const e = N.ents.get(m.by); if (e) { e.hp = m.hp; e.ar = m.ar; } }
     else if (m.t === 'sp') { const e = N.ents.get(m.id); if (e) { e.alive = true; e.hp = 100; e.buf.length = 0; e.p = m.p; } }
     else if (m.t === 'hill') N.hillOwn = m.own;
     else if (m.t === 'hillpos') N.hill = m.p;
     else if (m.t === 'end') { N.state = 'end'; N.score = m.score; }
-    else if (m.t === 'round') { Object.assign(N, { state: 'play', map: m.map, round: m.round, clock: m.clock, target: m.target, score: { A: 0, B: 0 }, hill: null, hillOwn: '' }); N.ents.clear(); for (const e of m.ents) N.ents.set(e.id, { ...e, buf: [] }); }
+    else if (m.t === 'round') { Object.assign(N, { state: 'play', map: m.map, round: m.round, clock: m.clock, target: m.target, score: { A: 0, B: 0 }, hill: null, hillOwn: '', br: m.br || null, alive: m.br?.alive || 0, zone: null }); N.ents.clear(); for (const e of m.ents) N.ents.set(e.id, { ...e, buf: [] }); }
   }
   return N;
 }

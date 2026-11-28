@@ -617,3 +617,21 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Low walls (Mevin: the full-height outer walls made the arenas look like boxes): each arena's wall band is cut to 1.3 m. Render meshes are clipped per triangle and colliders are split. Every cut wall gets a stone cap. The bands are 1.2 to 2.2 m deep, and 6 m on Sandkeep, whose wall walks are gone. The gates stay as openings with shorter yellow posts and no beam.
 - Floating windows fix: Neon's facade row sat right behind its outer wall, so cutting the wall left windows, signs and poles hanging in the air. Neon's band is now deeper (N 3.4, S 3.8, W/E 2.0). Decor meshes that start above the ground also keep only the triangles that have a solid wall behind them: within 4 m of a cut edge, or 14 m on Neon.
 - Screenshots: /mnt/project-files/art/blastline-br-map/.
+
+## Online battle royale on Island Ring (28 Nov 2026, branch claude/project-thread-vvbk6z)
+- Server (`server/server.mjs`), mode `br`:
+  - 24 slots by default (`BR_SIZE` env, e.g. 50). Everyone is their own team.
+  - Humans can join during a 40 s drop window (`BR_DROP`); [BOT] bots fill the rest only during the drop. After that, nobody joins and nothing refills.
+  - One life each: a second `r` is refused and bots don't respawn.
+  - Zone: 5 phases, each a wait then a shrink into a random circle inside the last one. Damage per second outside rises 2, 4, 6, 9, 14. `ZONE_FAST` env is for tests. If no human is left alive, the zone runs 4x faster.
+  - Loot: `pick` is first come first served by index; med +50 HP, armor +50. Armor soaks 60% of each hit.
+  - Kills carry the placement (`pl`) and the alive count. The round ends when one is left standing; the 10 min cap is a fallback. Snapshots carry the zone circle, the timers and the alive count.
+- Client (`game.js`, section "battle royale"):
+  - New mode BATTLE ROYALE (`obr`) in the mode list when a server URL is set. It loads all 4 arenas and starts Island Ring.
+  - You drop in at a spot far from everyone, with pistols.
+  - Loot: 150 crates (guns 55%, health 25%, armor 20%) placed from the nav grid plus the round seed, so every client gets the same list. They are drawn as 2 instanced meshes (crate + light beam). Walk over a crate to pick it up. Host bots grab health/armor they pass.
+  - Zone: a pink storm wall (open cylinder) plus a white ring on the ground for the next circle. A red pulsing vignette shows while you are outside.
+  - Host bots head into the next circle in time.
+  - HUD strip: KILLS, zone timer (ZONE MOVES IN / ZONE CLOSING), ALIVE.
+  - Dying: the placement screen comes 2 s later, with PLAY AGAIN · NEW MATCH, which queues a fresh room. The winner gets VICTORY · LAST ONE STANDING.
+- Tests: `tests/br.cjs` (12/12 pass; desktop + phone, fast zone), `tests/mp.cjs` 15/15. Main suite `run.cjs` 118/121. The same 3 failures (charm, spray, TDM boost) also fail on the commit before this work.

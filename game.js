@@ -750,6 +750,7 @@ function dmSetup() {
   map.points = []; clock = RC.dmTime;
   for (const e of enemies) scene.remove(e.root); enemies = []; clearAllies();
   if (NET.on) { netSetup(); return; }
+  DM.br = false; brClear(); document.body.classList.remove('br');
   DM.tdm = teamsOn(); DM.score = { A: 0, B: 0 }; DM.hits = []; SS.ssA = null; document.body.classList.toggle('teams', DM.tdm);
   DM.gun = !DM.tdm && gunOn(); DM.hill = DM.tdm && hillOn(); DM.target = DM.gun ? GUN_LADDER.length : DM.hill ? RC.hillScore : dmGoal(dmLevel); DM.level = dmLevel; DM.gunI = 0;
   { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; DM.graceN = n; DM.walk = DM.grace && RC.dmFirstFoe !== false ? 0 : -1; DM.ease = Math.min(RC.dmEaseMax, RC.dmEaseStep * (Number(store.get('sz_dm_losses', 0)) || 0)); store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
@@ -836,7 +837,9 @@ function hillTick(dt) {
 }
 function dmTick(dt) {
   const k = stats.kills - DM.k0;
-  if (!DM.tdm && k >= dmTarget()) { dmEnd(true); return ''; }
+  if (!DM.tdm && !DM.br && k >= dmTarget()) { dmEnd(true); return ''; }
+  if (DM.br) brTick(dt);
+  if (DM.br && !player.alive) { killCam(dt); if (DM.boardDirty) dmBoard(); return `ELIMINATED · #${BR.place || '?'}`; }
   if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
     if ((DM.deadT -= dt) <= 0) {
       const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live, DM.tdm ? null : live, true, DM.tdm ? -1 : 0); player.pos.copy(p); player.vel.set(0, 0, 0);
@@ -857,6 +860,7 @@ function dmTick(dt) {
   if (!DM.final && clock < 30) { DM.final = true; FX.announce('FINAL 30 SECONDS', 'start'); }
   for (const r of DM.roster) {                                                  // every bot is a persistent player: dies, waits, respawns somewhere new
     if (r.e && r.e.alive) continue;
+    if (DM.br) continue;                                                        // battle royale: one life for bots too
     if (r.respT === null) { r.respT = 2.5; continue; }
     if ((r.respT -= dt) <= 0) { r.respT = null; dmBot(r); if (NET.on && r.nid && r.e) NET.send({ t: 'br', id: r.nid, p: [+r.e.pos.x.toFixed(2), +r.e.pos.y.toFixed(2), +r.e.pos.z.toFixed(2)] }); }
   }
@@ -916,6 +920,7 @@ function dmRows() {                                                             
 }
 function dmBoard() {
   DM.boardDirty = false; const el = $('dmBoard'); if (!el) return;
+  if (DM.br) { brBoard(el); return; }
   if (DM.tdm) { el.innerHTML = `<div class="tA"><span>BLUE</span><b>${DM.score.A}</b></div><div class="tB"><span>RED</span><b>${DM.score.B}</b></div><div class="me"><span>YOU</span><b>${stats.kills - DM.k0}</b></div><div class="tg"><span>FIRST TO</span><b>${dmTarget()}</b></div>`; return; }
   const rows = dmRows(), top = rows.slice(0, 4); if (!top.some(r => r.me)) top[3] = rows.find(r => r.me);
   el.innerHTML = top.map(r => `<div class="${r.me ? 'me' : ''}"><span>${rows.indexOf(r) + 1}. ${r.name}</span><b>${r.k}</b></div>`).join('');
@@ -923,6 +928,7 @@ function dmBoard() {
 function dmEnd(won) {
   if (matchOver) return; endMatch();
   if (DM.tdm) { won = DM.score.A > DM.score.B; DM.draw = DM.score.A === DM.score.B; }
+  else if (DM.br) { DM.place = BR.place || 1; DM.nRows = NET.ents.size; const w = [...NET.ents.values()].find(e => e.alive && e.id !== NET.me); DM.winner = won ? 'YOU' : (w?.name || 'THE ZONE'); }
   else { const rows = dmRows(); won = rows[0].me && rows[0].k > 0; DM.place = rows.findIndex(r => r.me) + 1; DM.winner = rows[0].name; DM.nRows = rows.length; }
   music.end(won);
   const k = stats.kills - DM.k0, best = store.get('sz_dm_best', 0), rec = k > best; if (rec) store.set('sz_dm_best', k);
@@ -932,14 +938,15 @@ function dmEnd(won) {
   questP('finish'); if (won) questP('win'); if (k >= 15) questP('rank');
   store.set('sz_dm_losses', won ? 0 : (Number(store.get('sz_dm_losses', 0)) || 0) + 1);   // v29.7: each loss in a row eases the next match a bit
   const lvl = dmLevel; if (won && !NET.on) { dmLevel++; store.set('sz_dm_level', dmLevel); META.profile.upPoints++; META.saveProfile(); } track('dm', { k: 'level', l: lvl, won });
-  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `LEVEL ${lvl} CLEARED · ${tier}` : DM.tdm ? (DM.draw ? `DRAW ${DM.score.A}–${DM.score.B}` : `RED TEAM WINS ${DM.score.B}–${DM.score.A}`) : `#${DM.place} · ${DM.winner} WINS`;
+  $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = DM.br ? (won ? 'LAST ONE STANDING · #1' : `#${DM.place} OF ${DM.nRows}`) : won ? `LEVEL ${lvl} CLEARED · ${tier}` : DM.tdm ? (DM.draw ? `DRAW ${DM.score.A}–${DM.score.B}` : `RED TEAM WINS ${DM.score.B}–${DM.score.A}`) : `#${DM.place} · ${DM.winner} WINS`;
   $('tK').textContent = k; $('tKD').textContent = (k / Math.max(1, DM.d)).toFixed(1); $('tSt').textContent = DM.best; $('tC').textContent = dmC;
   $('beatBest').textContent = rec ? '★ NEW PERSONAL BEST ★' : `${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`; $('beatBest').classList.toggle('rec', rec);
   const stand = DM.tdm ? `BLUE ${DM.score.A}  ·  RED ${DM.score.B}` : dmRows().slice(0, 4).map((r, i) => `${i + 1}. ${r.name} ${r.k}`).join('  ·  ');
-  showEnd(won ? `VICTORY · LEVEL ${lvl}` : DM.tdm ? (DM.draw ? `DRAW · ${tier} RANK` : `DEFEAT · RED TEAM WINS · ${tier} RANK`) : `DEFEAT · #${DM.place} OF ${DM.nRows} · ${tier} RANK`, `${stand}\n${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${dmC} ◎ · peak threat ${Math.round(director.peak * 7)}` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
+  showEnd(DM.br ? (won ? 'VICTORY · LAST ONE STANDING' : `ELIMINATED · #${DM.place} OF ${DM.nRows}`) : won ? `VICTORY · LEVEL ${lvl}` : DM.tdm ? (DM.draw ? `DRAW · ${tier} RANK` : `DEFEAT · RED TEAM WINS · ${tier} RANK`) : `DEFEAT · #${DM.place} OF ${DM.nRows} · ${tier} RANK`, `${stand}\n${k} KILLS · ${DM.d} deaths · K/D ${(k / Math.max(1, DM.d)).toFixed(1)} · best streak ${DM.best}\n+${dmC} ◎ · peak threat ${Math.round(director.peak * 7)}` + (rec ? '\n\n★ NEW PERSONAL BEST ★' : `\n\n${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`), null, { failed: true });
   const againLbl = won ? `▶ NEXT LEVEL ${dmLevel} · ${DM.hill ? 'HOLD THE HILL' : DM.gun ? GUN_LADDER.length + ' GUNS' : dmGoal(dmLevel) + (DM.tdm ? ' TEAM' : '') + ' KILLS'}` : `↻ RETRY LEVEL ${dmLevel} (REMATCH)`;
   $('again').textContent = againLbl; $('again').className = 'go';
   if (!won) $('upBox').style.display = 'none';                                   // weapon upgrades are a victory reward
+  if (NET.on && DM.br && !won) { $('again').textContent = '▶ PLAY AGAIN · NEW MATCH'; $('again').className = 'go'; return; }
   if (NET.on) { netEndScreen(); return; }
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
     let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `${againLbl} (${n})`; };
@@ -1947,7 +1954,7 @@ $('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' });
 $('start').onclick = () => { unlockAudio(); dmStart(false); };   // rebrand: the loadout screen deploys into an arena match
 $('resume').onclick = () => { music.pause(false); $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
-$('again').onclick = () => { unlockAudio(); if (NET.on) return; clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
+$('again').onclick = () => { unlockAudio(); if (NET.on) { if (DM.br && !NET.wantRoom) { clearInterval(autoNextT); netLeave(); netStart(); } return; } clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => quitAsk();
 // v29: "leave the match?" confirm with an optional feedback box (stored in Supabase as a 'feedback' event)
 function quitAsk() {
@@ -2340,7 +2347,7 @@ async function netStart() {
   netMsgBox('FINDING PLAYERS…');
   try {
     const name = (await crazy.username()) || store.get('sz_name', '');
-    await NET.connect(mpUrl(), { mode: hillOn() ? 'hill' : 'tdm', name, room: crazy.inviteRoom() });
+    await NET.connect(mpUrl(), { mode: brOn() ? 'br' : hillOn() ? 'hill' : 'tdm', name, room: crazy.inviteRoom() });
     NET.handler = netOnMsg; netMsgBox(null);
     track('net', { k: 'join', m: NET.mode, n: [...NET.ents.values()].filter(e => !e.bot).length, host: NET.host ? 1 : 0 });
     crazy.room(NET.room, true);
@@ -2350,10 +2357,20 @@ async function netStart() {
     NET.close(); dmStart(false); setTimeout(() => FX.announce('ONLINE UNAVAILABLE · PLAYING VS BOTS', 'objective'), 1200);
   } finally { netStart.busy = false; }
 }
-function netRound() { NET.ready = false; NET.wantEnd = null; dmStart(false, NET.map); }
+function netRound() {
+  NET.ready = false; NET.wantEnd = null;
+  if (NET.mode === 'br') {                                                         // battle royale: the island needs all four arenas loaded
+    netMsgBox('LOADING ISLAND RING…');
+    brLoad().then(() => { netMsgBox(null); startMission(0, { route: 'default', abilities: [], mode: 'dm', dmMap: BR_IDX }); }).catch(e => { errors.push('br map: ' + e); netQuit('MAP FAILED TO LOAD'); });
+    return;
+  }
+  dmStart(false, NET.map);
+}
 function netLeave() { NET.handler = () => {}; NET.close(); crazy.room(null); }
 function netQuit(why) { netLeave(); if (running || matchOver) { endMatch(); openLobby(); } FX.announce(why, 'objective'); }
 function netSetup() {                                                              // dmSetup for an online round
+  DM.br = NET.mode === 'br'; document.body.classList.toggle('br', DM.br); brClear();
+  if (DM.br) { brSetup(); return; }
   const flip = NET.team === 'B';
   if (flip && map.teamSpawns) map.teamSpawns = { A: map.teamSpawns.B, B: map.teamSpawns.A };   // your base is always the blue end
   DM.tdm = true; document.body.classList.add('teams'); DM.gun = false; DM.hill = NET.mode === 'hill';
@@ -2367,6 +2384,103 @@ function netSetup() {                                                           
   for (const ne of NET.ents.values()) { if (ne.id === NET.me) continue; if (ne.bot && NET.host) netHostBot(ne); else if (ne.alive) netPuppet(ne); }
   if (DM.hill) { hillSetup(); if (NET.hill) netHillPos(NET.hill); else if (NET.host) NET.send({ t: 'hillpos', p: [+DM.hillPos.x.toFixed(2), +DM.hillPos.y.toFixed(2), +DM.hillPos.z.toFixed(2)] }); }
   NET.ready = true; netSpawned(); DM.boardDirty = true;
+}
+// ---------- battle royale (Island Ring): one life, shrinking zone, loot ----------
+const BR = { loot: [], crates: null, beams: null, zone: null, ring: null, ar: 0, place: 0, warnT: 0, pickT: 0, botT: 0, zoneT: -1 };
+const BR_GUNS = ['ar7_lance', 'kestrel_bp', 'grinder_lmg', 'warden_br', 'hailstorm_mg', 'bulldog_r6', 'longshot_bolt', 'harrow_45'];
+const BR_COL = { med: 0x33c46a, armor: 0x2f5bff, gun: 0xffd23b };
+const _brM = new THREE.Matrix4(), _brQ = new THREE.Quaternion(), _brS = V(), _brP = V(), _brC = new THREE.Color();
+function brRng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6d2b79f5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function brClear() {
+  for (const o of [BR.crates, BR.beams, BR.zone, BR.ring]) if (o) { o.removeFromParent(); o.geometry.dispose(); o.material.dispose(); }
+  BR.crates = BR.beams = BR.zone = BR.ring = null; BR.loot = []; document.body.classList.remove('brOut');
+}
+function brSetup() {
+  DM.tdm = false; document.body.classList.remove('teams'); DM.gun = false; DM.hill = false;
+  DM.score = { A: 0, B: 0 }; DM.hits = []; SS.ssA = null; DM.target = 0; DM.level = dmLevel; DM.gunI = 0; DM.grace = false; DM.graceN = 9; DM.walk = -1; DM.ease = 0;
+  Object.assign(DM, { rampage: false, alive0: 0, coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: true });
+  DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0; DM.pool = DM.pool.length ? DM.pool : map.guards.map(g => g.clone());
+  DM.side = null; DM.home = null; DM.roster = [];
+  Object.assign(BR, { ar: 0, place: 0, warnT: 0, pickT: 0, botT: 0, zoneT: -1 });
+  player.pos.copy(brSpot()); player.vel.set(0, 0, 0); faceFoe();
+  W.slots = ['vex_p9', 'harrow_45']; for (const id of W.slots) W.state[id] = { mag: WEAPONS[id].mag, reserve: META.reserveFor(id, WEAPONS[id].reserve) }; equip(0, true);   // everyone drops in with pistols: guns are loot
+  for (const ne of NET.ents.values()) { if (ne.id === NET.me) continue; if (ne.bot && NET.host) netHostBot(ne); else if (ne.alive) netPuppet(ne); }
+  brLootBuild(); brZoneFx();
+  NET.ready = true; netSpawned(); DM.boardDirty = true;
+  FX.announce('DROP IN · FIND A GUN · STAY IN THE ZONE', 'start');
+}
+function brSpot() {                                                                // a ground spot far from everyone already on the island
+  const others = []; for (const e of [...enemies, ...allies]) if (e.alive) others.push(e.pos);
+  let best = null, bd = -1;
+  for (let i = 0; i < 40; i++) { const p = DM.pool[(Math.random() * DM.pool.length) | 0]; if (!p) continue; let d = 1e9; for (const o of others) d = Math.min(d, o.distanceToSquared(p)); if (d > bd) { bd = d; best = p; } if (d > 900) break; }
+  return (best || DM.pool[0] || V(116, 0, 116)).clone();
+}
+function brLootBuild() {                                                           // same list on every client: the map's nav grid + the round's seed
+  const b = NET.br; if (!b) return;
+  const R = brRng(b.seed), nodes = world.nav?.nodes || [], out = [];
+  for (let tries = 0; out.length < 150 && tries < 8000 && nodes.length; tries++) {
+    const n = nodes[(R() * nodes.length) | 0], r = R(), g = BR_GUNS[(R() * BR_GUNS.length) | 0];
+    if (!n || n.links.length < 6 || n.pos.y > 6) continue;
+    if (out.some(o => (o.p.x - n.pos.x) ** 2 + (o.p.z - n.pos.z) ** 2 < 64)) continue;
+    out.push({ i: out.length, p: n.pos.clone(), kind: r < 0.55 ? g : r < 0.8 ? 'med' : 'armor', taken: false, pend: -9 });
+  }
+  for (const i of b.taken || []) if (out[i]) out[i].taken = true;
+  BR.loot = out; const n = out.length; if (!n) return;
+  BR.crates = new THREE.InstancedMesh(new THREE.BoxGeometry(0.8, 0.5, 0.8), new THREE.MeshLambertMaterial({ color: 0xffffff }), n);
+  BR.beams = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 2.6, 0.1), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false }), n);
+  out.forEach(o => { _brC.setHex(BR_COL[WEAPONS[o.kind] ? 'gun' : o.kind]); BR.crates.setColorAt(o.i, _brC); BR.beams.setColorAt(o.i, _brC); brLootSet(o); });
+  scene.add(BR.crates, BR.beams);
+}
+function brLootSet(o) {
+  const k = o.taken ? 0 : 1;
+  _brM.compose(_brP.set(o.p.x, o.p.y + 0.25, o.p.z), _brQ.identity(), _brS.set(k, k, k)); BR.crates.setMatrixAt(o.i, _brM);
+  _brM.compose(_brP.set(o.p.x, o.p.y + 1.6, o.p.z), _brQ, _brS); BR.beams.setMatrixAt(o.i, _brM);
+  BR.crates.instanceMatrix.needsUpdate = BR.beams.instanceMatrix.needsUpdate = true;
+}
+function brZoneFx() {                                                              // the storm wall (current circle) + a white ring on the ground (next circle)
+  BR.zone = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 72, 1, true), new THREE.MeshBasicMaterial({ color: 0xff2a6a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+  BR.ring = new THREE.Mesh(new THREE.RingGeometry(0.992, 1, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8, depthWrite: false, fog: false }));
+  BR.zone.renderOrder = BR.ring.renderOrder = 4; BR.ring.visible = false; scene.add(BR.zone, BR.ring); brZoneTick();
+}
+function brZoneTick() {
+  const z = NET.zone || [NET.br?.from?.[0] ?? 116, NET.br?.from?.[1] ?? 116, NET.br?.from?.[2] ?? 175];
+  if (BR.zone) { BR.zone.position.set(z[0], 20, z[1]); BR.zone.scale.set(z[2], 60, z[2]); }
+  const to = NET.br?.to; if (BR.ring && to && NET.br.ph >= 0) { BR.ring.visible = true; BR.ring.position.set(to[0], 0.35, to[1]); BR.ring.scale.set(to[2], 1, to[2]); }
+  return z;
+}
+function brTick(dt) {                                                              // every frame of a BR round
+  const z = brZoneTick(), out = player.alive && (player.pos.x - z[0]) ** 2 + (player.pos.z - z[1]) ** 2 > z[2] * z[2];
+  document.body.classList.toggle('brOut', !!out);
+  if (out && (BR.warnT -= dt) <= 0) { BR.warnT = 4; FX.announce('OUTSIDE THE ZONE · GET IN', 'objective'); }
+  const zt = Math.ceil(NET.zoneShrink > 0 ? NET.zoneShrink : NET.zoneNext); if (zt !== BR.zoneT) { BR.zoneT = zt; DM.boardDirty = true; }
+  if ((BR.pickT -= dt) <= 0) {                                                     // loot: walk over it (you), host bots grab what they pass
+    BR.pickT = 0.15;
+    for (const o of BR.loot) {
+      if (o.taken || elapsed - o.pend < 1.2) continue;
+      if (player.alive && Math.abs(player.pos.y - o.p.y) < 1.6 && (player.pos.x - o.p.x) ** 2 + (player.pos.z - o.p.z) ** 2 < 2.4 && o.kind !== W.slots[0] && !(o.kind === 'med' && player.hp >= 100) && !(o.kind === 'armor' && BR.ar >= 100)) {
+        o.pend = elapsed; NET.send({ t: 'pick', i: o.i, k: WEAPONS[o.kind] ? 'gun' : o.kind }); continue;
+      }
+      if (NET.host && !WEAPONS[o.kind]) for (const r of DM.roster) { const e = r.e; if (e?.alive && (e.pos.x - o.p.x) ** 2 + (e.pos.z - o.p.z) ** 2 < 2.4 && e.hp < 100) { o.pend = elapsed; NET.send({ t: 'pick', i: o.i, k: o.kind, s: r.nid }); break; } }
+    }
+  }
+  if (NET.host && (BR.botT -= dt) <= 0 && NET.br?.to) {                            // host bots: move into the next circle in time
+    BR.botT = 1; const to = NET.br.to;
+    for (const r of DM.roster) { const e = r.e; if (!e?.alive || e.T.static) continue; const dx = e.pos.x - to[0], dz = e.pos.z - to[1], lim = to[2] * 0.8;
+      if (dx * dx + dz * dz > lim * lim && (e.state !== 'combat' || Math.random() < 0.3)) { const a = Math.random() * 6.283, rr = Math.random() * to[2] * 0.6; e.goTo(V(to[0] + Math.cos(a) * rr, 0, to[1] + Math.sin(a) * rr), G); } }
+  }
+}
+function brTook(m) {
+  const o = BR.loot[m.i]; if (o) { o.taken = true; brLootSet(o); }
+  if (m.by === NET.me && o) {
+    if (WEAPONS[o.kind]) { const id = o.kind; W.slots = [id, W.slots[1] || 'vex_p9']; W.state[id] = { mag: WEAPONS[id].mag, reserve: META.reserveFor(id, WEAPONS[id].reserve) }; equip(0, true); FX.announce(WEAPONS[id].name.toUpperCase(), 'start'); }
+    else if (o.kind === 'med') { player.hp = m.hp; FX.announce('+50 HEALTH', 'start'); }
+    else { BR.ar = m.ar; FX.announce(`ARMOR ${m.ar}`, 'start'); }
+    sfx.coin?.(); DM.boardDirty = true;
+  } else if (o && NET.host && !WEAPONS[o.kind]) { const r = DM.roster.find(q => q.nid === m.by); if (r?.e) r.e.hp = m.hp; }
+}
+function brBoard(el) {
+  const zs = NET.zoneShrink > 0, t = Math.max(0, Math.ceil(zs ? NET.zoneShrink : NET.zoneNext)), mm = `${(t / 60) | 0}:${String(t % 60).padStart(2, '0')}`;
+  el.innerHTML = `<div class="tA"><span>ALIVE</span><b>${NET.alive || NET.ents.size}</b></div><div class="me"><span>KILLS</span><b>${stats.kills - DM.k0}</b></div><div class="tg"><span>${zs ? 'ZONE CLOSING' : NET.br?.ph >= 4 && !zs ? 'FINAL ZONE' : 'ZONE MOVES IN'}</span><b>${mm}</b></div>${BR.ar > 0 ? `<div class="tB"><span>ARMOR</span><b>${BR.ar}</b></div>` : ''}`;
 }
 function netSpawned() { NET.send({ t: 'r', p: [+player.pos.x.toFixed(2), +player.pos.y.toFixed(2), +player.pos.z.toFixed(2)] }); }
 function netHillPos(p) { if (!DM.hillPos) return; DM.hillPos.set(p[0], p[1], p[2]); DM.hillFx?.g.position.copy(DM.hillPos); }
@@ -2447,7 +2561,7 @@ function netOnMsg(m) {
     }
     case 'dmg': {
       const s = netObj(m.s, true);
-      if (m.v === NET.me) { if (!player.alive) break; LS.by = s?.type || ''; LS.byE = s; const inv = invT; invT = 0; player.hp = m.hp + m.d; damagePlayer(m.d, s ? s.pos.clone() : null); invT = inv; player.hp = m.hp; break; }
+      if (m.v === NET.me) { if (m.ar != null) { BR.ar = m.ar; DM.boardDirty = true; } if (!player.alive) break; LS.by = s?.type || ''; LS.byE = s; const inv = invT; invT = 0; player.hp = m.hp + m.d; damagePlayer(m.d, s ? s.pos.clone() : null); invT = inv; player.hp = m.hp; break; }
       const e = netObj(m.v); if (!e) break;
       if (e.net) { e.hp = m.hp; e.flinch = 1; break; }
       e.shieldHP = 0; e.hp = m.hp + m.d; e.damage(m.d, (s ? s.pos : e.pos).clone(), m.hd ? 'head' : 'body');   // host bot: flinch + alert, dies at 0
@@ -2459,13 +2573,18 @@ function netOnMsg(m) {
       if (m.v === NET.me && player.alive) { player.hp = 0; sfx.death(); director.death(); LS.byE = netObj(m.s, true); dmDeath(); }
       if (m.s === NET.me) netMyKill(ve, m.hd);
       if (s && v) feed(`${s.id === NET.me ? 'YOU' : s.name} ▸ ${v.id === NET.me ? 'YOU' : v.name}${m.hd ? ' ✦' : ''}`, m.hd);
+      else if (!m.s && v) feed(`ZONE ▸ ${v.id === NET.me ? 'YOU' : v.name}`, false);
+      if (DM.br && m.v === NET.me) { BR.place = m.pl; setTimeout(() => { if (DM.br && NET.on && !matchOver) dmEnd(false); }, 2200); }
       if (s?.bot && NET.host) { const r = DM.roster.find(q => q.nid === m.s); if (r) r.k = m.sk; }
       if (v?.bot && NET.host) { const r = DM.roster.find(q => q.nid === m.v); if (r) r.d = m.vd; }
       DM.score.A = m.score[my] || 0; DM.score.B = m.score[otherTeam(my)] || 0; DM.boardDirty = true;
       break;
     }
     case 'hillpos': netHillPos(m.p); break;
+    case 'took': if (DM.br) brTook(m); break;
+    case 'zone': if (DM.br) { FX.announce(`ZONE ${m.ph + 1} CLOSING · ${Math.round(m.sh)} S`, 'objective'); DM.boardDirty = true; } break;
     case 'end': {
+      if (DM.br) { if (m.win === NET.me) BR.place = 1; dmEnd(m.win === NET.me); break; }
       DM.score.A = m.score[my] || 0; DM.score.B = m.score[otherTeam(my)] || 0; NET.next = m.next; NET.endAt = performance.now();
       if (m.win !== 'draw' && m.win !== my) DM.score.B = Math.max(DM.score.B, DM.score.A + (DM.score.A === DM.score.B ? 1 : 0));   // never show a win the server did not call
       dmEnd(m.win === my); break;
@@ -2500,7 +2619,7 @@ window.__game = { RC, G, outro: t => outro(t, () => {}), get dmWalk() { return D
   brReach() { const T = new THREE.Vector3(116, 0.1, 128); return (map.regions || []).map(r => { const d = DM_MAPS.find(q => q.id === r.id), out = []; for (const [fx, fz] of [[0.5, 0.5], [0.3, 0.5], [0.7, 0.5]]) { const p = new THREE.Vector3(r.x0 + d.w * fx, 0.5, r.z0 + d.d * fz), path = world.findPath(p, T); let ex = null; if (path) for (const q of path) if (q.x < r.x0 || q.x > r.x0 + d.w || q.z < r.z0 || q.z > r.z0 + d.d) { ex = [Math.round(q.x), Math.round(q.z)]; break; } out.push(path ? { n: path.length, ex, end: [Math.round(path.at(-1).x), Math.round(path.at(-1).z)] } : null); } return [r.id, out]; }); },
   get mapInfo() { return map && { br: !!map.br, pois: map.pois, regions: map.regions?.map(r => { let n = 0, g = 0; r.objs[0].traverse(o => { if (o.isMesh) { n++; if (o.geometry.attributes.position) g++; } }); return [r.id, r.x0, r.z0, r.objs[0].visible, r.objs[0].parent === scene, n, g, r.objs[0].position.toArray()]; }) }; },
   get net() { const pz = [...enemies, ...allies].filter(e => e.net); return { on: NET.on, ready: !!NET.ready, host: NET.host, team: NET.team, me: NET.me, room: NET.room, mode: NET.mode, map: NET.map, ents: NET.ents.size, puppets: pz.length, livePuppets: pz.filter(e => e.alive && e.netOk).length, stuck: pz.filter(e => e.alive && !e.netOk && NET.ents.get(e.nid)?.buf.length).length, stuckInfo: pz.filter(e => e.alive && !e.netOk && NET.ents.get(e.nid)?.buf.length).map(e => { const n = NET.ents.get(e.nid); return [e.nid, n.bot, n.alive, n.buf[n.buf.length - 1]?.slice(1, 4)]; }), roster: DM.roster?.length || 0, aiBots: DM.roster?.filter(r => r.e?.alive).length || 0, score: { ...NET.score }, clock: NET.clock, ping: NET.ping, hill: DM.hillPos?.toArray(), hillOwn: NET.hillOwn }; },
-  netStart: (k = 'otdm') => { setModeKey(k); netStart(); }, netLeave: () => { netLeave(); openLobby(); }, netObj: id => { const e = netObj(id); return e && { pos: e.pos.toArray(), alive: e.alive, hp: e.hp, net: !!e.net, visible: e.root.visible }; }, NET,
+  netStart: (k = 'otdm') => { setModeKey(k); netStart(); }, get br() { return { on: !!DM.br, loot: BR.loot.length, taken: BR.loot.filter(o => o.taken).length, ar: BR.ar, place: BR.place, zone: NET.zone, alive: NET.alive, slots: W.slots.slice(), out: document.body.classList.contains('brOut') }; }, brLoot: () => BR.loot.map(o => [o.i, o.kind, +o.p.x.toFixed(1), +o.p.y.toFixed(1), +o.p.z.toFixed(1), o.taken]), netLeave: () => { netLeave(); openLobby(); }, netObj: id => { const e = netObj(id); return e && { pos: e.pos.toArray(), alive: e.alive, hp: e.hp, net: !!e.net, visible: e.root.visible }; }, NET,
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
   start: (i, o = {}) => startMission(i, o), openBriefing, openLobby, openShop, openPass, openProfile, META, doSpray, detonateBarrel, revive,
   get charm() { return charm; }, get sprays() { return sprays; },
@@ -2531,21 +2650,23 @@ const onlineOn = () => !!mpUrl() && !!store.get('sz_online', 0);
 const teamsOn = () => { const v = store.get('sz_teams', null); return v === null ? !!RC.dmTeams : !!v; };
 const gunOn = () => !teamsOn() && !!store.get('sz_gun', 0);
 const hillOn = () => teamsOn() && !!store.get('sz_hill', 0);                     // Blastline Hold the Hill: teams score by standing in the zone                       // Blastline Gun Run: free-for-all with a weapon ladder
-const modeKey = () => (onlineOn() ? 'o' : '') + (hillOn() ? 'hill' : teamsOn() ? 'tdm' : gunOn() ? 'gun' : 'dm');
-const MODE_NAME = { tdm: 'TEAM DEATHMATCH', dm: 'FREE FOR ALL', gun: 'GUN RUN', hill: 'HOLD THE HILL', otdm: 'ONLINE TEAM DEATHMATCH', ohill: 'ONLINE HOLD THE HILL' };
-function setModeKey(k) { const on = k === 'otdm' || k === 'ohill'; store.set('sz_online', on ? 1 : 0); if (on) k = k.slice(1); playMode = 'dm'; store.set('sz_mode', 'dm'); store.set('sz_teams', k === 'tdm' || k === 'hill' ? 1 : 0); store.set('sz_gun', k === 'gun' ? 1 : 0); store.set('sz_hill', k === 'hill' ? 1 : 0); }
+const brOn = () => onlineOn() && !!store.get('sz_br', 0);
+const modeKey = () => (onlineOn() ? 'o' : '') + (brOn() ? 'br' : hillOn() ? 'hill' : teamsOn() ? 'tdm' : gunOn() ? 'gun' : 'dm');
+const MODE_NAME = { tdm: 'TEAM DEATHMATCH', dm: 'FREE FOR ALL', gun: 'GUN RUN', hill: 'HOLD THE HILL', otdm: 'ONLINE TEAM DEATHMATCH', ohill: 'ONLINE HOLD THE HILL', obr: 'BATTLE ROYALE' };
+function setModeKey(k) { const on = k === 'otdm' || k === 'ohill' || k === 'obr'; store.set('sz_online', on ? 1 : 0); if (on) k = k.slice(1); store.set('sz_br', k === 'br' ? 1 : 0); playMode = 'dm'; store.set('sz_mode', 'dm'); store.set('sz_teams', k === 'tdm' || k === 'hill' ? 1 : 0); store.set('sz_gun', k === 'gun' ? 1 : 0); store.set('sz_hill', k === 'hill' ? 1 : 0); }
 const SS = {}, mmss = s => { s = Math.max(0, Math.ceil(s)); return `${(s / 60) | 0}:${String(s % 60).padStart(2, '0')}`; };
 const BOT_W = { pistol: 'vex_p9', assault: 'ar7_lance', 'machine gun': 'hailstorm_mg', sniper: 'longshot_bolt' };
 function stripSetup() {
   for (const id of ['ssA', 'ssB', 'ssT', 'ssG', 'ssLa', 'ssLb']) SS[id] = $(id);
   SS.a = SS.b = SS.t = -1;
-  SS.ssLa.textContent = DM.tdm ? 'BLUE' : 'KILLS'; SS.ssLb.textContent = DM.tdm ? 'RED' : 'TARGET';
-  SS.ssG.textContent = DM.tdm ? `FIRST TO ${dmTarget()}` : `LEVEL ${DM.level || 1}`;
+  SS.ssLa.textContent = DM.tdm ? 'BLUE' : 'KILLS'; SS.ssLb.textContent = DM.tdm ? 'RED' : DM.br ? 'ALIVE' : 'TARGET';
+  SS.ssG.textContent = DM.tdm ? `FIRST TO ${dmTarget()}` : DM.br ? 'ZONE MOVES IN' : `LEVEL ${DM.level || 1}`; SS.zs = -1;
   document.body.classList.toggle('teams', !!DM.tdm);
 }
 function stripTick() {                                                             // allocation-free: only touches the DOM when a number changes
   if (!SS.ssA) stripSetup();
-  const a = DM.tdm ? DM.score.A : stats.kills - DM.k0, b = DM.tdm ? DM.score.B : dmTarget(), t = Math.ceil(clock);
+  const zs = DM.br && NET.zoneShrink > 0 ? 1 : 0, a = DM.tdm ? DM.score.A : stats.kills - DM.k0, b = DM.tdm ? DM.score.B : DM.br ? NET.alive || NET.ents.size : dmTarget(), t = Math.ceil(DM.br ? (zs ? NET.zoneShrink : NET.zoneNext) : clock);   // BR: the clock counts down the zone
+  if (DM.br && zs !== SS.zs) { SS.zs = zs; SS.ssG.textContent = zs ? 'ZONE CLOSING' : 'ZONE MOVES IN'; }
   if (a !== SS.a) { SS.a = a; SS.ssA.textContent = a; }
   if (b !== SS.b) { SS.b = b; SS.ssB.textContent = b; }
   if (t !== SS.t) { SS.t = t; SS.ssT.textContent = mmss(t); SS.ssT.classList.toggle('low', t <= 30); }
@@ -2591,7 +2712,7 @@ function killCam(dt) {                                                          
   const ex = e.pos.x - player.pos.x, ez = e.pos.z - player.pos.z, ty = Math.atan2(-ex, -ez), tp = Math.atan2(e.pos.y + 1.2 - player.pos.y - CFG.eye, Math.hypot(ex, ez));
   let d = ty - player.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.yaw += d * Math.min(1, dt * 4); player.pitch += (tp - player.pitch) * Math.min(1, dt * 4);
 }
-const pzModes = () => mpUrl() ? [['otdm', 'ONLINE TEAM DM', 'squad', 'REAL PLAYERS + BOTS · 4 V 4'], ['ohill', 'ONLINE HOLD THE HILL', 'flag', 'REAL PLAYERS + BOTS · 4 V 4'], ...PZ_MODES] : PZ_MODES;
+const pzModes = () => mpUrl() ? [['obr', 'BATTLE ROYALE', 'skull', 'ISLAND RING · 24 PLAYERS · LAST ONE STANDING'], ['otdm', 'ONLINE TEAM DM', 'squad', 'REAL PLAYERS + BOTS · 4 V 4'], ['ohill', 'ONLINE HOLD THE HILL', 'flag', 'REAL PLAYERS + BOTS · 4 V 4'], ...PZ_MODES] : PZ_MODES;
 const PZ_MODES = [['tdm', 'TEAM DEATHMATCH', 'squad', '5 V 5 · BOTS'], ['dm', 'FREE FOR ALL', 'skull', 'EVERY BOT FOR ITSELF'], ['gun', 'GUN RUN', 'assault-rifle', 'EVERY KILL, A NEW GUN'], ['hill', 'HOLD THE HILL', 'flag', 'STAND IN THE ZONE']];   // rebrand: story campaign cut
 function pauseFill() {
   const dm = mode === 'dm';
