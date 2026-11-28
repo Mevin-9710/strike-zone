@@ -44,6 +44,16 @@ export const crazy = {
   setAdGap(ms) { if (ms >= 60000) MIN_AD_GAP = ms; },
   armAds() { if (!adsArmed) { adsArmed = true; lastAd = Date.now(); } },   // ad clock starts at the first real (non-drill) mission
   happy() { safe(s => s.game.happytime()); },
+  // online play: the CrazyGames username (shown above your player), invite links and room info for the CG multiplayer features
+  async username() { try { const u = S ? await S.user.getUser() : null; return u?.username || ''; } catch (e) { return ''; } },
+  inviteRoom() { return safe(s => s.game.getInviteParam?.('roomId')) || new URLSearchParams(location.search).get('room') || ''; },
+  room(id, joinable = true) {
+    safe(s => {
+      if (!id) { s.game.leftRoom?.(); s.game.hideInviteButton?.(); return; }
+      s.game.updateRoom?.({ roomId: id, isJoinable: joinable, inviteParams: { roomId: id } });
+      s.game.showInviteButton?.({ roomId: id });
+    });
+  },
   // resolves when the ad (if any) is over; never rejects. Skips if an ad ran < 3 min ago or SDK absent.
   midgame() {
     if (!S || inAd || !adsArmed || Date.now() - lastAd < MIN_AD_GAP) return Promise.resolve();

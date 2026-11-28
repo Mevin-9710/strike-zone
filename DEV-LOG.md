@@ -597,3 +597,11 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 
 ## Fix: weapon cards could not switch weapons on phones (28 Nov 2026)
 - The full-screen touch layer (`#touch`, z-index 5 in its own stacking context) sat over the HUD weapon cards, so taps never reached them. `game/touch.js` now hit-tests `#wslots .ws` in its touchstart and calls `touch.onSlot(i)`, which equips that slot. Desktop slots also switch on click (keys 1/2 and the wheel already worked).
+
+## Online multiplayer, phase 1: online TDM + Hold the Hill with bot fill (28 Nov 2026, branch claude/project-thread-vvbk6z)
+- New `server/` (Node + `ws`, one file): rooms of 8 (4 v 4), instant join into the fullest running room, bots fill every empty slot (`[BOT]` in their name) and step out when players join, a bot takes the slot of a player who leaves. Server owns HP, kills, scores, the clock and hill scoring; client hit claims are checked (damage per gun, range, fire rate, 2.5 s spawn protection). Rounds of 5 min / 40 kills / 100 hill points, then the same room plays on (12 s end screen, new map).
+- Bots: the longest-connected player ("host") runs the existing bot AI and streams bot positions at 20 Hz; host migration when they leave. Everyone else sees bots and other players as puppets (Enemy models driven by snapshots, 110 ms interpolation, no AI).
+- Client: `game/net.js` (socket + interpolation) and the "online" section of `game.js`. Your team is always blue locally (team B gets a flipped map). Lobby lists ONLINE TEAM DM + ONLINE HOLD THE HILL only when a server URL is set (`?mp=wss://...` or `mpUrl` in remote-config). Server down -> the same mode vs bots with a notice. CrazyGames: username shown above your player, room info + invite button via SDK (guarded calls).
+- Not in phase 1: line-of-sight hit checks on the server, bot abilities for non-hosts, binary messages, battle royale.
+- Tests: `tests/mp.cjs` (starts the server, desktop + phone clients): join/host/bot fill, puppets, real shot -> server damage, leave refill, host migration, shared hill + scoring, round end + next round. 15/15.
+- VPS: `server/setup-vps.sh` (Node 20 + Caddy, systemd, HTTPS on <ip>.sslip.io). Docs: `server/README.md`.

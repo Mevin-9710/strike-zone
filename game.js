@@ -33,6 +33,7 @@ import { track, at, onQuit, stage, flush as tFlush } from './game/telemetry.js';
 import { director } from './game/director.js';
 import * as QUESTS from './game/quests.js';
 import { icon } from './game/icons.js';
+import { createNet, serverUrl } from './game/net.js';
 const TUT = { dt: 0, look: 0, moved: false, walked: false, jumped: false, slid: false, fired: false, aiming: false, reloaded: false, swapped: false, ab0: false, ab1: false, kills: 0, interacting: false };
 
 const Q = new URLSearchParams(location.search);
@@ -254,11 +255,11 @@ const G = {                                         // services handed to enemie
   get player() { return player; }, get world() { return world; },
   get ffaRival() { return mode === 'dm' ? ffaRival : null; },
   botBoost(e) {                                                                // v28 team DM: +4% every 5 total kills (cap +16%), +8% for the team 5+ kills behind
-    if (mode !== 'dm' || !DM.tdm || !DM.score) return 1;
+    if (mode !== 'dm' || !DM.tdm || !DM.score || NET.on) return 1;                   // online: no side gets a boost
     const A = DM.score.A, B = DM.score.B, mine = e.ally ? A : B, theirs = e.ally ? B : A;
     return 1 + (e.ally ? 0 : RC.tdmRedBoost) + Math.min(RC.tdmRampMax, RC.tdmRamp * Math.floor((A + B) / 5)) + (theirs - mine >= RC.tdmComebackGap ? RC.tdmComeback : 0);   // v29.4: red bots a touch stronger
   }, get tdm() { return mode === 'dm' && !!DM.tdm; },
-  get dmParity() { return mode === 'dm'; }, get dmPower() { const base = DM.grace ? RC.dmGracePower + RC.dmGraceStep * (DM.graceN || 0) : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); return Math.max(RC.dmEaseFloor, base - (DM.ease || 0)); },   // v29.7: grace 0.55 -> 0.6, minus a loss-streak ease
+  get dmParity() { return mode === 'dm'; }, get dmPower() { if (NET.on) return Math.min(1, RC.dmPower + RC.dmPowerStep * 4); const base = DM.grace ? RC.dmGracePower + RC.dmGraceStep * (DM.graceN || 0) : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); return Math.max(RC.dmEaseFloor, base - (DM.ease || 0)); },   // v29.7: grace 0.55 -> 0.6, minus a loss-streak ease
   get ignorePlayer() { return mode === 'dm' && DM.grace && elapsed < RC.dmGraceCalm; }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
   playerHead: () => player.pos.clone().add(V(0, 1.55, 0)),   // v46: eye 1.6 -> 1.75
@@ -455,12 +456,12 @@ function fire() {
   player.pitch = clamp(player.pitch + w.recoil * (W.ads > 0.5 ? 0.6 : 1), -1.5, 1.5); W.recoverP += w.recoil * 0.7;
   player.yaw += (Math.random() - 0.5) * w.recoil * 0.5;
   vm.fire(w); sfx.shot(cur(), 0, 0, 1, 1 - s.mag / w.mag);
-  addTracer(muzzleWorld(), end, 0xffe08a);
+  addTracer(muzzleWorld(), end, 0xffe08a); if (NET.on) NET.shot(NET.me, muzzleWorld(), end, cur());
   if (best) {
     const head = best.h.part === 'head';
     const mult = head ? (best.h.mult || w.head) : best.h.mult;
     const amount = w.dmg * mult * META.dmgMult(cur()) * (mode === 'dm' && DM.odT > 0 ? 1.6 : 1);
-    const killed = best.e.damage(amount, player.pos.clone(), best.h.part);
+    const killed = NET.on ? (best.e.nid && NET.hit(NET.me, best.e.nid, amount, head, cur()), false) : best.e.damage(amount, player.pos.clone(), best.h.part);   // online: the server applies damage + confirms the kill
     { const sp = toScreen(end); if (sp.on) FX.damageNumber(sp.x, sp.y, Math.round(amount), { head, kill: killed }); FX.hitPunch(head ? 1 : 0.5); }
     if (killed) { const n = FX.streakTick(performance.now()); FX.killBanner(head ? 'HEADSHOT' : 'ELIMINATED', { head, streak: n }); FX.xpPop(META.XP.kill + (head ? META.XP.head : 0), head ? 'HEADSHOT' : 'KILL'); }
     stats.hits++; if (head) stats.heads++;
@@ -513,14 +514,14 @@ function dmMap() {                                                              
   if (n > 1 && i === dmMap.last) i = (i + 1 + ((Math.random() * (n - 1)) | 0)) % n;
   return (dmMap.last = i);
 }
-function dmStart(def) {
+function dmStart(def, forceMap = null) {
   unlockAudio();
   if (RC.dmNewMaps) {                                                              // v27: the four DM arenas, never the same twice in a row, loaded on demand
-    const n = DM_MAPS.length; let j = DM.nextMap ?? ((Math.random() * n) | 0); if (n > 1 && j === dmStart.last) j = (j + 1) % n; dmStart.last = j; DM.nextMap = null;
+    const n = DM_MAPS.length; let j = forceMap ?? DM.nextMap ?? ((Math.random() * n) | 0); if (forceMap == null && n > 1 && j === dmStart.last) j = (j + 1) % n; dmStart.last = j; DM.nextMap = null;
     const go = () => { $('dmLoad')?.remove(); startMission(0, { route: 'default', abilities: [], mode: 'dm', def: def ? 1 : 0, dmMap: j }); let k = (Math.random() * n) | 0; if (k === j) k = (k + 1) % n; DM.nextMap = k; loadDmMap(DM_MAPS[k].id).catch(() => {}); };
     if (dmMapReady(DM_MAPS[j].id)) { go(); return; }
     let el = $('dmLoad'); if (!el) { el = document.createElement('div'); el.id = 'dmLoad'; document.body.append(el); } el.textContent = `LOADING ${DM_MAPS[j].title.toUpperCase()}…`;
-    loadDmMap(DM_MAPS[j].id).then(go).catch(e => { errors.push('dm map: ' + e); el.remove(); RC.dmNewMaps = false; dmStart(def); });
+    loadDmMap(DM_MAPS[j].id).then(go).catch(e => { errors.push('dm map: ' + e); el.remove(); if (NET.on) { netQuit('MAP FAILED TO LOAD'); return; } RC.dmNewMaps = false; dmStart(def); });
     return;
   }
   const i = dmMap(); selected = i; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'dm', def: def ? 1 : 0 });
@@ -528,7 +529,7 @@ function dmStart(def) {
 const dmGoal = (lvl, tdm = DM.tdm) => tdm ? Math.min(RC.tdmMaxKills, RC.tdmLevelKills + RC.tdmLevelStep * (lvl - 1)) : Math.min(RC.dmMaxKills, RC.dmLevelKills + RC.dmLevelStep * (lvl - 1));
 const dmTarget = () => DM.target || dmGoal(dmLevel);
 function tdmScore(team) {                                                          // team Deathmatch: every kill scores for the killer's team
-  if (!DM.tdm || matchOver || DM.hill) return; DM.score[team]++; DM.boardDirty = true;
+  if (!DM.tdm || matchOver || DM.hill || NET.on) return; DM.score[team]++; DM.boardDirty = true;
   if (DM.score[team] >= dmTarget()) dmEnd(team === 'A');
 }
 function botKill(killer, victim) {                                                 // bot fragged bot: score + feed
@@ -545,6 +546,10 @@ function nearMiss(from, to) {                                                   
   return Math.hypot(px - ax * u, py - ay * u, pz - az * u);
 }
 function enemyFired(e, from, to, dmg, victim) {
+  if (NET.on) {                                                                    // online: bot damage goes through the server; only the visuals run here
+    if (NET.host && e.nid && !e.net) { NET.shot(e.nid, from, to, ''); if (dmg > 0 && !matchOver) { const v = victim ? victim.nid : player.alive ? NET.me : 0; if (v) NET.hit(e.nid, v, dmg, false); } }
+    if (victim && !victim.net) victim.alert(e.pos, 1); dmg = 0; victim = null;
+  }
   addTracer(from, to, e.ally ? 0x7cc8ff : e.S.laser ? 0xff8080 : 0xff6b4a);
   const d = from.distanceTo(player.pos);
   const rel = Math.atan2(from.x - player.pos.x, from.z - player.pos.z);
@@ -577,6 +582,7 @@ function damagePlayer(dmg, from) {
   if (from) { const a = Math.atan2(from.x - player.pos.x, from.z - player.pos.z) - player.yaw; FEEL.punchY = Math.sin(a) * 0.02; FEEL.punchP = -0.015 - dmg * 0.0006; }
   if (from) dmgDirs.push({ ang: Math.atan2(from.x - player.pos.x, from.z - player.pos.z), t: 1.2 });
   if (player.hp > 0 && player.hp < 35) storyEv('hurt');
+  if (player.hp <= 0 && NET.on) { player.hp = 0; return; }                         // online: wait for the server's kill message
   if (player.hp <= 0) { player.hp = 0; sfx.death(); director.death(); track('thr', { k: 'death', v: +director.threat.toFixed(2), m: mission.id }); if (mode === 'dm' && LS.byE?.ident) { LS.byE.ident.k++; DM.boardDirty = true; if (DM.tdm) { tdmScore('B'); if (matchOver) return; } else if (LS.byE.ident.k >= dmTarget()) { dmEnd(false); return; } } if (mode === 'dm') { dmDeath(); return; } player.alive = false; lose('You were eliminated.'); }
 }
 
@@ -722,10 +728,11 @@ function dmBot(ident) {
   const e = new Enemy(type, skin || A.enemies[type], p, { yaw: rand(-Math.PI, Math.PI) }); scene.add(e.root); e.skin = !!skin;
   if (ally) { e.ally = true; e.abCD = 1e9; allies.push(e); } else enemies.push(e);   // allies: no abilities (their flashes/smokes would hit the player)
   e.hp = 100; e.root.scale.setScalar(RC.dmBotScale);                          // same 100 HP as the player; drawn bigger so they read at range
-  if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; }
+  if (ident) { ident.type = type; ident.e = e; e.ident = ident; e.callsign = ident.name; e.jumper = ident.jumper; if (ident.nid) e.nid = ident.nid; }
   else e.callsign = CALLSIGNS[DM.nameI % CALLSIGNS.length];
   toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.025, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); nameTag(e);   // v27.1: clean team outline (the additive glow hull looked blobby)
   if (ally) { const f = ffaRival(e); if (f) { e.alert(f.pos, 1); if (!e.T.static) e.goTo(spreadGoal(e, f.pos), G); } return; }
+  if (NET.on) { const f = ffaRival(e); if (f) { e.alert(f.pos, 1); if (!e.T.static) e.goTo(spreadGoal(e, f.pos), G); } return; }
   const r = G.ignorePlayer || Math.random() >= 0.5 || (DM.tdm && Math.random() < 0.3) ? ffaRival(e) : null; e.alert(r ? r.pos : player.pos, 1); if (!e.T.static) e.goTo(r ? r.pos : player.pos, G);
 }
 function nameTag(e) {                                                              // small red callsign above Deathmatch bots (one canvas sprite per bot)
@@ -739,6 +746,7 @@ function dmSetup() {
   for (const d of devices) d.g.visible = false;
   map.points = []; clock = RC.dmTime;
   for (const e of enemies) scene.remove(e.root); enemies = []; clearAllies();
+  if (NET.on) { netSetup(); return; }
   DM.tdm = teamsOn(); DM.score = { A: 0, B: 0 }; DM.hits = []; SS.ssA = null; document.body.classList.toggle('teams', DM.tdm);
   DM.gun = !DM.tdm && gunOn(); DM.hill = DM.tdm && hillOn(); DM.target = DM.gun ? GUN_LADDER.length : DM.hill ? RC.hillScore : dmGoal(dmLevel); DM.level = dmLevel; DM.gunI = 0;
   { const n = Number(store.get('sz_dm_played', 0)) || 0; DM.grace = n < RC.dmGraceMatches; DM.graceN = n; DM.walk = DM.grace && RC.dmFirstFoe !== false ? 0 : -1; DM.ease = Math.min(RC.dmEaseMax, RC.dmEaseStep * (Number(store.get('sz_dm_losses', 0)) || 0)); store.set('sz_dm_played', n + 1); if (DM.grace) track('dm', { k: 'grace', n }); }   // new players: first matches are gentler
@@ -812,13 +820,14 @@ function hillTick(dt) {
   let a = 0, b = 0; DM.inHill = player.alive && inHill(player.pos); if (DM.inHill) a++;
   for (const e of allies) if (e.alive && inHill(e.pos)) a++;
   for (const e of enemies) if (e.alive && inHill(e.pos)) b++;
-  const own = a && !b ? 'A' : b && !a ? 'B' : a && b ? 'X' : '';
+  const own = NET.on ? netHillOwn() : a && !b ? 'A' : b && !a ? 'B' : a && b ? 'X' : '';
   if (own !== DM.hillOwner) {
     if (own === 'A') { FX.announce('HILL TAKEN', 'start'); sfx.done?.(); } else if (own === 'B') FX.announce('ENEMY ON THE HILL', 'objective'); else if (own === 'X') FX.announce('HILL CONTESTED', 'objective');
     DM.hillOwner = own; const c = own === 'A' ? 0x2a5cf0 : own === 'B' ? 0xdc2a34 : own === 'X' ? 0xffffff : 0xffd23b; DM.hillFx.ringM.color.setHex(c); DM.hillFx.colM.color.setHex(c);
   }
   if (own === 'A' || own === 'B') {
     DM.hillAcc[own] += dt * RC.hillRate; if (own === 'A' && DM.inHill) { DM.hillT = (DM.hillT || 0) + dt; matchXP.hill = Math.floor(DM.hillT * 2); }
+    if (NET.on) return;                                                            // online: the server scores the hill
     while (DM.hillAcc[own] >= 1) { DM.hillAcc[own] -= 1; DM.score[own]++; DM.boardDirty = true; if (DM.score[own] >= dmTarget()) { dmEnd(own === 'A'); return; } }
   }
 }
@@ -828,7 +837,7 @@ function dmTick(dt) {
   if (!player.alive) {                                                          // respawn away from the bots, short spawn protection
     if ((DM.deadT -= dt) <= 0) {
       const live = enemies.filter(e => e.alive).map(e => e.pos), p = dmSpot(live, live, DM.tdm ? null : live, true, DM.tdm ? -1 : 0); player.pos.copy(p); player.vel.set(0, 0, 0);
-      player.hp = 100; player.alive = true; invT = 2.5; DM.hits = []; faceFoe(); hurtK = 0; FX.announce('BACK IN', 'start'); sfx.respawn(); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
+      player.hp = 100; player.alive = true; invT = 2.5; DM.hits = []; faceFoe(); if (NET.on) netSpawned(); hurtK = 0; FX.announce('BACK IN', 'start'); sfx.respawn(); dmApplyLoadout(); DM.alive0 = elapsed; DM.rampage = false;
       for (const e of enemies) if (e.alive) e.alert(player.pos, 0.6);
     }
     if ($('dcard').classList.contains('show')) { const t = Math.max(0, Math.ceil(DM.deadT)); if (t !== DM.dcT) { DM.dcT = t; $('dcGo').textContent = dcGoTxt(t); } }
@@ -836,7 +845,7 @@ function dmTick(dt) {
   }
   DM.uavT -= dt; DM.odT -= dt;
   { const quiet = elapsed - Math.max(DM.lastK, DM.alive0 || 0);                 // stalling: no kill for a while -> the bots go on a rampage
-    if (!DM.rampage && quiet > RC.dmStall * (DM.grace ? 1.5 : 1)) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
+    if (!NET.on && !DM.rampage && quiet > RC.dmStall * (DM.grace ? 1.5 : 1)) { DM.rampage = true; FX.announce('BOTS ON A RAMPAGE', 'objective'); sfx.alarm?.(); for (const e of enemies) if (e.alive) { e.alert(player.pos, 1); if (!e.T.static) e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } track('dm', { k: 'rampage', t: Math.round(elapsed) }); }
     if (DM.rampage) { director.set(director.threat + 0.01 * dt * 10); if (Math.random() < dt * 0.8) for (const e of enemies) if (e.alive && e.state !== 'combat') { e.alert(player.pos, 1); e.goTo(DM.tdm ? spreadGoal(e, player.pos) : player.pos, G); } } }
   if (DM.walk != null && DM.walk !== -1) firstFoe(dt);
   if (DM.hill) hillTick(dt);
@@ -846,15 +855,15 @@ function dmTick(dt) {
   for (const r of DM.roster) {                                                  // every bot is a persistent player: dies, waits, respawns somewhere new
     if (r.e && r.e.alive) continue;
     if (r.respT === null) { r.respT = 2.5; continue; }
-    if ((r.respT -= dt) <= 0) { r.respT = null; dmBot(r); }
+    if ((r.respT -= dt) <= 0) { r.respT = null; dmBot(r); if (NET.on && r.nid && r.e) NET.send({ t: 'br', id: r.nid, p: [+r.e.pos.x.toFixed(2), +r.e.pos.y.toFixed(2), +r.e.pos.z.toFixed(2)] }); }
   }
   if (DM.boardDirty) dmBoard();
   {
     if (allies.length > 12) { const dead = allies.filter(e => !e.alive).slice(0, allies.length - 8); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } allies = allies.filter(e => !dead.includes(e)); }
     if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } enemies = enemies.filter(e => !dead.includes(e)); }
   }
-  for (const e of allies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.35 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const f = ffaRival(e); if (f) { e.alert(f.pos, 0.5); e.goTo(spreadGoal(e, f.pos), G); } }   // allies push toward the nearest enemy
-  for (const e of enemies) if (e.alive && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.alert(DM.hillPos, 0.5); e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const calm = G.ignorePlayer, r = calm || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(DM.tdm ? spreadGoal(e, to) : to, G); }   // bots hunt the player or a rival
+  for (const e of allies) if (e.alive && !e.net && e.state !== 'combat' && Math.random() < dt * 0.35 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const f = ffaRival(e); if (f) { e.alert(f.pos, 0.5); e.goTo(spreadGoal(e, f.pos), G); } }   // allies push toward the nearest enemy
+  for (const e of enemies) if (e.alive && !e.net && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.alert(DM.hillPos, 0.5); e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const calm = G.ignorePlayer, r = calm || NET.on || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(DM.tdm ? spreadGoal(e, to) : to, G); }   // bots hunt the player or a rival
   return '';
 }
 function dmDeath() { DM.deathPos = player.pos.clone(); DM.deathT = elapsed; DM.d++; DM.streak = 0; DM.deadT = RC.deathCard ? Math.max(RC.dmRespawn, 1.5) : RC.dmRespawn; player.alive = false; if (RC.deathCard) deathCard(); else FX.announce('ELIMINATED', 'objective'); }
@@ -898,6 +907,7 @@ function dmApplyLoadout() {                                                     
   equip(0, true);
 }
 function dmRows() {                                                                // scoreboard rows: you + every bot, most kills first (ties: you first)
+  if (NET.on) return netRows();
   const rows = [{ name: 'YOU', k: stats.kills - DM.k0, d: DM.d, me: true }].concat((DM.roster || []).map(r => ({ name: r.name, k: r.k, d: r.d })));
   return rows.sort((a, b) => b.k - a.k || (b.me ? 1 : 0) - (a.me ? 1 : 0));
 }
@@ -918,7 +928,7 @@ function dmEnd(won) {
   const tier = k >= 30 ? 'LEGEND' : k >= 22 ? 'PLATINUM' : k >= 15 ? 'GOLD' : k >= 8 ? 'SILVER' : 'BRONZE';
   questP('finish'); if (won) questP('win'); if (k >= 15) questP('rank');
   store.set('sz_dm_losses', won ? 0 : (Number(store.get('sz_dm_losses', 0)) || 0) + 1);   // v29.7: each loss in a row eases the next match a bit
-  const lvl = dmLevel; if (won) { dmLevel++; store.set('sz_dm_level', dmLevel); META.profile.upPoints++; META.saveProfile(); } track('dm', { k: 'level', l: lvl, won });
+  const lvl = dmLevel; if (won && !NET.on) { dmLevel++; store.set('sz_dm_level', dmLevel); META.profile.upPoints++; META.saveProfile(); } track('dm', { k: 'level', l: lvl, won });
   $('end').classList.add('dm'); $('rankBadge').dataset.t = tier; $('rankBadge').textContent = won ? `LEVEL ${lvl} CLEARED · ${tier}` : DM.tdm ? (DM.draw ? `DRAW ${DM.score.A}–${DM.score.B}` : `RED TEAM WINS ${DM.score.B}–${DM.score.A}`) : `#${DM.place} · ${DM.winner} WINS`;
   $('tK').textContent = k; $('tKD').textContent = (k / Math.max(1, DM.d)).toFixed(1); $('tSt').textContent = DM.best; $('tC').textContent = dmC;
   $('beatBest').textContent = rec ? '★ NEW PERSONAL BEST ★' : `${best - k + 1} more kill${best - k ? 's' : ''} to beat your best (${best})`; $('beatBest').classList.toggle('rec', rec);
@@ -927,6 +937,7 @@ function dmEnd(won) {
   const againLbl = won ? `▶ NEXT LEVEL ${dmLevel} · ${DM.hill ? 'HOLD THE HILL' : DM.gun ? GUN_LADDER.length + ' GUNS' : dmGoal(dmLevel) + (DM.tdm ? ' TEAM' : '') + ' KILLS'}` : `↻ RETRY LEVEL ${dmLevel} (REMATCH)`;
   $('again').textContent = againLbl; $('again').className = 'go';
   if (!won) $('upBox').style.display = 'none';                                   // weapon upgrades are a victory reward
+  if (NET.on) { netEndScreen(); return; }
   if (!TEST) {                                                                  // one more match: auto rematch unless the player touches the end screen
     let n = RC.dmRematch + 1; const tick = () => { if (--n <= 0) { clearInterval(autoNextT); $('again').click(); } else $('again').textContent = `${againLbl} (${n})`; };
     clearInterval(autoNextT); tick(); autoNextT = setInterval(tick, 1000);
@@ -1139,11 +1150,12 @@ function explode(p, r, dmg, label) {
   for (let i = 0; i < 7; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: starTex(), color: i % 2 ? 0xffa040 : 0xffe080, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); sp.position.copy(p).add(V(rand(-1, 1), rand(-0.5, 1.2), rand(-1, 1))); sp.scale.setScalar(rand(2, 3.6)); sp.userData.t = 0.35; sp.userData.spark = true; scene.add(sp); impacts.push(sp); }
   for (const e of enemies) {
     if (!e.alive) continue; const d = e.pos.clone().add(V(0, 1, 0)).distanceTo(p);
-    if (d < r) { const killed = e.damage(dmg * (1 - d / r * 0.6), p.clone()); if (killed) { stats.kills++; killTick(false, e); matchXP.kills += META.XP.kill; feed(`VOSS ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()} · ${label}`, false); } }
+    if (d < r && NET.on) { if (e.nid) NET.hit(NET.me, e.nid, dmg * (1 - d / r * 0.6), false, 'blast'); }   // online: blast damage is checked by the server too
+    else if (d < r) { const killed = e.damage(dmg * (1 - d / r * 0.6), p.clone()); if (killed) { stats.kills++; killTick(false, e); matchXP.kills += META.XP.kill; feed(`VOSS ▸ ${ENEMY_TYPES[e.type].name.toUpperCase()} · ${label}`, false); } }
     if (d < 30) e.alert(p, 1);
   }
   const pd = player.pos.clone().add(V(0, 1, 0)).distanceTo(p);
-  if (pd < r && world.lineClear(p, player.pos.clone().add(V(0, 1.4, 0)))) damagePlayer(dmg * 0.45 * (1 - pd / r), p);
+  if (pd < r && !NET.on && world.lineClear(p, player.pos.clone().add(V(0, 1.4, 0)))) damagePlayer(dmg * 0.45 * (1 - pd / r), p);
   for (const b of barrels) if (b.alive && b.pos.distanceTo(p) < r * 0.8 && b.pos.distanceTo(p) > 0.1) setTimeout(() => detonateBarrel(b), 140);
 }
 function detonateBarrel(b) {
@@ -1284,6 +1296,7 @@ function update(dt) {
   if (areaClear && !said.clear) { said.clear = true; FX.announce('AREA CLEAR', 'objective'); radio('OKONKWO', 'Area clear. Timer is off, take your time.', 3); }
   elapsed += dt; if (!tutHold && !areaClear) clock -= dt; repathBudget = 2;      // all hostiles down: the clock stops
   if (clock <= 30 && clock + dt > 30) radioOnce('low');
+  if (NET.on && mode === 'dm') clock = Math.max(0.05, NET.clock);                 // online: the server owns the clock and ends the round
   if (clock <= 0) { clock = 0; if (mode === 'dm') dmEnd(false); else lose(mission.failTimer); return; }
   pollInput(dt);
   updatePlayer(dt);
@@ -1294,12 +1307,13 @@ function update(dt) {
   swingCharm(dt);
   lodTick = (lodTick + 1) % 3;
   for (const e of enemies) {
+    if (e.net) { if (e.alive) netPuppetTick(e, dt); else e.update(dt, G); continue; }
     if (tutHold) { e.tickAnim(dt); e.sync(); continue; }
     const far = e.alive && e.state === 'patrol' && e.pos.distanceToSquared(player.pos) > 1600;
     if (!far) { if (e._lodAcc) { e.update(e._lodAcc, G); e._lodAcc = 0; } e.update(dt, G); continue; }
     e._lodAcc = (e._lodAcc || 0) + dt; if ((e.id % 3) === lodTick) { e.update(Math.min(e._lodAcc, 0.15), G); e._lodAcc = 0; }
   }
-  for (const e of allies) e.update(dt, G);
+  for (const e of allies) if (e.net && e.alive) netPuppetTick(e, dt); else e.update(dt, G);
   for (const k of Object.keys(zones)) zones[k] = zones[k].filter(z => (z.t -= dt) > 0);
   const reveal = e => zones.sensor.some(z => z.pos.distanceTo(e.pos) < z.radius) || zones.drone.some(z => z.obj.position.distanceTo(e.pos) < z.radius);
   for (const e of enemies) if (e.alive && reveal(e)) e.revealT = 1.5;
@@ -1929,7 +1943,7 @@ $('clickGo').addEventListener('mousedown', e => { track('lock', { k: 'click' });
 $('start').onclick = () => { unlockAudio(); dmStart(false); };   // rebrand: the loadout screen deploys into an arena match
 $('resume').onclick = () => { music.pause(false); $('pause').classList.remove('show'); paused = false; running = true; if (touch) touch.show(true); else lockMouse(); crazy.gameplay(true); };
 $('trySurv').onclick = () => { unlockAudio(); clearInterval(autoNextT); const i = (Math.random() * Math.min(progress, MISSIONS.length)) | 0; startMission(i, { route: MISSIONS[i].routes ? 'assault' : 'default', abilities: [], mode: 'survival' }); };
-$('again').onclick = () => { unlockAudio(); clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
+$('again').onclick = () => { unlockAudio(); if (NET.on) return; clearInterval(autoNextT); if (lastStart.opts.mode === 'dm') { dmStart(false); return; } startMission(lastStart.idx, lastStart.opts); };
 $('menuBtn').onclick = openLobby; $('pauseMenu').onclick = () => quitAsk();
 // v29: "leave the match?" confirm with an optional feedback box (stored in Supabase as a 'feedback' event)
 function quitAsk() {
@@ -2035,7 +2049,7 @@ function startOnboarding(force) {
       else if (panel === 'profile') openProfile(); else if (panel === 'settings') { openLobby(); settingsUI(); }
       else if (!$('brief').classList.contains('show') || flow.cur() !== panel) openBriefing(panel);
     },
-    onFinish(played) { $('settings').classList.remove('show'); if (played) { unlockAudio(); dmStart(false); } else openLobby(); },
+    onFinish(played) { $('settings').classList.remove('show'); if (played) { unlockAudio(); if (onlineOn()) netStart(); else dmStart(false); } else openLobby(); },
   });
   return onboard.start({ force });
 }
@@ -2140,12 +2154,13 @@ function applyRemote() {                                                        
   if (touch && !settings.fUser) settings.fireMode = RC.touchAutoFire ? 'auto' : 'button';
 }
 function openLobby() {
+  if (NET.ws) netLeave();
   music.pause(false); music.menu(); ambience.stop();
   only('lobby'); at('lobby'); stage('lobby');
   const lc = TEST || !startMissionNow.n ? null : MODES.loginClaim();             // v14: login reward lands after the first match, not on boot
   if (lc) { META.profile.coins += lc.coins; META.saveProfile(); sfx.coin?.(); loginBanner(lc); track('ui', { k: 'login', d: lc.day }); }
   lobbyRoom ??= buildLobbyRoom(); lobbyRoom.on = true;   // v40: the lobby has its own fixed room, not the frozen last match
-  lobbyDaylight(); chips(); setPreview(); modeButtons(); lobbyV14(); loadBotSkins();
+  lobbyDaylight(); chips(); setPreview(); modeButtons(); lobbyV14(); loadBotSkins(); if (mpUrl()) netCount();
 }
 function lobbyDaylight() {                                                         // bright midday look behind the lobby (scene is rebuilt on mission start)
   if (!scene || !RC.v14ui) return; const L = LIGHTING.noon;
@@ -2155,7 +2170,7 @@ function lobbyDaylight() {                                                      
 }
 const WICON = { pistol: 'pistol', revolver: 'pistol', assault: 'assault-rifle', 'machine gun': 'assault-rifle', sniper: 'sniper-rifle' };
 function lobbyV14() {
-  $('lMission').textContent = hillOn() ? `HOLD THE HILL · LEVEL ${dmLevel} · FIRST TO ${RC.hillScore}` : gunOn() ? `GUN RUN · LEVEL ${dmLevel} · ${GUN_LADDER.length} GUNS` : `${MODE_NAME[modeKey()]} · LEVEL ${dmLevel} · FIRST TO ${dmGoal(dmLevel, teamsOn())}`;
+  $('lMission').textContent = onlineOn() ? `${MODE_NAME[modeKey()]} · REAL PLAYERS + BOTS${netOnlineN ? ` · ${netOnlineN} ONLINE` : ''}` : hillOn() ? `HOLD THE HILL · LEVEL ${dmLevel} · FIRST TO ${RC.hillScore}` : gunOn() ? `GUN RUN · LEVEL ${dmLevel} · ${GUN_LADDER.length} GUNS` : `${MODE_NAME[modeKey()]} · LEVEL ${dmLevel} · FIRST TO ${dmGoal(dmLevel, teamsOn())}`;
   $('lPlay').innerHTML = `<span>${icon('play')} PLAY</span>`;
   { const b = store.get('sz_dm_best', 0); $('mStory').innerHTML = `${icon('flag')} STORY<small></small>`; $('mDm').innerHTML = `${icon('skull')} DEATHMATCH<small>${b ? 'BEST ' + b : ''}</small>`; }
   $('mStory').classList.toggle('on', playMode !== 'dm'); $('mDm').classList.toggle('on', playMode === 'dm'); lobbyModes();
@@ -2230,7 +2245,8 @@ function openProfile() {
 }
 $('lPlay').onclick = () => {                                                       // first launch: PLAY drops straight into the mission-1 drill (tour stays in Settings)
   unlockAudio();
-  track('lobby', { k: 'play', m: playMode });
+  track('lobby', { k: 'play', m: playMode, o: onlineOn() ? 1 : 0 });
+  if (onlineOn()) { netStart(); return; }
   dmStart(!store.get('sz_mode', null));
 }; $('mDm').onclick = () => { playMode = 'dm'; store.set('sz_mode', playMode); lobbyV14(); };
 $('lCrate').onclick = () => { if (!startMissionNow.n) { unlockAudio(); $('lPlay').click(); } };
@@ -2294,6 +2310,7 @@ function frame(now) {
       } else { lowFpsT = 0; if (fps > target + 1 && (frame.up = (frame.up || 0) + 1) >= 3) { frame.up = 0; if (dynScale < 1) { dynScale = Math.min(1, dynScale + (fps > target * 1.3 ? 0.15 : 0.07)); applyQuality(); } else if (fps > target * 1.35 && qLevel < 1) { qLevel++; dynScale = 0.85; applyQuality(); } } }
     }
   }
+  if (NET.on) netPump();
   if (!manual) {
     const t0 = performance.now(); if (!running) { if (outroT >= 0) outroT += dt; idleAnim(dt * outroScale()); } update(dt); const t1 = performance.now(); render(); const t2 = performance.now();
     if (TEST) { (window.__frames ??= []).push([+(t1 - t0).toFixed(1), +(t2 - t1).toFixed(1), +(now - (frame.last ?? now)).toFixed(0)]); if (window.__frames.length > 600) window.__frames.shift(); }
@@ -2302,9 +2319,179 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+// ---------- online (server/server.mjs + game/net.js): real players, bots fill the empty slots ----------
+// Teams: the server says A or B; locally your team is always "blue" (allies array) and the map is flipped for team B so
+// your base is the blue end. Other players and (unless you are the host) the bots are puppets: Enemy models driven by
+// snapshots, no AI. The host (longest-connected player) runs the bot AI and streams the bots to everyone.
+const NET = createNet(), mpUrl = () => serverUrl(Q, RC), _np = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, sp: 0, fl: 0 };
+let netOnlineN = 0;
+const otherTeam = t => t === 'A' ? 'B' : 'A';
+function netMsgBox(txt) {                                                          // small centred status line (connecting / lost)
+  let el = $('dmLoad'); if (!txt) { el?.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'dmLoad'; document.body.append(el); } el.textContent = txt;
+}
+async function netStart() {
+  unlockAudio(); if (NET.on) { netRound(); return; }
+  if (netStart.busy) return; netStart.busy = true;
+  netMsgBox('FINDING PLAYERS…');
+  try {
+    const name = (await crazy.username()) || store.get('sz_name', '');
+    await NET.connect(mpUrl(), { mode: hillOn() ? 'hill' : 'tdm', name, room: crazy.inviteRoom() });
+    NET.handler = netOnMsg; netMsgBox(null);
+    track('net', { k: 'join', m: NET.mode, n: [...NET.ents.values()].filter(e => !e.bot).length, host: NET.host ? 1 : 0 });
+    crazy.room(NET.room, true);
+    netRound();
+  } catch (e) {                                                                   // server down: play the same mode against bots instead of a dead end
+    netMsgBox(null); track('net', { k: 'fail', m: String(e?.message || e).slice(0, 40) });
+    NET.close(); dmStart(false); setTimeout(() => FX.announce('ONLINE UNAVAILABLE · PLAYING VS BOTS', 'objective'), 1200);
+  } finally { netStart.busy = false; }
+}
+function netRound() { NET.ready = false; NET.wantEnd = null; dmStart(false, NET.map); }
+function netLeave() { NET.handler = () => {}; NET.close(); crazy.room(null); }
+function netQuit(why) { netLeave(); if (running || matchOver) { endMatch(); openLobby(); } FX.announce(why, 'objective'); }
+function netSetup() {                                                              // dmSetup for an online round
+  const flip = NET.team === 'B';
+  if (flip && map.teamSpawns) map.teamSpawns = { A: map.teamSpawns.B, B: map.teamSpawns.A };   // your base is always the blue end
+  DM.tdm = true; document.body.classList.add('teams'); DM.gun = false; DM.hill = NET.mode === 'hill';
+  DM.score = { A: NET.score[NET.team] || 0, B: NET.score[otherTeam(NET.team)] || 0 }; DM.hits = []; SS.ssA = null;
+  DM.target = NET.target; DM.level = dmLevel; DM.gunI = 0; DM.grace = false; DM.graceN = 9; DM.walk = -1; DM.ease = 0;
+  Object.assign(DM, { rampage: false, alive0: 0, coins: 0, d: 0, streak: 0, best: 0, k0: stats.kills, spawnT: 0, deadT: 0, lastK: -9, multi: 0, uavT: 0, odT: 0, hitT: 0, final: false });
+  DM.pool = dmPool(); DM.recent = Array.from({ length: 10 }, () => ({ x: 0, z: 0, t: -99 })); DM.recentI = 0;
+  DM.pool = DM.pool.length ? DM.pool : map.guards.map(g => g.clone()); DM.side = dmSides(DM.pool); DM.home = dmHomes(DM.pool, DM.side);
+  DM.roster = [];
+  player.pos.copy(dmSpot([], null, null, false, -1)); player.vel.set(0, 0, 0); faceFoe();
+  for (const ne of NET.ents.values()) { if (ne.id === NET.me) continue; if (ne.bot && NET.host) netHostBot(ne); else if (ne.alive) netPuppet(ne); }
+  if (DM.hill) { hillSetup(); if (NET.hill) netHillPos(NET.hill); else if (NET.host) NET.send({ t: 'hillpos', p: [+DM.hillPos.x.toFixed(2), +DM.hillPos.y.toFixed(2), +DM.hillPos.z.toFixed(2)] }); }
+  NET.ready = true; netSpawned(); DM.boardDirty = true;
+}
+function netSpawned() { NET.send({ t: 'r', p: [+player.pos.x.toFixed(2), +player.pos.y.toFixed(2), +player.pos.z.toFixed(2)] }); }
+function netHillPos(p) { if (!DM.hillPos) return; DM.hillPos.set(p[0], p[1], p[2]); DM.hillFx?.g.position.copy(DM.hillPos); }
+function netHillOwn() { const o = NET.hillOwn; return o === NET.team ? 'A' : o === otherTeam(NET.team) ? 'B' : o; }
+function netHostBot(ne) {                                                          // the host runs this bot's AI
+  const r = { i: DM.roster.length, nid: ne.id, name: ne.name, k: ne.k || 0, d: ne.d || 0, e: null, respT: null, type: null, jumper: Math.random() < 0.5, ally: ne.team === NET.team };
+  DM.roster.push(r); if (ne.alive) dmBot(r); return r;
+}
+function netPuppet(ne) {                                                           // a model that follows the snapshots of player/bot `ne`
+  netDropPuppet(ne.id, true);
+  const ally = ne.team === NET.team, type = 'guard', skin = botAssets(type, ne.id);
+  const e = new Enemy(type, skin || A.enemies[type], ne.p ? V(ne.p[0], ne.p[1], ne.p[2]) : V(0, -50, 0), { yaw: ne.yaw || 0 }); scene.add(e.root); e.skin = !!skin;
+  e.net = true; e.nid = ne.id; e.human = !ne.bot; e.hp = ne.hp ?? 100; e.abCD = 1e9; e.callsign = ne.name; e.ident = ne; e.shotK = 0;
+  e.root.scale.setScalar(RC.dmBotScale); e.root.visible = false;
+  if (ally) { e.ally = true; allies.push(e); } else enemies.push(e);
+  toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.025, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); nameTag(e);
+  return e;
+}
+function netDrop(e) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } enemies = enemies.filter(o => o !== e); allies = allies.filter(o => o !== e); }
+function netDropPuppet(id, aliveOnly) { for (const e of [...enemies, ...allies]) if (e.nid === id && (!aliveOnly || e.alive)) netDrop(e); }
+function netObj(id, any) {                                                         // the live model for server id (any: also a corpse)
+  let dead = null;
+  for (const e of enemies) if (e.nid === id) { if (e.alive) return e; dead = e; }
+  for (const e of allies) if (e.nid === id) { if (e.alive) return e; dead = e; }
+  return any ? dead : null;
+}
+function netPuppetTick(e, dt) {
+  e.mixer.update(dt);
+  if (!NET.pose(e.nid, _np) || _np.y < -40) { e.root.visible = e.netOk = false; return; }
+  e.root.visible = e.netOk = true;                                                // (render() still frustum-culls it) e.pos.set(_np.x, _np.y, _np.z); e.yaw = _np.yaw; e.flinch = Math.max(0, e.flinch - dt * 6);
+  e.shotK -= dt; const sp = _np.sp;
+  e.play(e.shotK > 0 && sp < 2.6 ? e.cn('shoot') : sp > 2.6 ? e.cn('run') : sp > 0.2 ? e.cn('walk') : e.cn('idle'));
+  const a = e.actions[e.clip]; if (a && /walk|run/.test(e.clip)) a.timeScale = clamp(sp / (e.clip.startsWith('run') ? 3.6 : 1.6), 0.5, 1.6);
+  e.sync();
+}
+function netPump() {                                                               // every frame: my state + (host) the bots
+  if (!NET.ready || mode !== 'dm') return;
+  const t = performance.now() / 1000, sp = Math.hypot(player.vel.x, player.vel.z);
+  NET.sendState(t, player.alive ? player.pos : _netDead, player.yaw + Math.PI, player.pitch, sp, cur());
+  if (NET.host && t - NET.botT >= 0.05) {
+    const l = []; for (const r of DM.roster) { const e = r.e; if (!e || !e.alive) continue; l.push([r.nid, +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2), +e.yaw.toFixed(2), +Math.hypot(e.vel.x, e.vel.z).toFixed(1), e.state === 'combat' ? 1 : 0]); }
+    NET.bots(t, l);
+  }
+}
+const _netDead = V(0, -50, 0);
+function netRows() {
+  const rows = [...NET.ents.values()].map(e => ({ name: e.id === NET.me ? 'YOU' : e.name, k: e.k || 0, d: e.d || 0, me: e.id === NET.me, ally: e.team === NET.team, dead: e.id === NET.me ? !player.alive : !e.alive, bot: e.bot }));
+  return rows.sort((a, b) => b.k - a.k || a.d - b.d);
+}
+function netMyKill(v, head) {                                                      // the server confirmed my kill: the usual kill feedback
+  const n = FX.streakTick(performance.now()); FX.killBanner(head ? 'HEADSHOT' : 'ELIMINATED', { head, streak: n }); FX.xpPop(META.XP.kill + (head ? META.XP.head : 0), head ? 'HEADSHOT' : 'KILL');
+  hitMarker(true, head); if (head) FEEL.hitStop = 0.06;
+  dmKill(); stats.kills++; if (stats.kills === 1) track('kill1', { m: mission.id, t: Math.round(elapsed), o: 1 });
+  killTick(head, null); matchXP.kills += META.XP.kill; if (head) matchXP.heads += META.XP.head; sfx.kill(stats.kills, head);
+}
+function netOnMsg(m) {
+  if (m.t === 'closed') { if (running || paused || matchOver) netQuit('CONNECTION LOST'); return; }
+  if (m.t === 'round') { if (matchOver && $('end').classList.contains('show')) { clearInterval(autoNextT); netRound(); } return; }
+  if (m.t === 'host') { if (NET.ready) netBecomeHost(); return; }
+  if (!NET.ready || mode !== 'dm') return;
+  const my = NET.team;
+  switch (m.t) {
+    case 'snap': {
+      const a = NET.score[my] || 0, b = NET.score[otherTeam(my)] || 0;
+      if (a !== DM.score.A || b !== DM.score.B) { DM.score.A = a; DM.score.B = b; DM.boardDirty = true; }
+      break;
+    }
+    case 'add': if (m.e.bot && NET.host) netHostBot(NET.ents.get(m.e.id)); else if (m.e.alive) netPuppet(NET.ents.get(m.e.id)); DM.boardDirty = true; if (!m.e.bot) feed(`${m.e.name} JOINED`); break;
+    case 'del': {
+      const ri = DM.roster.findIndex(r => r.nid === m.id); if (ri >= 0) { const r = DM.roster[ri]; if (r.e) netDrop(r.e); DM.roster.splice(ri, 1); }
+      netDropPuppet(m.id, false); DM.boardDirty = true; break;
+    }
+    case 'sp': { const ne = NET.ents.get(m.id); if (ne && !(ne.bot && NET.host)) netPuppet(ne); break; }
+    case 'f': {
+      const e = netObj(m.s); if (!e || !e.net) break;
+      e.shotK = 0.35; _netA.set(m.a[0], m.a[1], m.a[2]); _netB.set(m.b[0], m.b[1], m.b[2]); enemyFired(e, _netA, _netB, 0, null);
+      break;
+    }
+    case 'dmg': {
+      const s = netObj(m.s, true);
+      if (m.v === NET.me) { if (!player.alive) break; LS.by = s?.type || ''; LS.byE = s; const inv = invT; invT = 0; player.hp = m.hp + m.d; damagePlayer(m.d, s ? s.pos.clone() : null); invT = inv; player.hp = m.hp; break; }
+      const e = netObj(m.v); if (!e) break;
+      if (e.net) { e.hp = m.hp; e.flinch = 1; break; }
+      e.shieldHP = 0; e.hp = m.hp + m.d; e.damage(m.d, (s ? s.pos : e.pos).clone(), m.hd ? 'head' : 'body');   // host bot: flinch + alert, dies at 0
+      break;
+    }
+    case 'kill': {
+      const s = NET.ents.get(m.s), v = NET.ents.get(m.v), ve = m.v === NET.me ? null : netObj(m.v, true);
+      if (ve && ve.alive) { ve.hp = 0; ve.die(); }
+      if (m.v === NET.me && player.alive) { player.hp = 0; sfx.death(); director.death(); LS.byE = netObj(m.s, true); dmDeath(); }
+      if (m.s === NET.me) netMyKill(ve, m.hd);
+      if (s && v) feed(`${s.id === NET.me ? 'YOU' : s.name} ▸ ${v.id === NET.me ? 'YOU' : v.name}${m.hd ? ' ✦' : ''}`, m.hd);
+      if (s?.bot && NET.host) { const r = DM.roster.find(q => q.nid === m.s); if (r) r.k = m.sk; }
+      if (v?.bot && NET.host) { const r = DM.roster.find(q => q.nid === m.v); if (r) r.d = m.vd; }
+      DM.score.A = m.score[my] || 0; DM.score.B = m.score[otherTeam(my)] || 0; DM.boardDirty = true;
+      break;
+    }
+    case 'hillpos': netHillPos(m.p); break;
+    case 'end': {
+      DM.score.A = m.score[my] || 0; DM.score.B = m.score[otherTeam(my)] || 0; NET.next = m.next; NET.endAt = performance.now();
+      if (m.win !== 'draw' && m.win !== my) DM.score.B = Math.max(DM.score.B, DM.score.A + (DM.score.A === DM.score.B ? 1 : 0));   // never show a win the server did not call
+      dmEnd(m.win === my); break;
+    }
+  }
+}
+const _netA = V(), _netB = V();
+function netBecomeHost() {                                                         // the old host left: run the bots from here on
+  NET.host = true; track('net', { k: 'host' });
+  for (const ne of NET.ents.values()) {
+    if (!ne.bot) continue;
+    const pe = netObj(ne.id); if (pe) netDrop(pe);
+    const r = netHostBot({ ...ne, alive: false }); r.respT = ne.alive ? 0.01 : null;
+    if (ne.alive && pe) { dmBot(r); r.respT = null; r.e.pos.copy(pe.pos); r.e.yaw = pe.yaw; r.e.sync(); }
+  }
+}
+function netEndScreen() {                                                          // the same room plays on: count down to the server's next round
+  const lbl = n => `NEXT ROUND IN ${n}`; let n = Math.max(1, Math.round(NET.next || 12));
+  $('again').textContent = lbl(n); $('again').className = 'go';
+  clearInterval(autoNextT); autoNextT = setInterval(() => { n = Math.max(0, n - 1); $('again').textContent = n ? lbl(n) : 'STARTING…'; if (!n) clearInterval(autoNextT); }, 1000);
+}
+async function netCount() {                                                        // lobby: "N ONLINE" from the server's HTTP status
+  const u = mpUrl(); if (!u) return; try { const r = await fetch(u.replace(/^ws/, 'http'), { cache: 'no-store' }); const j = await r.json(); netOnlineN = j.players | 0; if ($('lobby').classList.contains('show')) lobbyV14(); } catch { /* offline */ }
+}
+
 // ---------- test / debug API ----------
 window.__game = { RC, G, outro: t => outro(t, () => {}), get dmWalk() { return DM.walkLog || (DM.walk && DM.walk.e ? { walking: +DM.walk.t.toFixed(1), dist: +DM.walk.e.pos.distanceTo(DM.walk.spot).toFixed(1) } : { walk: DM.walk, grace: DM.grace }); }, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
   errors, get ready() { return !!A.enemies; }, MISSIONS, WEAPONS, ABILITIES,
+  get net() { const pz = [...enemies, ...allies].filter(e => e.net); return { on: NET.on, ready: !!NET.ready, host: NET.host, team: NET.team, me: NET.me, room: NET.room, mode: NET.mode, map: NET.map, ents: NET.ents.size, puppets: pz.length, livePuppets: pz.filter(e => e.alive && e.netOk).length, stuck: pz.filter(e => e.alive && !e.netOk && NET.ents.get(e.nid)?.buf.length).length, stuckInfo: pz.filter(e => e.alive && !e.netOk && NET.ents.get(e.nid)?.buf.length).map(e => { const n = NET.ents.get(e.nid); return [e.nid, n.bot, n.alive, n.buf[n.buf.length - 1]?.slice(1, 4)]; }), roster: DM.roster?.length || 0, aiBots: DM.roster?.filter(r => r.e?.alive).length || 0, score: { ...NET.score }, clock: NET.clock, ping: NET.ping, hill: DM.hillPos?.toArray(), hillOwn: NET.hillOwn }; },
+  netStart: (k = 'otdm') => { setModeKey(k); netStart(); }, netLeave: () => { netLeave(); openLobby(); }, netObj: id => { const e = netObj(id); return e && { pos: e.pos.toArray(), alive: e.alive, hp: e.hp, net: !!e.net, visible: e.root.visible }; }, NET,
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
   start: (i, o = {}) => startMission(i, o), openBriefing, openLobby, openShop, openPass, openProfile, META, doSpray, detonateBarrel, revive,
   get charm() { return charm; }, get sprays() { return sprays; },
@@ -2331,12 +2518,13 @@ window.__game = { RC, G, outro: t => outro(t, () => {}), get dmWalk() { return D
 
 
 // ---------- v26 UI: score strip, weapon slots, Tab scoreboard, death recap, pause menu, lobby mode picker ----------
+const onlineOn = () => !!mpUrl() && !!store.get('sz_online', 0);
 const teamsOn = () => { const v = store.get('sz_teams', null); return v === null ? !!RC.dmTeams : !!v; };
 const gunOn = () => !teamsOn() && !!store.get('sz_gun', 0);
 const hillOn = () => teamsOn() && !!store.get('sz_hill', 0);                     // Blastline Hold the Hill: teams score by standing in the zone                       // Blastline Gun Run: free-for-all with a weapon ladder
-const modeKey = () => hillOn() ? 'hill' : teamsOn() ? 'tdm' : gunOn() ? 'gun' : 'dm';
-const MODE_NAME = { tdm: 'TEAM DEATHMATCH', dm: 'FREE FOR ALL', gun: 'GUN RUN', hill: 'HOLD THE HILL' };
-function setModeKey(k) { playMode = 'dm'; store.set('sz_mode', 'dm'); store.set('sz_teams', k === 'tdm' || k === 'hill' ? 1 : 0); store.set('sz_gun', k === 'gun' ? 1 : 0); store.set('sz_hill', k === 'hill' ? 1 : 0); }
+const modeKey = () => (onlineOn() ? 'o' : '') + (hillOn() ? 'hill' : teamsOn() ? 'tdm' : gunOn() ? 'gun' : 'dm');
+const MODE_NAME = { tdm: 'TEAM DEATHMATCH', dm: 'FREE FOR ALL', gun: 'GUN RUN', hill: 'HOLD THE HILL', otdm: 'ONLINE TEAM DEATHMATCH', ohill: 'ONLINE HOLD THE HILL' };
+function setModeKey(k) { const on = k === 'otdm' || k === 'ohill'; store.set('sz_online', on ? 1 : 0); if (on) k = k.slice(1); playMode = 'dm'; store.set('sz_mode', 'dm'); store.set('sz_teams', k === 'tdm' || k === 'hill' ? 1 : 0); store.set('sz_gun', k === 'gun' ? 1 : 0); store.set('sz_hill', k === 'hill' ? 1 : 0); }
 const SS = {}, mmss = s => { s = Math.max(0, Math.ceil(s)); return `${(s / 60) | 0}:${String(s % 60).padStart(2, '0')}`; };
 const BOT_W = { pistol: 'vex_p9', assault: 'ar7_lance', 'machine gun': 'hailstorm_mg', sniper: 'longshot_bolt' };
 function stripSetup() {
@@ -2359,6 +2547,7 @@ function wslots() {                                                             
   if (!touch) el.querySelectorAll('.ws').forEach(d => d.onmousedown = e => { e.stopPropagation(); if (running && +d.dataset.i !== W.cur) equip(+d.dataset.i); });   // desktop: click a slot (phones go through the touch layer)
 }
 function boardRows() {
+  if (NET.on) return netRows();
   const me = { name: 'YOU', k: stats.kills - DM.k0, d: DM.d, me: true, ally: true };
   const bots = (DM.roster || []).map(r => ({ name: r.name, k: r.k, d: r.d, ally: !!r.ally, dead: !(r.e && r.e.alive) }));
   return [me, ...bots].sort((a, b) => b.k - a.k || a.d - b.d);
@@ -2393,15 +2582,16 @@ function killCam(dt) {                                                          
   const ex = e.pos.x - player.pos.x, ez = e.pos.z - player.pos.z, ty = Math.atan2(-ex, -ez), tp = Math.atan2(e.pos.y + 1.2 - player.pos.y - CFG.eye, Math.hypot(ex, ez));
   let d = ty - player.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.yaw += d * Math.min(1, dt * 4); player.pitch += (tp - player.pitch) * Math.min(1, dt * 4);
 }
+const pzModes = () => mpUrl() ? [['otdm', 'ONLINE TEAM DM', 'squad', 'REAL PLAYERS + BOTS · 4 V 4'], ['ohill', 'ONLINE HOLD THE HILL', 'flag', 'REAL PLAYERS + BOTS · 4 V 4'], ...PZ_MODES] : PZ_MODES;
 const PZ_MODES = [['tdm', 'TEAM DEATHMATCH', 'squad', '5 V 5 · BOTS'], ['dm', 'FREE FOR ALL', 'skull', 'EVERY BOT FOR ITSELF'], ['gun', 'GUN RUN', 'assault-rifle', 'EVERY KILL, A NEW GUN'], ['hill', 'HOLD THE HILL', 'flag', 'STAND IN THE ZONE']];   // rebrand: story campaign cut
 function pauseFill() {
   const dm = mode === 'dm';
   $('pzMap').textContent = (mission?.title || '').toUpperCase(); $('pzIc').innerHTML = icon(dm ? 'skull' : 'flag');
-  $('pzMode').textContent = dm ? MODE_NAME[DM.hill ? 'hill' : DM.tdm ? 'tdm' : DM.gun ? 'gun' : 'dm'] : mode === 'survival' ? 'SURVIVAL' : mode === 'daily' ? 'DAILY' : 'STORY';
+  $('pzMode').textContent = dm ? MODE_NAME[(NET.on ? 'o' : '') + (DM.hill ? 'hill' : DM.tdm ? 'tdm' : DM.gun ? 'gun' : 'dm')] : mode === 'survival' ? 'SURVIVAL' : mode === 'daily' ? 'DAILY' : 'STORY';
   $('pzTime').textContent = mmss(mode === 'survival' ? elapsed : clock);
   $('pzList').innerHTML = dm ? boardHTML(true) : `<div class="bcol"><div class="bt">${(mission?.title || '').toUpperCase()}</div><div class="br me">${icon('user')}<span>YOU</span><b>${stats.kills}</b><i></i></div></div>`;
-  const cur = dm ? (DM.hill ? 'hill' : DM.tdm ? 'tdm' : DM.gun ? 'gun' : 'dm') : 'story';
-  $('pzModes').innerHTML = PZ_MODES.map(([k, n, ic, sub]) => `<div class="pzm m-${k}${k === cur ? ' cur' : ''}"><div class="art">${icon(ic)}</div><div class="nm">${icon(ic)}<span>${n}<small>${sub}</small></span><button data-m="${k}">${k === cur ? 'RESTART' : 'PLAY'}</button></div></div>`).join('');
+  const cur = dm ? (NET.on ? 'o' : '') + (DM.hill ? 'hill' : DM.tdm ? 'tdm' : DM.gun ? 'gun' : 'dm') : 'story';
+  $('pzModes').innerHTML = pzModes().map(([k, n, ic, sub]) => `<div class="pzm m-${k}${k === cur ? ' cur' : ''}"><div class="art">${icon(ic)}</div><div class="nm">${icon(ic)}<span>${n}<small>${sub}</small></span><button data-m="${k}">${k === cur ? 'RESTART' : 'PLAY'}</button></div></div>`).join('');
   $('pzModes').querySelectorAll('button[data-m]').forEach(b => b.onclick = () => {   // v30.1: restart / mode switch needs a second tap (players lost running matches to one stray click)
     if (b.dataset.arm) { pzPlay(b.dataset.m); return; }
     const t0 = b.textContent; b.dataset.arm = 1; b.textContent = 'SURE? TAP AGAIN'; b.classList.add('arm'); track('ui', { k: 'pzArm', m: b.dataset.m });
@@ -2413,12 +2603,12 @@ function pauseFill() {
 }
 function pzPlay(k) {
   track('ui', { k: 'pzMode', m: k }); $('pause').classList.remove('show'); paused = false; unlockAudio();
-  setModeKey(k); endMatch(); dmStart(false);
+  setModeKey(k); endMatch(); if (NET.ws) netLeave(); if (onlineOn()) netStart(); else dmStart(false);
 }
 function lobbyModes() {                                                            // lobby: one SELECT MODE button + a pop-up list, giant PLAY
   const cur = modeKey(), M = MODE_NAME;
   let el = $('lModeSel'); if (!el) { el = document.createElement('div'); el.id = 'lModeSel'; $('lMain').insertBefore(el, $('lPlay')); }
-  el.innerHTML = `<button id="lmsBtn" class="lms"><span class="ar">▾</span><span>SELECT MODE<small>${M[cur]}</small></span></button><div id="lmsList">${PZ_MODES.map(([k, n, ic, sub]) => `<button data-m="${k}" class="${k === cur ? 'on' : ''}">${icon(ic)}<span>${n}<small>${sub}</small></span></button>`).join('')}</div>`;
+  el.innerHTML = `<button id="lmsBtn" class="lms"><span class="ar">▾</span><span>SELECT MODE<small>${M[cur]}</small></span></button><div id="lmsList">${pzModes().map(([k, n, ic, sub]) => `<button data-m="${k}" class="${k === cur ? 'on' : ''}">${icon(ic)}<span>${n}<small>${sub}</small></span></button>`).join('')}</div>`;
   $('lmsBtn').onclick = () => el.classList.toggle('open');
   el.querySelectorAll('#lmsList button').forEach(b => b.onclick = () => { const k = b.dataset.m; setModeKey(k); el.classList.remove('open'); track('ui', { k: 'mode', m: k }); lobbyV14(); });
   let nav = $('lNav'); if (!nav) {

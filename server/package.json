@@ -1,0 +1,11 @@
+{
+  "name": "blastline-server",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Blastline online multiplayer server (rooms, bot fill, hit checks)",
+  "main": "server.mjs",
+  "scripts": { "start": "node server.mjs" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "ws": "^8.18.0" }
+}
