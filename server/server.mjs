@@ -12,7 +12,7 @@ import { losOk as losMap } from './los.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
 const VERSION = 1;                                     // protocol version: clients with another version are refused
-const TICK = 20;                                       // snapshots per second
+const TICK = Number(process.env.SNAP_HZ || 15);         // ticks (and snapshots) per second
 const MODES = {
   tdm: { size: 8, time: 300, target: 40 },             // 4 v 4, first team to 40 kills or most kills after 5 min
   hill: { size: 8, time: 300, target: 100 },           // 4 v 4, first team to 100 hill points
@@ -160,7 +160,7 @@ function join(ws, m) {
   ws.ent = e; ws.room = r; e.sl = takeSlot(r); e.seen = new Map();
   r.ents.set(e.id, e); fill(r);                                                       // a bot on the new player's team steps out
   if (!r.host) r.host = e.id;
-  send(ws, { t: 'welcome', you: e.id, team, room: r.id, mode, map: r.map, round: r.round, host: r.host === e.id, clock: r.clock, state: r.state,
+  send(ws, { t: 'welcome', hz: TICK, you: e.id, team, room: r.id, mode, map: r.map, round: r.round, host: r.host === e.id, clock: r.clock, state: r.state,
     target: r.cfg.target, score: r.score, hill: r.hill, hillOwn: r.hillOwn, ents: [...r.ents.values()].map(pub), joinable: joinable(r), ...brInfo(r) });
   broadcast(r, { t: 'add', e: pub(e) }, e.id);
   const h = r.ents.get(r.host); if (e.desk && h && h !== e && !h.desk) handHost(r, e);
@@ -385,10 +385,10 @@ function tickRooms(t, dt) {
 // Layout (little endian):
 //   u8 4, u8 flags (1: info block), u32 server ms, [info: u16 clock*10, u16 scoreA, u16 scoreB, u8 alive, u16 zoneNext*10, u16 zoneShrink*10],
 //   u8 n, n records: u8 slot, u8 mask, then by mask bit:
-//     1 pos delta i8 x3 (2 cm)   2 pos i16 x3 (2 cm)   [1|2: u8 position age, 2 ms steps]   4 yaw: i8 change (2pi/4096), or -128 + u16 absolute
-//     8 pitch i8 (1/80 rad)   16 speed u8 (0.1 m/s)   32 flags u8 (alive | fl<<1)
+//     1 pos delta i8 x3 (2 cm)   2 pos i16 x3 (2 cm)   [1|2 and not 16: u8 position age, 2 ms steps]   4 yaw: i8 change (2pi/4096), or -128 + u16 absolute
+//     8 pitch i8 (1/80 rad)   16 (with 1|2) the position age byte is left out: same as the last one in this snapshot   32 flags u8 (alive | fl<<1)
 //     64 shot: u8 count, u16 yaw, i8 pitch (1/120 rad), u8 range m   128 hold: u8, the previous position held until this long ago (4 ms steps)
-const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = 20, POS_STEP = 50;
+const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = TICK, POS_STEP = 50;
 let tickN = 0, out = Buffer.alloc(8192);
 const stats = { snapBytes: 0, snaps: 0, tickMs: 0, ticks: 0, hits: 0, inBytes: 0, packets: 0 };
 const q16 = v => Math.max(-32768, Math.min(32767, Math.round(v)));
@@ -398,7 +398,7 @@ function quant(e) {                                                             
   const q = e.q || (e.q = new Int32Array(8));
   if (!e.cq) setPos(e, e.p[0], e.p[1], e.p[2], now());
   q[0] = e.cq[0]; q[1] = e.cq[1]; q[2] = e.cq[2]; q[3] = yawQ(e.yaw);
-  q[4] = Math.max(-127, Math.min(127, Math.round(e.pi * 80))); q[5] = Math.min(255, Math.max(0, Math.round(e.sp * 10))); q[6] = (e.alive ? 1 : 0) | ((e.fl & 127) << 1); q[7] = e.shotN | 0;
+  q[4] = Math.max(-127, Math.min(127, Math.round(e.pi * 80))); q[5] = 0; q[6] = (e.alive ? 1 : 0) | ((e.fl & 127) << 1); q[7] = e.shotN | 0;   // q[5] (speed) is unused: clients work it out from the positions
 }
 function onShot(e, a, b) {                                                               // a shot to draw: counted into the shooter's next records
   const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], h = Math.hypot(dx, dz);
@@ -422,7 +422,7 @@ function snapRoom(r, t) {
       out[k++] = br ? Math.min(255, aliveN(r)) : 0;
       const z = r.zone; out.writeUInt16LE(br ? Math.min(65535, Math.round(Math.max(0, z.next - t) * 10)) : 0, k); out.writeUInt16LE(br ? Math.min(65535, Math.round(Math.max(0, z.t1 - t) * 10)) : 0, k + 2); k += 4;
     }
-    const nAt = k++; let cnt = 0;
+    const nAt = k++; let cnt = 0, lastAge = -1;
     for (const e of list) {
       if (e === rc || cnt >= 255) continue;
       const d2 = (e.p[0] - px) ** 2 + (e.p[2] - pz) ** 2;
@@ -431,27 +431,29 @@ function snapRoom(r, t) {
       const q = e.q; let s = seen.get(e.id);
       if (!s) { s = new Float64Array(11); s[9] = -1; seen.set(e.id, s); }
       let mask = 0, dx = 0, dy = 0, dz = 0;
-      if (s[9] < 0) mask = 2 | 4 | 8 | 16 | 32;                                              // first time: everything, absolute
+      if (s[9] < 0) mask = 2 | 4 | 8 | 32;                                              // first time: everything, absolute
       else {
         dx = q[0] - s[0]; dy = q[1] - s[1]; dz = q[2] - s[2];
         if (dx || dy || dz) mask |= (dx >= -127 && dx <= 127 && dy >= -127 && dy <= 127 && dz >= -127 && dz <= 127) ? 1 : 2;
-        if (q[3] !== s[3]) mask |= 4; if (q[4] !== s[4]) mask |= 8; if (q[5] !== s[5]) mask |= 16; if (q[6] !== s[6]) mask |= 32;
+        if (q[3] !== s[3]) mask |= 4; if (q[4] !== s[4]) mask |= 8; if (q[6] !== s[6]) mask |= 32;
         if (q[7] !== s[7]) mask |= 64;
       }
       if (!mask) continue;                                                                   // nothing new: costs nothing
       const c = e.cq, hold = (mask & 3) && s[9] >= 0 && s[0] === c[3] && s[1] === c[4] && s[2] === c[5] && e.holdT > s[10] + 0.06;
       if (hold) mask |= 128;                                                                 // it stood still a while: say until when, so the client doesn't glide
-      out[k++] = e.sl; out[k++] = mask;
+      out[k++] = e.sl; const mAt = k; out[k++] = mask;
       if (mask & 1) { out.writeInt8(dx, k); out.writeInt8(dy, k + 1); out.writeInt8(dz, k + 2); k += 3; }
       if (mask & 2) { out.writeInt16LE(q[0], k); out.writeInt16LE(q[1], k + 2); out.writeInt16LE(q[2], k + 4); k += 6; }
-      if (mask & 3) out[k++] = Math.min(255, Math.max(0, Math.round((t - e.posT) * 500)));   // how old this position is (2 ms steps)
+      if (mask & 3) {                                                                        // how old this position is (2 ms steps); 16: same as the record before
+        const age = Math.min(255, Math.max(0, Math.round((t - e.posT) * 500)));
+        if (age === lastAge) out[mAt] |= 16; else { out[k++] = age; lastAge = age; }
+      }
       if (mask & 128) out[k++] = Math.min(255, Math.max(0, Math.round((t - e.holdT) * 250)));   // the old position held until this long ago (4 ms steps)
       if (mask & 4) {                                                                        // yaw: i8 change, or -128 then the full u16
         const dyw = ((q[3] - s[3] + 6144) % 4096) - 2048;
         if (s[9] >= 0 && dyw >= -127 && dyw <= 127) out.writeInt8(dyw, k++); else { out.writeInt8(-128, k); out.writeUInt16LE(q[3], k + 1); k += 3; }
       }
       if (mask & 8) out.writeInt8(q[4], k++);
-      if (mask & 16) out[k++] = q[5];
       if (mask & 32) out[k++] = q[6];
       if (mask & 64) { out[k++] = Math.min(255, q[7] - s[7]); out.writeUInt16LE(e.shotYaw | 0, k); out.writeInt8(e.shotPi | 0, k + 2); out[k + 3] = e.shotD | 0; k += 4; }
       for (let j = 0; j < 8; j++) s[j] = q[j]; s[8] = tickN; s[9] = 1; if (mask & 3) s[10] = e.posT; cnt++;

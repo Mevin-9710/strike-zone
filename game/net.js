@@ -1,7 +1,7 @@
 // Online play: the WebSocket link to the Blastline server (server/server.mjs) + snapshot interpolation.
 // The game logic for online matches lives in game.js (section "online"); this file only moves messages.
 export const NET_VERSION = 1;
-const TICK = 0.05;                                      // server snapshot interval (s)
+let TICK = 1 / 15;                                      // server snapshot interval (s); the server says in 'welcome'
 const JITTER = 0.05;                                    // extra delay that hides late packets; an entity sent every `iv` ticks is drawn TICK*iv + JITTER in the past
 const BUF = 16;                                         // samples kept per entity
 
@@ -65,14 +65,14 @@ export function createNet() {
     // my state, 20 Hz, binary (layout: server/server.mjs "binary uploads"); also remembers where I am for the interpolation delay
     sendState(t, p, yaw, pitch, speed, w, alive) {
       N.myPos[0] = p.x; N.myPos[1] = p.y; N.myPos[2] = p.z; N.myAlive = alive !== false;
-      if (t - N.sentT < 0.05 || !N.ws || N.ws.readyState !== 1) return; N.sentT = t;
+      if (t - N.sentT < TICK * 0.95 || !N.ws || N.ws.readyState !== 1) return; N.sentT = t;
       UV.setUint8(0, 4); UV.setUint32(1, (performance.now() | 0) >>> 0, true); UV.setInt16(5, q16(p.x * 50), true); UV.setInt16(7, q16(p.y * 50), true); UV.setInt16(9, q16(p.z * 50), true);
       UV.setUint16(11, yawU(yaw), true); UV.setInt8(13, Math.max(-127, Math.min(127, Math.round(pitch * 80)))); UV.setUint8(14, Math.min(255, Math.max(0, Math.round(speed * 10)))); UV.setUint8(15, Math.max(0, WPN_IDS.indexOf(w)));
       N.ws.send(new Uint8Array(UP, 0, 16));
       if ((N.pingT = (N.pingT || 0) + 1) % 40 === 0) N.send({ t: 'ping', c: performance.now() });
     },
     // host: bot states. botsBegin(t) -> false if not due; then bot(...) per bot; then botsSend()
-    botsBegin(t) { if (t - N.botT < 0.05 || !N.ws || N.ws.readyState !== 1) return false; N.botT = t; bn = 0; return true; },
+    botsBegin(t) { if (t - N.botT < TICK * 0.95 || !N.ws || N.ws.readyState !== 1) return false; N.botT = t; bn = 0; return true; },
     bot(id, x, y, z, yaw, sp, fl) {
       const e = N.ents.get(id), o = 6 + bn * 11; if (!e || o + 11 > BOT_BUF.byteLength) return;
       BV.setUint8(o, e.sl); BV.setInt16(o + 1, q16(x * 50), true); BV.setInt16(o + 3, q16(y * 50), true); BV.setInt16(o + 5, q16(z * 50), true);
@@ -106,7 +106,8 @@ export function createNet() {
       const B = b[i], A = b[Math.max(0, i - 1)];
       const k = B[0] === A[0] || rt >= B[0] ? 1 : rt <= A[0] ? 0 : (rt - A[0]) / (B[0] - A[0]);
       out.x = A[1] + (B[1] - A[1]) * k; out.y = A[2] + (B[2] - A[2]) * k; out.z = A[3] + (B[3] - A[3]) * k;
-      let dy = B[4] - A[4]; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); out.yaw = A[4] + dy * k; out.pitch = A[5] + (B[5] - A[5]) * k; out.sp = B[6]; out.fl = B[8];
+      let dy = B[4] - A[4]; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); out.yaw = A[4] + dy * k; out.pitch = A[5] + (B[5] - A[5]) * k; out.fl = B[8];
+      out.sp = B[0] > A[0] && rt < B[0] + 0.1 ? Math.hypot(B[1] - A[1], B[3] - A[3]) / (B[0] - A[0]) : 0;   // speed from the positions (for the walk/run animation)
       if (N.traceId === id && N.trace.length < 2000) N.trace.push([performance.now(), out.x, out.z]);   // tests: what the screen draws, frame by frame
       if (e.shotT < 0) e.shotT = rt;                                                  // shots fire when the drawn time passes their snapshot
       else if (rt > e.shotT) { for (const q of b) if (q[9] && q[0] > e.shotT && q[0] <= rt) { out.shot += q[9]; out.shotYaw = q[10]; out.shotPitch = q[11]; out.shotD = q[12]; } e.shotT = rt; }
@@ -122,6 +123,7 @@ export function createNet() {
   const ent = e => ({ ...e, buf: [], q: new Int32Array(8), has: false, del: TICK + JITTER, gap: TICK, shotT: -1 });
   function setEnts(list) { N.ents.clear(); N.slots.length = 0; for (const e of list) { const o = ent(e); N.ents.set(e.id, o); N.slots[e.sl] = o; } }
   function welcome(m) {
+    if (m.hz > 0) TICK = 1 / m.hz;
     Object.assign(N, { on: true, me: m.you, team: m.team, host: m.host, room: m.room, mode: m.mode, map: m.map, round: m.round, clock: m.clock, target: m.target, score: m.score, state: m.state, hill: m.hill, hillOwn: m.hillOwn || '', br: m.br || null, alive: m.br?.alive || 0, offOk: false });
     zoneFrom(m.br); setEnts(m.ents);
   }
@@ -136,17 +138,16 @@ export function createNet() {
       const al = d.getUint8(o + 6); if (N.br) { N.alive = al; const zn = d.getUint16(o + 7, true) / 10, zs = d.getUint16(o + 9, true) / 10; if (Z.to) { if (zs > 0) Z.t1 = now + zs; Z.next = now + zn; } }
       o += 11;
     }
-    const n = d.getUint8(o++);
+    const n = d.getUint8(o++); let lastAge = 0;
     for (let r = 0; r < n && o + 2 <= L; r++) {
       const e = N.slots[d.getUint8(o)], mask = d.getUint8(o + 1); o += 2;
       const q = e ? e.q : SCRATCH; let age = 0, hold = -1;
       if (mask & 1) { q[0] += d.getInt8(o); q[1] += d.getInt8(o + 1); q[2] += d.getInt8(o + 2); o += 3; }
       if (mask & 2) { q[0] = d.getInt16(o, true); q[1] = d.getInt16(o + 2, true); q[2] = d.getInt16(o + 4, true); o += 6; }
-      if (mask & 3) age = d.getUint8(o++) / 500;
+      if (mask & 3) { if (!(mask & 16)) lastAge = d.getUint8(o++) / 500; age = lastAge; }
       if (mask & 128) hold = d.getUint8(o++) / 250;
       if (mask & 4) { const dy = d.getInt8(o++); if (dy === -128) { q[3] = d.getUint16(o, true); o += 2; } else q[3] = (q[3] + dy + 4096) & 4095; }
       if (mask & 8) q[4] = d.getInt8(o++);
-      if (mask & 16) q[5] = d.getUint8(o++);
       if (mask & 32) q[6] = d.getUint8(o++);
       let sh = 0, sy = 0, sp = 0, sd = 0;
       if (mask & 64) { sh = d.getUint8(o); sy = d.getUint16(o + 1, true); sp = d.getInt8(o + 3); sd = d.getUint8(o + 4); o += 5; }
