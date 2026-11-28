@@ -54,9 +54,11 @@ const until = (pg, fn, arg, ms = 30000) => pg.waitForFunction(fn, arg, { timeout
     check('phone joins the same room on the other team, a bot steps out', ok && b.room === a.room && b.team !== a.team && b.ents === 8 && a.ents === 8 && !b.host, JSON.stringify({ a, b }));
     check('phone sees the host + 6 bots as puppets, none stuck invisible', b.puppets >= 7 && b.livePuppets >= 3 && b.stuck === 0, JSON.stringify(b));
     // the host's puppet on the phone is where the host really is
+    await until(A.pg, () => __game.state.hp > 0, null, 8000);                            // (the bots may have just killed the host)
+    await sleep(800);
     const posA = (await A.pg.evaluate(() => __game.state.pos)), seen = await B.pg.evaluate(id => __game.netObj(id), a.me);
     const dd = seen ? Math.hypot(seen.pos[0] - posA[0], seen.pos[2] - posA[2]) : 99;
-    check('host position reaches the phone (interpolated, < 1.5 m off)', dd < 1.5, `d=${dd.toFixed(2)}`);
+    check('host position reaches the phone (interpolated, < 1.5 m off)', dd < 1.5, `d=${dd.toFixed(2)} hostHp=${await A.pg.evaluate(() => __game.state.hp)}`);
     // movement: the host walks a straight line at 5 m/s; the phone's puppet must follow it smoothly (no stalls or jumps)
     const walk = await A.pg.evaluate(() => { const p = __game.state.pos, x0 = p[0], z0 = p[2], t0 = performance.now() / 1000;
       window.__walkFn = (pos, t) => { const d = 2.5 - Math.abs(((t - t0) * 5) % 10 - 5); pos.x = x0 + d; pos.z = z0; }; return [x0, z0]; });

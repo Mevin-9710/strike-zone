@@ -71,7 +71,7 @@ export function createNet() {
     // my state, 20 Hz, binary (layout: server/server.mjs "binary uploads"); also remembers where I am for the interpolation delay
     sendState(t, p, yaw, pitch, speed, w, alive) {
       N.myPos[0] = p.x; N.myPos[1] = p.y; N.myPos[2] = p.z; N.myAlive = alive !== false;
-      if (t - N.sentT < TICK * 0.95 || !N.ws || N.ws.readyState !== 1) return; N.sentT = t;
+      if (t - N.sentT < (N.myAlive ? TICK * 0.95 : 1) || !N.ws || N.ws.readyState !== 1) return; N.sentT = t;   // dead: once a second is plenty
       UV.setUint8(0, 4); UV.setUint32(1, (performance.now() | 0) >>> 0, true); UV.setInt16(5, q16(p.x * 50), true); UV.setInt16(7, q16(p.y * 50), true); UV.setInt16(9, q16(p.z * 50), true);
       UV.setUint16(11, yawU(yaw), true); UV.setInt8(13, Math.max(-127, Math.min(127, Math.round(pitch * 80)))); UV.setUint8(14, Math.min(255, Math.max(0, Math.round(speed * 10)))); UV.setUint8(15, Math.max(0, WPN_IDS.indexOf(w)));
       N.ws.send(new Uint8Array(UP, 0, 16));
