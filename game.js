@@ -2355,7 +2355,7 @@ function stripTick() {                                                          
 function wslots() {                                                                // right-hand weapon column: slot keys + rendered gun icons
   const el = $('wslots'); if (!el) return;
   el.innerHTML = W.slots.map((id, i) => `<div class="ws${i === W.cur ? ' on' : ''}" data-i="${i}"><img src="${A.icons[id] || ''}" alt=""><span class="k">${i + 1}</span></div>`).reverse().join('');
-  if (touch) el.querySelectorAll('.ws').forEach(d => d.onclick = () => equip(+d.dataset.i));
+  if (touch) el.querySelectorAll('.ws').forEach(d => d.onpointerdown = e => { e.stopPropagation(); e.preventDefault(); if (+d.dataset.i !== W.cur) equip(+d.dataset.i); });   // Blastline: tappable weapon cards bottom-centre
 }
 function boardRows() {
   const me = { name: 'YOU', k: stats.kills - DM.k0, d: DM.d, me: true, ally: true };
