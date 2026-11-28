@@ -1472,7 +1472,7 @@ function render() {
     camera.updateMatrixWorld(); _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_pv);
     const far2 = camera.far * camera.far;
     for (const e of allies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); e.root.visible = (e.alive || e.deadT < 7) && e.pos.distanceToSquared(camera.position) < far2 && _fr.intersectsSphere(_sp); }
-    for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position), lod = qLevel === 0 ? 3025 : 4900; e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && (d2 < lod || e.revealT > 0 || e.state === 'combat' || (e.net && e.shotK > -3)) && _fr.intersectsSphere(_sp);
+    for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position), lod = qLevel === 0 ? 3025 : 4900; e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && (d2 < lod || e.revealT > 0 || e.state === 'combat' || e.netShow === true) && _fr.intersectsSphere(_sp);
       if (e.root.visible) { if (e._hand === undefined) e._hand = e.root.getObjectByName('handR') || null; if (e._hand) e._hand.visible = d2 < 900; } }   // guns are a few pixels past 30 m
     if (preview) preview.root.visible = true;
     if (map?.cull && !render.noCull) map.cull(camera.position);                    // BR island: far arenas are not drawn
@@ -2526,7 +2526,7 @@ function netPuppet(ne) {                                                        
   netDropPuppet(ne.id, true);
   const ally = ne.team === NET.team, type = 'guard', skin = botAssets(type, ne.id);
   const e = new Enemy(type, skin || A.enemies[type], ne.p ? V(ne.p[0], ne.p[1], ne.p[2]) : V(0, -50, 0), { yaw: ne.yaw || 0 }); scene.add(e.root); e.skin = !!skin;
-  e.net = true; e.nid = ne.id; e.human = !ne.bot; e.hp = ne.hp ?? 100; e.abCD = 1e9; e.callsign = ne.name; e.ident = ne; e.shotK = 0;
+  e.net = true; e.nid = ne.id; e.human = !ne.bot; e.hp = ne.hp ?? 100; e.abCD = 1e9; e.callsign = ne.name; e.ident = ne; e.shotK = -9;
   e.root.scale.setScalar(RC.dmBotScale); e.root.visible = false;
   if (ally) { e.ally = true; allies.push(e); } else enemies.push(e);
   toonify(e.root, { rim: ally ? 0x6ab8ff : 0xff6a5a }); outline(e.root, { thick: 0.025, color: ally ? 0x2f9bff : 0xff2a3a, force: true }); nameTag(e);
@@ -2550,7 +2550,7 @@ function netPuppetTick(e, dt) {
     _netB.set(_netA.x + Math.sin(_np.shotYaw) * c * _np.shotD, _netA.y + Math.sin(_np.shotPitch) * _np.shotD, _netA.z + Math.cos(_np.shotYaw) * c * _np.shotD);
     e.shotK = 0.35; for (let i = Math.min(3, _np.shot); i > 0; i--) enemyFired(e, _netA, _netB, 0, null);
   }
-  e.shotK -= dt; const sp = _np.sp;
+  e.shotK -= dt; e.netShow = e.shotK > -1.5; const sp = _np.sp;   // render(): a player who fired in the last ~2 s stays drawn past the LOD range
   e.play(e.shotK > 0 && sp < 2.6 ? e.cn('shoot') : sp > 2.6 ? e.cn('run') : sp > 0.2 ? e.cn('walk') : e.cn('idle'));
   const a = e.actions[e.clip]; if (a && /walk|run/.test(e.clip)) a.timeScale = clamp(sp / (e.clip.startsWith('run') ? 3.6 : 1.6), 0.5, 1.6);
   e.sync();
