@@ -23,6 +23,12 @@ const PAL = { sand: 0xe0a845, grass: 0x45b83a, grass2: 0x3aa632, road: 0x4e5666,
 const GATES = { belltower: [['E', 22, 6, 2.4], ['S', 50, 5, 2.4]], lantern: [['E', 20, 6, 1.4], ['N', 53.5, 9, 2.4]],
   neon: [['W', 12, 6, 1.6], ['W', 34, 6, 1.6]], sandkeep: [['S', 6, 6, 2.4], ['W', 12, 3, 1.6]] };
 const GATE_Y0 = 0.1, GATE_Y1 = 4.2;
+// the arenas' outer walls are cut down to a low ruin wall (Mevin: the full-height walls made them look like boxes)
+// per arena: depth of the wall band from each edge [N, S, W, E], cap colour; everything in the band above LOW_WALL goes
+const LOW_WALL = 1.3;
+const BANDS = { belltower: [[2.2, 2.2, 1.2, 1.2], 0xc98f6a], lantern: [[2.2, 2.2, 1.2, 1.2], 0x8a6a45], neon: [[1.9, 1.6, 1.6, 1.6], 0x3d4258], sandkeep: [[6, 6, 6, 6], 0xc99a5a] };
+function bandBoxes(def, [n, s, w, e]) { const o = 1.6, Y1 = 60;
+  return [[-o, LOW_WALL, -o, def.w + o, Y1, n], [-o, LOW_WALL, def.d - s, def.w + o, Y1, def.d + o], [-o, LOW_WALL, -o, w, Y1, def.d + o], [def.w - e, LOW_WALL, -o, def.w + o, Y1, def.d + o]]; }
 function gateBox(def, [edge, t, w, dep]) {                         // -> [x0, y0, z0, x1, y1, z1] in arena coords
   const h = w / 2, o = 1.5;
   if (edge === 'N') return [t - h, GATE_Y0, -o, t + h, GATE_Y1, dep];
@@ -116,7 +122,13 @@ export function buildBrIsland(world, scene) {
     const gates = GATES[id].map(g => gateBox(def, g)), gw = gates.map(g => [g[0] + ox, g[1], g[2] + oz, g[3] + ox, g[4], g[5] + oz]), gb = new THREE.Box3();
     vis.traverse(m => { if (!m.isMesh || !m.geometry.attributes.position?.count) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); wb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
       const hit = gw.filter(g => wb.intersectsBox(gb.set(V(g[0], g[1], g[2]), V(g[3], g[4], g[5])))); if (hit.length) carveMesh(m, hit); });
-    const cut = bx => gates.reduce((list, g) => list.flatMap(q => splitBox(q, g)), [bx]), tops = gates.map(() => 0);
+    const bands = bandBoxes(def, BANDS[id][0]), bw = bands.map(g => [g[0] + ox, g[1], g[2] + oz, g[3] + ox, g[4], g[5] + oz]);
+    vis.traverse(m => { if (!m.isMesh || !m.geometry.attributes.position?.count) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); wb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
+      const hit = bw.filter(g => wb.intersectsBox(gb.set(V(g[0], g[1], g[2]), V(g[3], g[4], g[5])))); if (hit.length) carveMesh(m, hit); });
+    const capKey = f(BANDS[id][1]), caps = [];
+    const cut = bx => [...gates, ...bands].reduce((list, g) => list.flatMap(q => splitBox(q, g)), [bx]), tops = gates.map(() => LOW_WALL);
+    const capOf = b => { if (b[1] >= LOW_WALL - 0.05 || b[4] <= LOW_WALL + 0.05) return; for (const g of bands) { const x0 = Math.max(b[0], g[0]), x1 = Math.min(b[3], g[3]), z0 = Math.max(b[2], g[2]), z1 = Math.min(b[5], g[5]);
+      if (x1 - x0 > 0.05 && z1 - z0 > 0.05) caps.push([x0, z0, x1, z1]); } };
     const inFoot = b => { const cx = (b[0] + b[3]) / 2, cz = (b[2] + b[5]) / 2; return cx > -1.5 && cz > -1.5 && cx < def.w + 1.5 && cz < def.d + 1.5; };
     const cols = [...r.data.boxes.map(b => [b.x0, b.y0, b.z0, b.x1, b.y1, b.z1]), ...r.extra];
     cols.forEach(b => gates.forEach((g, i) => { if (b[3] > g[0] && b[0] < g[3] && b[5] > g[2] && b[2] < g[5] && b[1] < g[4]) tops[i] = Math.max(tops[i], Math.min(b[4], 8)); }));
@@ -125,17 +137,22 @@ export function buildBrIsland(world, scene) {
       if (id === 'lantern' && b.x0 >= 33.4 && b.x1 <= 36.6 && b.y1 <= 2.7 && b.z0 > 10 && b.z1 < 30) continue;
       if (!inFoot([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1])) continue;
       for (const q of cut([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1])) pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5]));
+      capOf([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1]);
       if (b.y1 - b.y0 > 2.2 && (b.x1 - b.x0) * (b.z1 - b.z0) > 1.5 && b.y0 < 1) k.minimap.push({ x0: b.x0 + ox, z0: b.z0 + oz, x1: b.x1 + ox, z1: b.z1 + oz, y: b.y1, kind: 'building' });
     }
-    for (const b of r.extra) if (inFoot(b)) for (const q of cut(b)) pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5]));
+    for (const b of r.extra) if (inFoot(b)) { for (const q of cut(b)) pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5])); capOf(b); }
+    for (const [x0, z0, x1, z1] of caps) {                          // stone cap on every cut wall, minus the gate openings
+      const parts = gates.reduce((list, g) => list.flatMap(q => splitBox(q, [g[0], -1, g[2], g[3], 9, g[5]])), [[x0, LOW_WALL - 0.12, z0, x1, LOW_WALL + 0.04, z1]]);
+      for (const q of parts) if (q[1] < LOW_WALL) k.box(ox + (q[0] + q[3]) / 2 , q[1], oz + (q[2] + q[5]) / 2, q[3] - q[0] + 0.08, q[4] - q[1], q[5] - q[2] + 0.08, capKey, { collide: false });
+    }
     gw.forEach((g, i) => {                                         // gate frame: yellow posts, dark beam if wall stays above the opening
-      const H = Math.max(tops[i], 3), alongX = GATES[id][i][0] === 'N' || GATES[id][i][0] === 'S', cx = (g[0] + g[3]) / 2, cz = (g[2] + g[5]) / 2, dx = g[3] - g[0], dz = g[5] - g[2];
+      const H = LOW_WALL + 1.1, alongX = GATES[id][i][0] === 'N' || GATES[id][i][0] === 'S', cx = (g[0] + g[3]) / 2, cz = (g[2] + g[5]) / 2, dx = g[3] - g[0], dz = g[5] - g[2];
       for (const sgn of [-1, 1]) {
         const px = alongX ? cx + sgn * (dx / 2 + 0.3) : cx, pz = alongX ? cz : cz + sgn * (dz / 2 + 0.3);
         k.box(px, 0, pz, alongX ? 0.6 : dx, H + 0.05, alongX ? dz : 0.6, f(PAL.yellow));
         k.box(px, 0, pz, alongX ? 0.64 : dx + 0.04, 0.5, alongX ? dz + 0.04 : 0.64, f(PAL.dark), { collide: false });
       }
-      if (H > GATE_Y1 + 0.1) k.box(cx, GATE_Y1, cz, alongX ? dx + 1.2 : dx, Math.min(0.6, H - GATE_Y1), alongX ? dz : dz + 1.2, f(PAL.dark), { collide: false });
+      if (false) k.box(cx, GATE_Y1, cz, alongX ? dx + 1.2 : dx, Math.min(0.6, H - GATE_Y1), alongX ? dz : dz + 1.2, f(PAL.dark), { collide: false });
     });
     floors(def, pw, sub, r.data);
     sub.finish(); sub.root.position.copy(o); scene.remove(sub.root); k.root.add(sub.root);
