@@ -30,6 +30,7 @@ export function loadDmMap(id) {
   return P[id];
 }
 export const dmMapReady = id => !!R[id];
+export const dmMapData = id => R[id];                               // battle royale island reuses the loaded arenas
 
 // v46: the prototypes only gave colliders to some walls (e.g. Sandkeep's brick arcade walls had only their pillars), so bots
 // saw and shot through solid brick and players could walk through it. Build thin colliders from the visible geometry instead:
@@ -74,7 +75,7 @@ function wallBlockers(root, boxes) {
 }
 
 // floors / ramps the prototypes handled in code (their getFloorHeight functions), per map
-function floors(def, world, k, data) {
+export function floors(def, world, k, data) {
   const box = (x0, y0, z0, x1, y1, z1) => world.addBox(V(x0, y0, z0), V(x1, y1, z1), 'floor');
   const ramp = (x0, y0, z0, x1, y1, z1, axis, dir) => world.addRamp(V(x0, y0, z0), V(x1, y1, z1), axis, dir);
   const { w, d } = def;

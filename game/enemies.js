@@ -458,7 +458,7 @@ export class Enemy {
         if (Math.random() < 0.4) dest.copy(this.post);
         this.repathT = 0; this.goTo(dest, G);
       }
-      moving = this.followPath(dt, G, this.T.walk * 0.8 * this.lockSlow);
+      moving = this.followPath(dt, G, (this.loot && !this.loot.taken ? this.T.run : this.T.walk * 0.8) * this.lockSlow);   // battle royale: bots run to loot
       if (moving) this.faceTowards(this.pos.clone().add(this.vel), dt, 4);
     }
     G.world.move(this, dt);

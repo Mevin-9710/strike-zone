@@ -1,0 +1,62 @@
+# Blastline online server
+
+One small Node process (`server.mjs`, only dependency: `ws`). It runs the rooms for online Team Deathmatch, Hold the Hill and Battle Royale.
+
+## What it does
+- **Rooms of 8 (4 v 4).** A player who presses PLAY drops straight into a running room of that mode (the fullest one first, so people meet). No room? A new one starts at once.
+- **Bot fill.** Every team always has 4 members. Empty slots are bots, named with a `[BOT]` tag. When a player joins, a bot on their team steps out; when a player leaves, a bot takes the slot.
+- **Who runs the bots.** The player who has been in the room longest (the "host") runs the bot AI in their game and streams the bots to the server. If the host leaves, the next player takes over.
+- **Server-checked hits.** Your game says "I hit X for N damage"; the server checks the damage fits the gun, the range is possible, and the fire rate is real, then applies it. The server owns everyone's health, kills, team scores, the clock and Hold the Hill scoring.
+- **Rounds.** 5 minutes, or first team to 40 kills (TDM) / 100 hill points. After 12 s on the end screen the same room starts the next round on a new map (CrazyGames: the same group keeps playing).
+- **Battle royale** (Island Ring map): 50 players by default (`BR_SIZE` to change it), everyone for themselves, one life each. Bots fill only during the first 40 s, the drop. The server runs the shrinking zone (5 phases) and its damage, the loot pickups (first come first served), armor and the placement. The round ends when one player is left.
+- `GET /` on the same port returns `{ ok, players, rooms }` (the lobby shows "N ONLINE").
+
+## Run it locally
+    cd server && npm install && npm start          # ws://localhost:8787
+    open http://localhost:8765/index.html?mp=ws://localhost:8787    (game served with python3 tools/serve.py)
+
+## Run it on a VPS (1 CPU / 1 GB is fine for testing)
+Ubuntu or Debian, then one command:
+
+    curl -fsSL https://raw.githubusercontent.com/Mevin-9710/strike-zone/main/server/setup-vps.sh | sudo bash
+
+(Before the PR is merged, use the branch name: `.../strike-zone/claude/project-thread-vvbk6z/server/setup-vps.sh | sudo bash -s -- claude/project-thread-vvbk6z`.)
+
+It installs Node + Caddy, runs the server as a service that restarts itself and starts on boot, and sets up HTTPS on `<your-ip>.sslip.io` (free certificate, no domain needed; browsers need `wss://` because the game page is `https://`). At the end it prints the server URL. Re-run the same command to update.
+
+Then point the game at it:
+- to test: open the game with `?mp=wss://<your-ip>.sslip.io`
+- for everyone: set `"mpUrl": "wss://<your-ip>.sslip.io"` in `remote-config.json`
+
+## Useful commands on the VPS
+    journalctl -u blastline -f       # live log (joins, leaves, rejected hits)
+    systemctl restart blastline      # restart
+    curl https://<your-ip>.sslip.io  # health + player count
+
+## Capacity (load test, server pinned to 1 CPU core)
+    node server/loadtest.mjs        # simulated players; prints CPU, tick time, memory and bandwidth per step
+
+| Load | CPU (1 core) | RAM | Per player, on the wire* |
+|---|---|---|---|
+| 1 BR match, 50 humans | 8% | 94 MB | 3.3 KB/s |
+| 1 BR match, 50 humans, players getting eliminated | 8% | 95 MB | 2.5 KB/s |
+| 1 BR match, 10 humans + 40 bots | 3% | 78 MB | 2.3 KB/s |
+| 12 BR matches (120 humans + 480 bots) | 19% | 123 MB | 3.2 KB/s |
+| 25 TDM rooms of 8 (100 humans) | 11% | 96 MB | 1.5 KB/s |
+
+*bytes the server's sockets really write (compressed, with WebSocket headers) plus 68 bytes of TCP/IP headers per packet
+(at most 15 packets a second); TLS (wss) adds about 22 bytes more per packet (+0.3 KB/s). Fake players run, stand, jump and
+shoot about 3 times a second (more than real players), all within 80 m of the island centre (a late-game zone).
+A BR player costs about 13 MB per hour of play. Same load on the phase-1 server (db2ec03): 37 KB/s of messages in about 190
+packets a second, about 50 KB/s on the wire (180 MB per hour).
+
+Bandwidth settings (env): `SNAP_HZ` (default 15 snapshots a second; 12 saves about 17% and still measures smooth, with ~0.07 s
+more delay on other players; 10 saves about 29% but starts to look less smooth). `PMD=0` turns off WebSocket compression
+(saves about 5% of a core per 50 players, costs about 7% more bytes). `HIT_DMG=20 node loadtest.mjs`: fake hits kill.
+
+## Line of sight
+Hits are refused when walls block every line from the shooter to the victim (`los.mjs`, colliders in `maps.json`). After changing a map, rebuild it: `python3 tools/serve.py & node tools/export_server_maps.cjs`.
+
+## Limits (planned next)
+- Bot abilities (smoke, flash) only show for the host.
+- One host client still runs all bots of a room; in a 50-player BR with few humans that is 40+ bots on one device (far bots think less often to keep it light).
