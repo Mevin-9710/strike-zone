@@ -129,7 +129,7 @@ export function createNet() {
     const t = performance.now() / 1000; if (!br) { Z.to = null; return; }
     Z.from = br.from.slice(); Z.to = br.to.slice(); Z.t1 = t + br.sh; Z.t0 = br.sh > 0 && br.k < 1 ? Z.t1 - br.sh / (1 - br.k) : t - 1; Z.next = t + br.next;
   }
-  const ent = e => ({ ...e, buf: [], q: new Int32Array(8), has: false, del: TICK + JITTER, gap: TICK, lat: 0, latM: 0, latV: 0, latX: 0, shotT: -1 });
+  const ent = e => ({ ...e, buf: [], q: new Int32Array(8), has: false, del: TICK + JITTER, gap: TICK, lat: 0, latM: 0, latV: 0, latC: 0, latP: 0, latT: 0, shotT: -1 });
   function setEnts(list) { N.ents.clear(); N.slots.length = 0; for (const e of list) { const o = ent(e); N.ents.set(e.id, o); N.slots[e.sl] = o; } }
   function welcome(m) {
     if (m.hz > 0) TICK = 1 / m.hz;
@@ -177,8 +177,9 @@ export function createNet() {
       if (hold >= 0 && last && st - hold > last[0] && st - hold < t) { const h = push(b), p = b[b.length - 2]; for (let j = 1; j < 13; j++) h[j] = p[j]; h[0] = st - hold; h[9] = 0; }   // it stood still until then
       if (last && hold < 0) { const g = t - last[0]; e.gap = Math.max(g < 1 ? g : 0, e.gap * 0.97); }   // spacing of recent samples (decaying max): the delay covers it
       if (mask & 3) {                                                                  // how long from capture (on the sender) to here, past the fastest: upload + server + download lateness
-        const a = Math.min(0.45, lt + age), da = a - e.latM; e.latM += da * 0.05; e.latV += (da * da - e.latV) * 0.05; e.latX = Math.max(a, e.latX * 0.99);
-        e.lat = Math.max(e.latM + 2 * Math.sqrt(e.latV), 0.85 * e.latX);                 // mean + 2 sd, or most of the worst lately (halves in ~5 s): a resent packet is covered next time
+        const a = Math.min(0.45, lt + age), da = a - e.latM; e.latM += da * 0.05; e.latV += (da * da - e.latV) * 0.05;
+        if (st - e.latT > 4) { e.latP = e.latC; e.latC = 0; e.latT = st; } e.latC = Math.max(e.latC, a);   // the worst in the last 4-8 s (two 4 s buckets)
+        e.lat = Math.max(e.latM + 2.5 * Math.sqrt(e.latV), 0.8 * Math.max(e.latC, e.latP));   // mean + 2.5 sd, or most of the worst lately: a resent packet is (mostly) covered next time
       }
       const s = push(b);
       s[0] = t; s[1] = q[0] / 50; s[2] = q[1] / 50; s[3] = q[2] / 50; s[4] = q[3] / 4096 * 2 * Math.PI - Math.PI; s[5] = q[4] / 80; s[6] = q[5] / 10; s[7] = q[6] & 1; s[8] = q[6] >> 1;
