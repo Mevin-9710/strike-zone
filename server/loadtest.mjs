@@ -21,15 +21,18 @@ function fakeClient(mode, room, tight, onWelcome) {
     c.p = mode === 'br' ? rnd() : [Math.random() * 60, 0.2, Math.random() * 44];
     ws.on('open', () => ws.send(JSON.stringify({ t: 'join', v: 1, mode, name: 'Load' + ((Math.random() * 1e4) | 0), room, dev: 'd' })));
     ws.on('message', (d, bin) => {
-      c.inB += d.length; if (bin) return;
-      const m = JSON.parse(d);
+      c.inB += d.length;
+      if (bin) { if (d[0] === 9) for (let k = 1; k + 3 <= d.length;) { const n = d.readUInt16LE(k), kind = d[k + 2]; if (kind === 0) onJson(JSON.parse(d.subarray(k + 3, k + 3 + n))); k += 3 + n; } return; }
+      onJson(JSON.parse(d));
+    });
+    const onJson = m => {
       if (m.t === 'welcome') { c.id = m.you; c.host = m.host; c.room = m.room; c.sl = m.ents.find(e => e.id === m.you).sl; c.slot = new Map(); for (const e of m.ents) { c.slot.set(e.id, e.sl); if (e.bot) c.bots.add(e.id); } ws.send(JSON.stringify({ t: 'r', p: c.p })); res(c); }
       else if (m.t === 'add') { c.slot.set(m.e.id, m.e.sl); if (m.e.bot) c.bots.add(m.e.id); }
       else if (m.t === 'del') c.bots.delete(m.id);
       else if (m.t === 'host') c.host = m.on !== false;
       else if (m.t === 'kill' && m.v === c.id && mode !== 'br') setTimeout(() => ws.readyState === 1 && ws.send(JSON.stringify({ t: 'r', p: c.p })), 2000);
       else if (m.t === 'round') ws.send(JSON.stringify({ t: 'r', p: c.p }));
-    });
+    };
     ws.on('error', () => {});
   });
 }
@@ -87,8 +90,10 @@ function drive(clients, all) {                                         // 20 Hz 
     const s1 = await stats(), c1 = cpuOf(srv.pid), dt = (performance.now() - t0) / 1000, in1 = clients.reduce((a, c) => a + c.inB, 0);
     const row = { step, players: nRooms * humans, ents: s1.ents, cpu: +((c1 - c0) / dt * 100).toFixed(1), tickMs: +((s1.tickMs - s0.tickMs) / (s1.ticks - s0.ticks)).toFixed(2),
       outKBs: +((in1 - in0) / dt / 1024).toFixed(0), perPlayerKBs: +((in1 - in0) / dt / 1024 / clients.length).toFixed(1), inKBs: +((s1.inBytes - s0.inBytes) / dt / 1024).toFixed(0),
+      sockKBs: +((s1.sockOut - s0.sockOut) / dt / 1024 / clients.length).toFixed(2),
+      writesS: +(((s1.writes || 0) - (s0.writes || 0)) / dt / clients.length).toFixed(1),
       pktS: +((s1.packets - s0.packets) / dt / clients.length).toFixed(1),
-      wireKBs: +(((in1 - in0) / dt + (s1.packets - s0.packets) / dt * 70) / 1024 / clients.length).toFixed(1),   // + ~70 B TCP/IP+TLS+WS headers per packet
+      wireKBs: +(((s1.sockOut - s0.sockOut) / dt + (s1.packets - s0.packets) / dt * 68) / 1024 / clients.length).toFixed(1),   // socket bytes (after compression, with WS headers) + ~68 B TCP/IP+TLS per packet
       snapB: Math.round((s1.snapBytes - s0.snapBytes) / Math.max(1, s1.snaps - s0.snaps)),
       by: Object.fromEntries(Object.keys(s1.outBy).map(k => [k, +((s1.outBy[k] - (s0.outBy[k] || 0)) / dt / 1024 / clients.length).toFixed(2)]).filter(x => x[1] > 0.05)), memMB: s1.mem, hitsS: +((s1.hits - s0.hits) / dt).toFixed(0) };
     rows.push(row); console.log(JSON.stringify(row));

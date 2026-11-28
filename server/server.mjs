@@ -45,17 +45,22 @@ const rooms = new Map();
 const now = () => performance.now() / 1000;
 const clean = s => String(s || '').replace(/[^\w .\-]/g, '').trim().slice(0, 16);
 const outBy = {};                                                                      // bytes sent per message type (GET /stats)
-// Messages wait in a per-socket queue and go out once per tick together with the snapshot, in one TCP packet: every packet
-// costs ~70 bytes of TCP/IP + TLS + WebSocket headers on top of its payload, so fewer packets means less traffic.
+// Messages wait in a per-socket queue and go out once per tick together with the snapshot, as ONE WebSocket frame (and so one
+// TCP packet): every packet costs ~70 bytes of TCP/IP + TLS + WebSocket headers, and one frame compresses better.
+// Bundle layout: u8 9, then per message: u16 length, u8 kind (0 JSON text, 1 binary), bytes.
 const pending = new Set();
 function queue(ws, data) { if (ws.readyState !== 1) return; (ws.q || (ws.q = [])).push(data); pending.add(ws); }
 function flush(ws, snap) {
   if (ws.readyState !== 1) { ws.q = null; return; }
-  const sock = ws._socket; sock?.cork();
-  if (ws.q) { for (const d of ws.q) ws.send(d); ws.q.length = 0; }
-  if (snap) ws.send(snap);
-  if (sock) process.nextTick(() => sock.uncork());
-  stats.packets++;
+  const q = ws.q || [];
+  if (!q.length) { if (snap) { ws.send(snap); stats.packets++; } return; }
+  if (q.length === 1 && !snap) { ws.send(q[0]); q.length = 0; stats.packets++; return; }
+  const parts = []; let len = 1;
+  for (const d of q) { const b = typeof d === 'string' ? Buffer.from(d) : d; parts.push(b, typeof d === 'string' ? 0 : 1); len += 3 + b.length; }
+  if (snap) { parts.push(snap, 1); len += 3 + snap.length; }
+  const out = Buffer.allocUnsafe(len); out[0] = 9; let k = 1;
+  for (let i = 0; i < parts.length; i += 2) { const b = parts[i]; out.writeUInt16LE(b.length, k); out[k + 2] = parts[i + 1]; b.copy(out, k + 3); k += 3 + b.length; }
+  q.length = 0; ws.send(out); stats.packets++;
 }
 const send = (ws, m, now_) => {
   if (ws.readyState !== 1) return; const s = typeof m === 'string' ? m : JSON.stringify(m);
@@ -472,11 +477,16 @@ const srv = http.createServer((req, res) => {
   const n = [...rooms.values()].reduce((a, r) => a + humans(r).length, 0);
   res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
   const body = { ok: true, v: VERSION, players: n, rooms: rooms.size };
-  if (req.url === '/stats') Object.assign(body, { ents: [...rooms.values()].reduce((a, r) => a + r.ents.size, 0), ...stats, outBy, mem: Math.round(process.memoryUsage().rss / 1e6) });
+  if (req.url === '/stats') Object.assign(body, { ents: [...rooms.values()].reduce((a, r) => a + r.ents.size, 0), ...stats, sockOut: sockBytes(), outBy, mem: Math.round(process.memoryUsage().rss / 1e6) });
   res.end(JSON.stringify(body));
 });
-const wss = new WebSocketServer({ server: srv, maxPayload: 16 * 1024 });
+// permessage-deflate: about 30% fewer bytes for about 0.2% of a core per player (small window and fast level keep memory and CPU low). PMD=0 turns it off.
+const wss = new WebSocketServer({ server: srv, maxPayload: 16 * 1024, perMessageDeflate: process.env.PMD === '0' ? false : { threshold: 24, serverMaxWindowBits: Number(process.env.PMD_BITS || 9), clientMaxWindowBits: Number(process.env.PMD_BITS || 9), zlibDeflateOptions: { level: Number(process.env.PMD_LEVEL || 1), memLevel: 4 } } });
+let sockBytesClosed = 0;
+const sockBytes = () => { let n = sockBytesClosed; for (const ws of wss.clients) n += ws._socket?.bytesWritten || 0; return n; };   // what really left (WebSocket frames, before TLS)
 wss.on('connection', ws => {
+  ws.on('close', () => { sockBytesClosed += ws._socket?.bytesWritten || 0; });
+  if (process.env.COUNT_WRITES && ws._socket) { const so = ws._socket, w = so.write.bind(so); so.write = (...a) => { if (!so.writableCorked) stats.writes = (stats.writes || 0) + 1; return w(...a); }; const u = so.uncork.bind(so); so.uncork = () => { if (so.writableCorked === 1) stats.writes = (stats.writes || 0) + 1; return u(); }; }
   ws.on('message', (d, bin) => { stats.inBytes += d.length; onMsg(ws, d, bin); });
   ws.on('close', () => leave(ws));
   ws.on('error', () => {});

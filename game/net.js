@@ -14,6 +14,7 @@ export function serverUrl(Q, RC) {                      // ?mp=wss://host overri
 
 const SNAP = { t: 'snap' }, SC = { A: 0, B: 0 }, ZC = [0, 0, 0], BOT_BUF = new ArrayBuffer(6 + 11 * 255), BV = new DataView(BOT_BUF);
 const UP = new ArrayBuffer(16), UV = new DataView(UP), SH = new ArrayBuffer(14), SV = new DataView(SH), HB = new ArrayBuffer(7), HV = new DataView(HB);
+const DEC = new TextDecoder();
 const DM = { t: 'dmg', s: 0, v: 0, d: 0, hp: 0, ar: 0, hd: false, z: 0 };            // reused for every binary damage message
 // weapon ids in the server's WPN table order (server/server.mjs)
 const WPN_IDS = ['vex_p9', 'harrow_45', 'bulldog_r6', 'ar7_lance', 'kestrel_bp', 'warden_br', 'grinder_lmg', 'hailstorm_mg', 'longshot_bolt', 'javelin_amr', 'blast'];
@@ -43,13 +44,18 @@ export function createNet() {
         ws.onopen = () => ws.send(JSON.stringify({ t: 'join', v: NET_VERSION, mode: opts.mode, name: opts.name, room: opts.room || '', dev: opts.dev || 'd' }));
         ws.binaryType = 'arraybuffer';
         ws.onmessage = ev => {
-          if (typeof ev.data !== 'string') {
-            N.bytes += ev.data.byteLength;
-            if (snapBin(ev.data)) N.handler(SNAP); else if (dmgBin(ev.data)) { track(DM); N.handler(DM); }
-            return;
+          if (typeof ev.data === 'string') { N.bytes += ev.data.length; onText(ev.data); return; }
+          const ab = ev.data, u = new Uint8Array(ab); N.bytes += ab.byteLength;
+          if (u[0] !== 9) { onBin(ab); return; }
+          for (let k = 1; k + 3 <= u.length;) {                                        // a bundle: all of one tick's messages (server flush())
+            const n = u[k] | (u[k + 1] << 8), kind = u[k + 2]; k += 3;
+            if (kind === 0) onText(DEC.decode(u.subarray(k, k + n))); else onBin(ab.slice(k, k + n));
+            k += n;
           }
-          N.bytes += ev.data.length;
-          let m; try { m = JSON.parse(ev.data); } catch { return; }
+        };
+        const onBin = ab => { if (snapBin(ab)) N.handler(SNAP); else if (dmgBin(ab)) { track(DM); N.handler(DM); } };
+        const onText = str => {
+          let m; try { m = JSON.parse(str); } catch { return; }
           if (m.t === 'welcome') { welcome(m); if (!done) { done = true; clearTimeout(to); res(m); } }
           else if (m.t === 'err') { if (!done) { done = true; clearTimeout(to); rej(new Error(m.why)); } return; }
           else if (m.t === 'pong') N.ping = Math.round(performance.now() - m.c);

@@ -36,17 +36,17 @@ Then point the game at it:
 ## Capacity (load test, server pinned to 1 CPU core)
     node server/loadtest.mjs        # simulated players; prints CPU, tick time, memory and bandwidth per step
 
-| Load | CPU (1 core) | RAM | Down per player | On the wire* |
-|---|---|---|---|---|
-| 1 BR match, 50 humans | 3% | 83 MB | 3.7 KB/s | 4.8 KB/s |
-| 1 BR match, 10 humans + 40 bots | 2% | 67 MB | 2.6 KB/s | 3.6 KB/s |
-| 4 BR matches (160 humans + 40 bots) | 8% | 90 MB | 3.2 KB/s | 4.2 KB/s |
-| 25 TDM rooms of 8 (100 humans) | 4% | 81 MB | 0.9 KB/s | 1.9 KB/s |
+| Load | CPU (1 core) | RAM | Per player, on the wire* |
+|---|---|---|---|
+| 1 BR match, 50 humans | 10% | 99 MB | 3.8 KB/s |
+| 1 BR match, 10 humans + 40 bots | 4% | 71 MB | 3.5 KB/s |
+| 4 BR matches (160 humans + 40 bots) | 23% | 137 MB | 3.1 KB/s |
+| 25 TDM rooms of 8 (100 humans) | 11% | 95 MB | 1.6 KB/s |
 
-*payload plus about 70 bytes of TCP/IP, TLS and WebSocket headers per packet (15 packets a second).
-A BR player costs about 17 MB per hour of play on the wire (was about 110 MB before the 28 Nov bandwidth work).
+*bytes the server's sockets really write (compressed, with WebSocket headers) plus about 68 bytes of TCP/IP and TLS headers per packet (15 packets a second).
+A BR player costs about 14 MB per hour of play (was about 170 MB before the 28 Nov bandwidth work: 34 KB/s of messages plus one packet per shot).
 
-Bandwidth settings (env): `SNAP_HZ` (default 15 snapshots a second; 20 is a little more responsive, 10 saves another 25% but looks less smooth).
+Bandwidth settings (env): `SNAP_HZ` (default 15 snapshots a second; 20 is a little more responsive, 10 saves another 25% but looks less smooth). `PMD=0` turns off WebSocket compression (saves CPU, costs about 30% more bytes).
 
 ## Line of sight
 Hits are refused when walls block every line from the shooter to the victim (`los.mjs`, colliders in `maps.json`). After changing a map, rebuild it: `python3 tools/serve.py & node tools/export_server_maps.cjs`.
