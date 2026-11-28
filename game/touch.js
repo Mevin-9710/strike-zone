@@ -52,6 +52,9 @@ export class TouchControls {
         else { this.pulses.add(k); if (k === 'aim') this.aim = !this.aim; this.touches.set(t.identifier, { role: 'btn', btn }); }
         continue;
       }
+      // Blastline: the weapon cards (#wslots) sit under this full-screen layer, so hit-test them here
+      const card = [...document.querySelectorAll('#wslots .ws')].find(d => { const r = d.getBoundingClientRect(); return r.width && t.clientX >= r.left - 4 && t.clientX <= r.right + 4 && t.clientY >= r.top - 4 && t.clientY <= r.bottom + 4; });
+      if (card) { this.onSlot?.(+card.dataset.i); this.touches.set(t.identifier, { role: 'btn', btn: card }); continue; }
       if (t.clientX < innerWidth * 0.42) {                     // floating stick
         this.touches.set(t.identifier, { role: 'stick', ox: t.clientX, oy: t.clientY });
         this.stick.style.left = `${t.clientX}px`; this.stick.style.top = `${t.clientY}px`; this.stick.classList.add('on'); this.stick.classList.remove('rest');
