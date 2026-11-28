@@ -33,17 +33,17 @@ const LAY = {
     hero: { n: 'rhea', pos: [-0.42, 0, 2.15], yaw: 0.6 },
     allies: [],
     reds: [{ n: 'enemy_guard', pos: [2.25, 0, -1.4], yaw: -0.95, t: 0.15 }, { n: 'enemy_heavy', pos: [3.9, 0, -3.9], yaw: -0.8, gun: 'grinder_lmg', t: 0.1 }, { n: 'enemy_commander', pos: [5.6, 0, -7.5], yaw: -0.7, t: 0.3, gun: 'warden_br' }],
-    bg: { cam: [8, 6, 26], look: [4, 3, 0] }, title: { y: 0.875, size: 0.2, lines: ['STRIKE ZONE'], x: 0.62 } },
+    bg: { cam: [8, 6, 26], look: [4, 3, 0] }, title: { y: 0.875, size: 0.2, lines: ['BLASTLINE'], x: 0.62 } },
   '2x3': { fov: 40, cam: [0.15, 1.33, 4.3], look: [0.25, 1.62, 0], fl: 0.55,
     hero: { n: 'rhea', pos: [-0.05, 0, 1.6], yaw: 0.45 },
     allies: [],
     reds: [{ n: 'enemy_guard', pos: [1.9, 0, -2.6], yaw: -0.85, t: 0.15 }, { n: 'enemy_heavy', pos: [3.6, 0, -6.5], yaw: -0.7, gun: 'grinder_lmg', t: 0.1 }],
-    bg: { cam: [8, 6, 26], look: [4, 2.2, 0] }, title: { y: 0.245, size: 0.235, lines: ['STRIKE', 'ZONE'], x: 0.5 } },
+    bg: { cam: [8, 6, 26], look: [4, 2.2, 0] }, title: { y: 0.245, size: 0.235, lines: ['BLAST', 'LINE'], x: 0.5 } },
   '1x1': { fov: 36, cam: [0.3, 1.3, 4.5], look: [0.42, 1.42, 0], fl: 0.6,
     hero: { n: 'rhea', pos: [-0.1, 0, 1.8], yaw: 0.62 },
     allies: [],
     reds: [{ n: 'enemy_guard', pos: [2.1, 0, -2.0], yaw: -0.9, t: 0.15 }, { n: 'enemy_heavy', pos: [3.9, 0, -5.8], yaw: -0.75, gun: 'grinder_lmg', t: 0.1 }],
-    bg: { cam: [8, 6, 26], look: [4, 2.6, 0] }, title: { y: 0.265, size: 0.155, lines: ['STRIKE', 'ZONE'], x: 0.5 } },
+    bg: { cam: [8, 6, 26], look: [4, 2.6, 0] }, title: { y: 0.265, size: 0.155, lines: ['BLAST', 'LINE'], x: 0.5 } },
 }[FMT];
 
 // ================= sky: saturated blue, warm sun glow on the right (cool sky vs warm light)
@@ -185,6 +185,12 @@ if (!q.has('notitle')) {
     g.save(); g.globalCompositeOperation = 'source-atop'; g.restore();
     g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = fs * 0.012; g.strokeText(line, 0, y - fs * 0.008);
   });
+  { // Blastline speed bar under the last line (cyan, ink outline, ink drop)
+    const tw = Math.max(...TT.lines.map(l => g.measureText(l).width)), y0 = fs * 0.36 + fs * 0.1, bh = fs * 0.11, x0 = -tw / 2 + fs * 0.12, x1 = tw / 2 - fs * 0.05;
+    const bar = (dx, dy) => { g.beginPath(); g.moveTo(x0 + dx, y0 + dy); g.lineTo(x1 + dx, y0 + dy); g.lineTo(x1 - bh * 0.6 + dx, y0 + bh + dy); g.lineTo(x0 - bh * 0.6 + dx, y0 + bh + dy); g.closePath(); };
+    bar(fs * 0.035, fs * 0.05); g.fillStyle = '#0b1230'; g.fill();
+    bar(0, 0); g.fillStyle = '#36d6f0'; g.fill(); g.strokeStyle = '#0b1230'; g.lineWidth = fs * 0.03; g.stroke();
+  }
   g.restore();
 }
 document.title = 'done';
