@@ -38,15 +38,21 @@ Then point the game at it:
 
 | Load | CPU (1 core) | RAM | Per player, on the wire* |
 |---|---|---|---|
-| 1 BR match, 50 humans | 10% | 99 MB | 3.8 KB/s |
-| 1 BR match, 10 humans + 40 bots | 4% | 71 MB | 3.5 KB/s |
-| 4 BR matches (160 humans + 40 bots) | 23% | 137 MB | 3.1 KB/s |
-| 25 TDM rooms of 8 (100 humans) | 11% | 95 MB | 1.6 KB/s |
+| 1 BR match, 50 humans | 8% | 94 MB | 3.3 KB/s |
+| 1 BR match, 50 humans, players getting eliminated | 8% | 95 MB | 2.5 KB/s |
+| 1 BR match, 10 humans + 40 bots | 3% | 78 MB | 2.3 KB/s |
+| 12 BR matches (120 humans + 480 bots) | 19% | 123 MB | 3.2 KB/s |
+| 25 TDM rooms of 8 (100 humans) | 11% | 96 MB | 1.5 KB/s |
 
-*bytes the server's sockets really write (compressed, with WebSocket headers) plus about 68 bytes of TCP/IP and TLS headers per packet (15 packets a second).
-A BR player costs about 14 MB per hour of play (was about 170 MB before the 28 Nov bandwidth work: 34 KB/s of messages plus one packet per shot).
+*bytes the server's sockets really write (compressed, with WebSocket headers) plus 68 bytes of TCP/IP headers per packet
+(at most 15 packets a second); TLS (wss) adds about 22 bytes more per packet (+0.3 KB/s). Fake players run, stand, jump and
+shoot about 3 times a second (more than real players), all within 80 m of the island centre (a late-game zone).
+A BR player costs about 13 MB per hour of play. Same load on the phase-1 server (db2ec03): 37 KB/s of messages in about 190
+packets a second, about 50 KB/s on the wire (180 MB per hour).
 
-Bandwidth settings (env): `SNAP_HZ` (default 15 snapshots a second; 20 is a little more responsive, 10 saves another 25% but looks less smooth). `PMD=0` turns off WebSocket compression (saves CPU, costs about 30% more bytes).
+Bandwidth settings (env): `SNAP_HZ` (default 15 snapshots a second; 12 saves about 17% and still measures smooth, with ~0.07 s
+more delay on other players; 10 saves about 29% but starts to look less smooth). `PMD=0` turns off WebSocket compression
+(saves about 5% of a core per 50 players, costs about 7% more bytes). `HIT_DMG=20 node loadtest.mjs`: fake hits kill.
 
 ## Line of sight
 Hits are refused when walls block every line from the shooter to the victim (`los.mjs`, colliders in `maps.json`). After changing a map, rebuild it: `python3 tools/serve.py & node tools/export_server_maps.cjs`.
