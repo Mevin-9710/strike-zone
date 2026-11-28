@@ -589,3 +589,8 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Vercel landing page (`site/`) rebranded: Blastline wordmark, night/yellow/cyan palette, arcade copy (Gun Run, Hold the Hill, TDM, six arenas), new icons from the Blastline mark, manifest name, og:image = 16x9 cover.
 - Site media now comes from `media/screenshots-blastline` + `media/preview-blastline` (old story clips dropped). `/play/` now ships the `brand/` folder so the in-game logo loads.
 - CrazyGames link blanked until Blastline is listed (old Strike Zone page is gone).
+
+## Blastline: back to the original 4 maps + home screen skin (28 Nov 2026)
+- Mevin: keep the original four maps only. Removed the code-built arenas Sunbreak Yard and Skyline Courts (`world/arena-maps.js` deleted, `DM_MAPS` back to Belltower, Lantern, Neon, Sandkeep). Arena test expects 4 again. Site copy says four arenas.
+- Home screen (lobby) now follows the Blastline design system (`ui26.css`, end of file): night top bar with a yellow rule, yellow selected tab, comic ink outlines + hard offset shadows on every panel, chip and card, -8deg UI skew, -12deg pulsing PLAY block, cyan for interactive accents, go/loot colours on the daily strip, yellow quest bars. Compact outlines on phones.
+- Preview videos + site screenshots re-shot on the original maps (Lantern Canal: Hold the Hill, Belltower Square: Gun Run, Neon Alley: TDM).

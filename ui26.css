@@ -319,3 +319,72 @@ body.touch #vit{right:calc(50% + 98px)!important}
 #lobbyTop .logo .blLogo{display:block;height:calc(var(--u)*2.6);width:auto}
 #lobby.v14 #lobbyTop .logo{padding:0;overflow:visible}
 #lobbyTop .logo::after{display:none!important}
+
+/* ===== Blastline design system: home screen (lobby) skin =====
+   Tokens from the Blastline design system: blast yellow + ink comic outlines, hard offset shadows, -8deg UI skew,
+   -12deg hero skew, solid night panels, cyan = interactive, go = done, loot = reward. */
+#lobby.v14{--bl-blast:#ffd23b;--bl-blast-hot:#ffb703;--bl-ink:#111;--bl-night:#0e141e;--bl-panel:#1a2232;--bl-raised:#25304a;--bl-text:#fff;--bl-muted:#b8c2cc;
+  --bl-cyan:#36d6f0;--bl-go:#33c46a;--bl-loot:#ff8a1f;--bl-sm:3px 3px 0 #111;--bl-md:5px 5px 0 #111;--bl-lg:8px 8px 0 #111;
+  background:radial-gradient(ellipse at 50% 55%,transparent 45%,rgba(14,20,30,.55) 100%)!important}
+#lobby.v14 #lobbyTop{background:var(--bl-night)!important;border-bottom:3px solid var(--bl-ink);box-shadow:0 3px 0 var(--bl-blast)}
+#lobby.v14 #lNav{gap:6px!important}
+#lobby.v14 #lNav button{font-family:Oswald,'Arial Narrow',Impact,sans-serif!important;font-style:italic;font-weight:700;letter-spacing:.06em;color:var(--bl-text)!important;background:transparent!important;
+  border:3px solid transparent!important;border-radius:0!important;transform:skewX(-8deg);padding:2px 12px!important;box-shadow:none!important;text-shadow:2px 2px 0 var(--bl-ink)}
+#lobby.v14 #lNav button:hover{color:var(--bl-cyan)!important}
+#lobby.v14 #lNav button.on{background:var(--bl-blast)!important;color:var(--bl-ink)!important;border-color:var(--bl-ink)!important;box-shadow:var(--bl-sm)!important;text-shadow:none}
+#lobby.v14 #lvl,#lobby.v14 #coins{background:var(--bl-panel)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;transform:skewX(-8deg);
+  font-family:Oswald,'Arial Narrow',Impact,sans-serif!important;font-style:italic;font-weight:700;color:var(--bl-text)!important}
+#lobby.v14 #coins{color:var(--bl-blast)!important}
+#lobby.v14 #coins svg{color:var(--bl-loot)}
+#lobby.v14 #lvlbar{background:rgba(255,255,255,.15)!important;border-radius:0!important}
+#lobby.v14 #lvlbar i{background:var(--bl-blast)!important;border-radius:0!important}
+#lobby.v14 #lobbyTop .ico{background:var(--bl-raised)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;color:var(--bl-text)!important;transform:skewX(-8deg)}
+#lobby.v14 #lobbyTop .ico:hover{outline:2px solid var(--bl-cyan);outline-offset:2px}
+/* side panels: quests + daily reward */
+#lobby.v14 #lQuests,#lobby.v14 #lCrate{background:var(--bl-panel)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-md)!important;backdrop-filter:none!important}
+#lobby.v14 #lQuests .qh span,#lobby.v14 #lCrate .dh span{color:var(--bl-blast)!important;font-family:Oswald,'Arial Narrow',Impact,sans-serif!important;font-style:italic;font-weight:700;letter-spacing:.04em}
+#lobby.v14 #lQuests .qh small{color:var(--bl-cyan)!important}
+#lobby.v14 #lQuests .q{color:var(--bl-text)!important}
+#lobby.v14 #lQuests .qb{background:rgba(255,255,255,.12)!important;border-radius:0!important;height:6px!important}
+#lobby.v14 #lQuests .qb i{background:var(--bl-blast)!important;border-radius:0!important}
+#lobby.v14 #lQuests .q.done .qb i,#lobby.v14 #lQuests .q.claimed .qb i{background:var(--bl-go)!important}
+#lobby.v14 #lCrate.ready{outline:3px solid var(--bl-blast);outline-offset:2px}
+#lobby.v14 #lCrate .dh svg{color:var(--bl-loot)!important}
+#lobby.v14 #lCrate .dh small{color:var(--bl-muted)!important}
+#lobby.v14 #lCrate .d{background:var(--bl-raised)!important;border:2px solid var(--bl-ink)!important;border-radius:0!important;transform:skewX(-8deg)}
+#lobby.v14 #lCrate .d b{color:var(--bl-muted)!important}
+#lobby.v14 #lCrate .d em{color:var(--bl-loot)!important;font-family:Oswald,'Arial Narrow',Impact,sans-serif;font-style:italic}
+#lobby.v14 #lCrate .d.got{background:var(--bl-go)!important}#lobby.v14 #lCrate .d.got b,#lobby.v14 #lCrate .d.got em{color:var(--bl-ink)!important}
+#lobby.v14 #lCrate .d.now{background:var(--bl-blast)!important;box-shadow:var(--bl-sm)}#lobby.v14 #lCrate .d.now b,#lobby.v14 #lCrate .d.now em{color:var(--bl-ink)!important}
+#lobby.v14 #lCrate .d.nx{border-color:var(--bl-cyan)!important;background:var(--bl-raised)!important}#lobby.v14 #lCrate .d.nx b{color:var(--bl-cyan)!important}
+#lobby.v14 #lCrate .d.big:not(.got):not(.now){background:var(--bl-loot)!important}#lobby.v14 #lCrate .d.big:not(.got):not(.now) b,#lobby.v14 #lCrate .d.big:not(.got):not(.now) em{color:var(--bl-ink)!important}
+/* mode select + PLAY block */
+#lobby.v14 #lMission{color:var(--bl-text)!important;font-family:Oswald,'Arial Narrow',Impact,sans-serif!important;font-style:italic;font-weight:700;letter-spacing:.08em;text-shadow:2px 2px 0 var(--bl-ink)}
+#lobby.v14 #lModeSel .lms{background:var(--bl-raised)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;backdrop-filter:none!important}
+#lobby.v14 #lModeSel .lms:hover{outline:2px solid var(--bl-cyan);outline-offset:2px}
+#lobby.v14 #lModeSel .lms small,#lobby.v14 #lModeSel .ar{color:var(--bl-cyan)!important}
+#lobby.v14 #lmsList{background:var(--bl-panel)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-md)!important}
+#lobby.v14 #lmsList button{border-radius:0!important}
+#lobby.v14 #lmsList button.on{background:var(--bl-blast)!important;color:var(--bl-ink)!important}
+#lobby.v14 #lPlay{background:var(--bl-blast)!important;color:var(--bl-ink)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-lg)!important;
+  clip-path:none!important;transform:skewX(-12deg)!important;animation:blLobbyPulse 1.1s ease-in-out infinite}
+#lobby.v14 #lPlay:hover{background:var(--bl-blast-hot)!important}
+#lobby.v14 #lPlay::after{display:none!important}
+@keyframes blLobbyPulse{50%{transform:skewX(-12deg) scale(1.04)}}
+@media (prefers-reduced-motion:reduce){#lobby.v14 #lPlay{animation:none}}
+#lobby.v14 #lExtra .kmini{background:var(--bl-raised)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;color:var(--bl-text)!important;transform:skewX(-8deg)}
+/* weapon cards */
+#lobby.v14 #lWeps{gap:10px!important}
+#lobby.v14 #lWeps .wcard{background:var(--bl-panel)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;transform:skewX(-8deg);color:var(--bl-text)!important;backdrop-filter:none!important}
+#lobby.v14 #lWeps .wcard.eq{background:var(--bl-blast)!important;color:var(--bl-ink)!important}
+#lobby.v14 #lWeps .wcard.eq .wb{background:rgba(17,17,17,.25)!important}#lobby.v14 #lWeps .wcard.eq .wb i{background:var(--bl-ink)!important}
+#lobby.v14 #lWeps .wcard .wb i{background:var(--bl-cyan)!important;border-radius:0!important}
+#lobby.v14 #lWeps .wcard.lock{background:var(--bl-raised)!important;color:var(--bl-muted)!important}
+#lobby.v14 #lWeps .wcard.lock u{color:var(--bl-loot)!important}
+#lobby.v14 #lWeps .wcard:hover{outline:2px solid var(--bl-cyan);outline-offset:2px}
+@media (max-height:500px),(max-width:700px){
+  #lobby.v14 #lNav{gap:2px!important}
+  #lobby.v14 #lNav button{padding:1px 7px!important;border-width:2px!important}
+  #lobby.v14 #lvl,#lobby.v14 #coins,#lobby.v14 #lobbyTop .ico{border-width:2px!important;box-shadow:2px 2px 0 #111!important}
+  #lobby.v14 #lPlay{box-shadow:var(--bl-md)!important}
+}
