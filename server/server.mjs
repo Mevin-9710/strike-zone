@@ -220,11 +220,11 @@ const DMG = Buffer.alloc(7);
 function sendDmg(r, m, v, s) {                                                          // BR: only the two players involved, the host (bots) and anyone nearby
   DMG[0] = 7; DMG[1] = s ? s.sl : 255; DMG[2] = v.sl; DMG[3] = Math.min(255, m.d); DMG[4] = Math.max(0, Math.min(255, m.hp)); DMG[5] = Math.min(255, m.ar || 0); DMG[6] = (m.hd ? 1 : 0) | (m.z ? 2 : 0);
   const br = isBr(r), b = Buffer.from(DMG);
-  for (const o of r.ents.values()) if (!o.bot && o.ws.readyState === 1 && (!br || o === v || o === s || o.id === r.host || !o.alive || (o.p[0] - v.p[0]) ** 2 + (o.p[2] - v.p[2]) ** 2 < SHOT_HEAR * SHOT_HEAR)) { queue(o.ws, b); outBy.dmg = (outBy.dmg || 0) + 7; }
+  for (const o of r.ents.values()) if (!o.bot && o.ws.readyState === 1 && (!br || o === v || o === s || o.id === r.host || watching(r, o, now()) || (o.p[0] - v.p[0]) ** 2 + (o.p[2] - v.p[2]) ** 2 < SHOT_HEAR * SHOT_HEAR)) { queue(o.ws, b); outBy.dmg = (outBy.dmg || 0) + 7; }
 }
 function reject(s, why) { stats['rej_' + why] = (stats['rej_' + why] || 0) + 1; s.bad = (s.bad || 0) + 1; if (s.bad % 20 === 1) log(`reject ${why} from ${s.name} (${s.bad})`); }
 function kill(r, s, v, head) {                                                     // s = null: the zone
-  v.alive = false; v.d++; if (s) s.k++;
+  v.alive = false; v.deadT = now(); v.d++; if (s) s.k++;
   if (r.mode === 'tdm' && s) r.score[s.team]++;
   const place = isBr(r) ? aliveN(r) + 1 : 0;
   broadcast(r, { t: 'kill', s: s ? s.id : 0, v: v.id, hd: head, score: r.score, sk: s ? s.k : 0, vd: v.d, pl: place, alive: isBr(r) ? aliveN(r) : 0 });
@@ -420,6 +420,10 @@ function onShot(e, a, b) {                                                      
 // Mid-range pairs behind walls go at the far rate. Line of sight per pair of slots, re-checked about every LOS_EVERY ticks
 // (spread out, at most LOS_BUDGET checks a tick per room; a pair not checked yet counts as visible).
 const LOS_EVERY = 8, LOS_BUDGET = 120;
+// Dead: everyone at full rate while the kill cam runs; in BR the player is then on the end screen until the round ends
+// (minutes), so after BR_OUT_AFTER s they get no records at all (scores, kills and the alive count still come).
+const BR_OUT_AFTER = 4;
+const watching = (r, o, t) => !o.alive && !(isBr(r) && t - (o.deadT || 0) > BR_OUT_AFTER);
 function seesMid(r, a, b) {
   const i = a.sl < b.sl ? a.sl * 256 + b.sl : b.sl * 256 + a.sl;
   if (!r.vis) { r.vis = new Uint8Array(65536); r.visT = new Int32Array(65536).fill(-1e6); r.visN = 0; }
@@ -435,7 +439,7 @@ function snapRoom(r, t) {
   for (const rc of list) {
     if (rc.bot || rc.ws.readyState !== 1) continue;
     if (out.length < 64 + n * 24) { out = Buffer.alloc(64 + n * 48); out2 = Buffer.alloc(64 + n * 48); }
-    const host = rc.id === r.host, px = rc.p[0], pz = rc.p[2], all = !rc.alive, seen = rc.seen;
+    const host = rc.id === r.host, px = rc.p[0], pz = rc.p[2], all = watching(r, rc, t), gone = !rc.alive && !all, seen = rc.seen;
     let k = 0; out[k++] = 5; const info = (tickN - (rc.info | 0)) >= INFO_EVERY && !(tickN & 1); out[k++] = info ? 1 : 0; out.writeUInt32LE(Math.round(t * 1000) >>> 0, k); k += 4;
     if (info) {
       rc.info = tickN;
@@ -445,7 +449,7 @@ function snapRoom(r, t) {
     }
     const nAt = k++; let cnt = 0, lastAge = -1;
     for (const e of list) {
-      if (e === rc || cnt >= 255) continue;
+      if (e === rc || cnt >= 255 || (host && e.bot) || (gone && !(host && !e.bot))) continue;   // the host runs the bots itself; out of the BR: nothing (the host still gets the humans)
       const d2 = (e.p[0] - px) ** 2 + (e.p[2] - pz) ** 2;
       let iv = all || (host && !e.bot) || d2 < NEAR_A * NEAR_A ? 1 : d2 < NEAR_B * NEAR_B ? 2 : FAR_IV;   // dead receivers spectate anywhere: everyone at full rate
       if (iv === 2 && br && !seesMid(r, rc, e)) iv = FAR_IV;                           // mid range behind walls: the far rate

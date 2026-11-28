@@ -6,6 +6,7 @@
 import { spawn, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import WebSocket from 'ws';
+const HIT_DMG = Number(process.env.HIT_DMG || 1);   // damage per fake hit (HIT_DMG=20: players die, BR rooms fill with eliminated players on the end screen)
 const PORT = 8811, WS_URL = `ws://127.0.0.1:${PORT}`, SECS = Number(process.env.SECS || 20);
 const STEPS = (process.env.STEPS || 'br:1x50:10,br:1x50:25,br:1x50:50,br:4x50:10,br:8x50:10,br:12x50:10,br:4x50:25:tight,tdm:25x8:4').split(',');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -67,7 +68,7 @@ function drive(clients, all) {                                         // 20 Hz 
       st.writeUInt16LE(Math.round((c.yaw % 6.283 + 6.283) % 6.283 / 6.283 * 65535), 11); st.writeInt8(Math.round(c.m.pi * 80), 13); st[14] = 32; st[15] = 3; c.ws.send(Buffer.from(st));
       if (fire) {
         shot(c, c.sl, c.p, tg.p);
-        if (tg !== c && tg.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s: c.id, v: tg.id, d: 1, hd: 0, w: 'ar7_lance' }));
+        if (tg !== c && tg.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s: c.id, v: tg.id, d: HIT_DMG, hd: 0, w: 'ar7_lance' }));
       }
       if (c.host && c.bots.size) {
         let n = 0;
@@ -81,7 +82,7 @@ function drive(clients, all) {                                         // 20 Hz 
         if (Math.random() < 0.3) {                                                    // bots shoot too: ~6 shots/s per room, a third hit
           const s = [...c.bots][(Math.random() * c.bots.size) | 0], v = all[(Math.random() * all.length) | 0];
           shot(c, c.slot.get(s), botPos.get(s) || c.p, v.p);
-          if (v.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s, v: v.id, d: 1, hd: 0 }));
+          if (v.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s, v: v.id, d: HIT_DMG, hd: 0 }));
         }
       }
     }
