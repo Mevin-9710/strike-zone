@@ -2,7 +2,7 @@
 // The game logic for online matches lives in game.js (section "online"); this file only moves messages.
 export const NET_VERSION = 1;
 let TICK = 1 / 15;                                      // server snapshot interval (s); the server says in 'welcome'
-const JITTER = 0.05;                                    // extra delay that hides late packets; an entity sent every `iv` ticks is drawn TICK*iv + JITTER in the past
+const JITTER = 0.04;                                    // least extra delay that hides late packets (it grows with the measured lateness); an entity sent every `iv` ticks is drawn TICK*iv + that in the past
 const BUF = 16;                                         // samples kept per entity
 
 export function serverUrl(Q, RC) {                      // ?mp=wss://host overrides remote-config mpUrl; ?mp=0 turns online off
@@ -24,7 +24,7 @@ export function createNet() {
   const N = {
     ws: null, on: false, me: 0, team: 'A', host: false, room: '', mode: '', map: 0, round: 0, target: 0, score: { A: 0, B: 0 },
     state: 'play', hill: null, hillOwn: '', br: null, alive: 0, ents: new Map(), slots: [], handler: () => {}, ping: 0, sentT: 0, botT: 0, url: '',
-    off: 0, offS: 0, offOk: false, frameT: 0, fdt: 0, bytes: 0, traceId: 0, trace: [], myPos: [0, 0, 0], myAlive: true,
+    off: 0, offS: 0, offOk: false, late: 0, lateM: 0, lateV: 0, frameT: 0, fdt: 0, bytes: 0, traceId: 0, trace: [], myPos: [0, 0, 0], myAlive: true,
     // the round clock counts down locally between the server's once-a-second updates
     set clock(v) { clk0 = v; clkT = performance.now() / 1000; }, get clock() { return Math.max(0, clk0 - (N.state === 'play' ? performance.now() / 1000 - clkT : 0)); },
     // BR zone: worked out locally from the zone events (the server resyncs the timers once a second)
@@ -100,7 +100,7 @@ export function createNet() {
       const e = N.ents.get(id), b = e?.buf; out.shot = 0; if (!b || !b.length) return false;
       const d2 = (b[b.length - 1][1] - N.myPos[0]) ** 2 + (b[b.length - 1][3] - N.myPos[2]) ** 2;   // the server's send rate for this distance (see NEAR_A/B)
       const iv = !N.myAlive || (N.host && !e.bot) || d2 < 2500 ? 1 : d2 < 14400 ? 2 : 4;
-      const dd = Math.min(0.35, Math.max(TICK * iv, e.gap) + JITTER) - e.del, lim = 0.05 * N.fdt; e.del += Math.max(-lim, Math.min(lim, dd));   // change the delay slowly when the send rate changes
+      const dd = Math.min(0.5, Math.max(TICK * iv, e.gap) + Math.max(JITTER, N.late + 0.015)) - e.del, lim = 0.05 * N.fdt; e.del += Math.max(-lim, Math.min(lim, dd));   // change the delay slowly when the send rate changes
       const rt = performance.now() / 1000 - N.offS - e.del;
       let i = b.length - 1; while (i > 0 && b[i - 1][0] > rt) i--;
       const B = b[i], A = b[Math.max(0, i - 1)];
@@ -133,6 +133,8 @@ export function createNet() {
     const info = d.getUint8(1) & 1, st = d.getUint32(2, true) / 1000, now = performance.now() / 1000; let o = 6;
     const off = now - st;                                                              // clock sync: the smallest delay seen, creeping up slowly
     if (!N.offOk || off < N.off || off - N.off > 5) { if (!N.offOk) N.offS = off; N.off = off; N.offOk = true; } else N.off += (off - N.off) * 0.002;
+    const lt = Math.min(0.4, off - N.off), dl = lt - N.lateM; N.lateM += dl * 0.03; N.lateV += (dl * dl - N.lateV) * 0.03;
+    N.late = N.lateM + 2 * Math.sqrt(N.lateV);                                         // how late packets come vs the fastest one (mean + 2 sd): the delay covers it
     if (info) {
       N.clock = d.getUint16(o, true) / 10; SC.A = d.getUint16(o + 2, true); SC.B = d.getUint16(o + 4, true); N.score = SC;
       const al = d.getUint8(o + 6); if (N.br) { N.alive = al; const zn = d.getUint16(o + 7, true) / 10, zs = d.getUint16(o + 9, true) / 10; if (Z.to) { if (zs > 0) Z.t1 = now + zs; Z.next = now + zn; } }

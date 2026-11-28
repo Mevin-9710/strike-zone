@@ -1472,7 +1472,7 @@ function render() {
     camera.updateMatrixWorld(); _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _fr.setFromProjectionMatrix(_pv);
     const far2 = camera.far * camera.far;
     for (const e of allies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); e.root.visible = (e.alive || e.deadT < 7) && e.pos.distanceToSquared(camera.position) < far2 && _fr.intersectsSphere(_sp); }
-    for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position), lod = qLevel === 0 ? 3025 : 4900; e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && (d2 < lod || e.revealT > 0 || e.state === 'combat') && _fr.intersectsSphere(_sp);
+    for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position), lod = qLevel === 0 ? 3025 : 4900; e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && (d2 < lod || e.revealT > 0 || e.state === 'combat' || (e.net && e.shotK > -3)) && _fr.intersectsSphere(_sp);
       if (e.root.visible) { if (e._hand === undefined) e._hand = e.root.getObjectByName('handR') || null; if (e._hand) e._hand.visible = d2 < 900; } }   // guns are a few pixels past 30 m
     if (preview) preview.root.visible = true;
     if (map?.cull && !render.noCull) map.cull(camera.position);                    // BR island: far arenas are not drawn
