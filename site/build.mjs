@@ -34,7 +34,7 @@ cp(path.join(ROOT, 'media', 'covers-blastline', 'cover_16x9.png'), path.join(OUT
 const PLAY = path.join(OUT, 'play');
 for (const f of ['index.html', 'game.js', 'menu.css', 'v14.css', 'ui26.css', 'game', 'world', 'fx', 'fonts', 'sfx', 'brand']) cp(path.join(ROOT, f), path.join(PLAY, f));
 for (const f of ['three.module.js', 'three.core.js', 'addons/loaders/GLTFLoader.js',
-  'addons/utils/BufferGeometryUtils.js', 'addons/utils/SkeletonUtils.js']) cp(path.join(ROOT, 'lib', f), path.join(PLAY, 'lib', f));
+  'addons/utils/BufferGeometryUtils.js', 'addons/utils/SkeletonUtils.js', 'addons/libs/meshopt_decoder.module.js']) cp(path.join(ROOT, 'lib', f), path.join(PLAY, 'lib', f));
 for (const d of ['kenney', 'props', 'rigged', 'weapons', 'dm']) {
   const src = path.join(ROOT, 'models', d);
   if (!fs.existsSync(src)) continue;
