@@ -553,3 +553,14 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
   - Loading card: moving shimmer on the bar, "Slow connection, still loading…" at 12 s, and TAP TO RETRY at 35 s or 1.5 s after a script fails. telemetry.js removes the button once JS runs.
   - Inline telemetry: `page` gains `im` (import-map support) and a coarse OS/browser string. New `err0`, `slow0` and `retry0` events fire before game JS runs.
   - Boot tag b:45. Verified: dist boots with the import map stripped, and a 404 on a module shows the retry button.
+- 2026-11-28 · v46 (Mevin's playtest fixes):
+  - Walls: the 4 arena maps had visible brick walls with no collider (Sandkeep's arcade wall had only its pillars), so bots saw and shot through them and players could walk through.
+    - `world/dm-maps.js` `wallBlockers()` now builds 10 cm colliders from the visible geometry at map load: opaque, axis-aligned faces at least 1 m tall and 0.4 m wide that no prototype box covers, with coplanar faces merged.
+    - Rays where the visuals block but collision didn't: Sandkeep 10.3% → 3.1%, Lantern 6.3% → 2.8%. What's left is low rails and bridge parapets, which stay shoot-through.
+    - Bots also need a clear muzzle-to-target line before a shot lands (`fire()`).
+  - Eye height 1.6 → 1.75 m (bot target point 1.45 → 1.55). Arena bots drawn at 1.1x, down from 1.2x, in remote.js and remote-config.json, so teammates no longer tower over you.
+  - Hit reaction: the old flinch bent the chest back up to 32° and re-pinned on every bullet, giving a limbo lean under sustained fire, plus a 38 Hz headshot shake. It's now a small eased twitch (7°, slight twist) that re-arms only once settled. Headshots get a quick head snap.
+  - Phone landscape (max-height 430 px):
+    - Lobby: one-line logo, no weapon strip (it covered the daily reward; weapons are in LOADOUT), 3 quests max.
+    - End screen: one-line rank badge. The one-time feedback row takes the upgrade box's place, so it's no longer cut off.
+    - Quest toast moves off the end-screen buttons, and match call-outs are smaller.

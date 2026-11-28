@@ -44,7 +44,7 @@ const rand = (a, b) => a + Math.random() * (b - a);
 const fmt = s => `${Math.floor(s / 60)}:${String(Math.max(0, Math.floor(s % 60))).padStart(2, '0')}`;
 const errors = []; addEventListener('error', e => errors.push(String(e.message)));
 
-const CFG = { retrieve: 2.5, breach: 1.2, fuse: 1.8, eye: 1.6, run: 5.2, walk: 2.6, jump: 7.2, sens: 0.0022, defuse: 5, plant: 3, hold: 20, useR: 2.3, blockR: 7 };
+const CFG = { retrieve: 2.5, breach: 1.2, fuse: 1.8, eye: 1.75, run: 5.2, walk: 2.6, jump: 7.2, sens: 0.0022, defuse: 5, plant: 3, hold: 20, useR: 2.3, blockR: 7 };
 
 const ABILITIES = {
   smoke: { name: 'Smoke', icon: '☁', cd: 18 }, flash: { name: 'Flash', icon: '✸', cd: 14 }, dash: { name: 'Dash', icon: '»', cd: 8 },
@@ -260,7 +260,7 @@ const G = {                                         // services handed to enemie
   get dmParity() { return mode === 'dm'; }, get dmPower() { const base = DM.grace ? RC.dmGracePower + RC.dmGraceStep * (DM.graceN || 0) : Math.min(1, RC.dmPower + RC.dmPowerStep * (dmLevel - 1)); return Math.max(RC.dmEaseFloor, base - (DM.ease || 0)); },   // v29.7: grace 0.55 -> 0.6, minus a loss-streak ease
   get ignorePlayer() { return mode === 'dm' && DM.grace && elapsed < RC.dmGraceCalm; }, get rampage() { return mode === 'dm' && DM.rampage; },
   get difficulty() { return RC.adaptive ? director.difficulty() : 0.8 + Math.min(11, missionIdx) * 0.035; },   // v14: adaptive threat owns difficulty   // gentle first missions, ramps through the campaign
-  playerHead: () => player.pos.clone().add(V(0, 1.45, 0)),
+  playerHead: () => player.pos.clone().add(V(0, 1.55, 0)),   // v46: eye 1.6 -> 1.75
   losClear: (a, b) => world.lineClear(a, b) && !smokeBlocks(a, b),
   nearestDecoy(p, r) { let best = null, bd = r; for (const d of zones.decoy) { const q = d.obj.position.clone().add(V(0, 1.2, 0)); const dd = q.distanceTo(p); if (dd < bd) { bd = dd; best = q; } } return best; },
   inLockdown: p => zones.lock.some(z => z.pos.distanceTo(p) < z.radius && Math.abs(z.pos.y - p.y) < 3),
@@ -2396,7 +2396,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 45, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 46, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));
