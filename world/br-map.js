@@ -26,7 +26,7 @@ const GATE_Y0 = 0.1, GATE_Y1 = 4.2;
 // the arenas' outer walls are cut down to a low ruin wall (Mevin: the full-height walls made them look like boxes)
 // per arena: depth of the wall band from each edge [N, S, W, E], cap colour; everything in the band above LOW_WALL goes
 const LOW_WALL = 1.3;
-const BANDS = { belltower: [[2.2, 2.2, 1.2, 1.2], 0xc98f6a], lantern: [[2.2, 2.2, 1.2, 1.2], 0x8a6a45], neon: [[1.9, 1.6, 1.6, 1.6], 0x3d4258], sandkeep: [[6, 6, 6, 6], 0xc99a5a] };
+const BANDS = { belltower: [[2.2, 2.2, 1.2, 1.2], 0xc98f6a], lantern: [[2.2, 2.2, 1.2, 1.2], 0x8a6a45], neon: [[3.4, 3.8, 2.0, 2.0], 0x3d4258], sandkeep: [[6, 6, 6, 6], 0xc99a5a] };
 function bandBoxes(def, [n, s, w, e]) { const o = 1.6, Y1 = 60;
   return [[-o, LOW_WALL, -o, def.w + o, Y1, n], [-o, LOW_WALL, def.d - s, def.w + o, Y1, def.d + o], [-o, LOW_WALL, -o, w, Y1, def.d + o], [def.w - e, LOW_WALL, -o, def.w + o, Y1, def.d + o]]; }
 function gateBox(def, [edge, t, w, dep]) {                         // -> [x0, y0, z0, x1, y1, z1] in arena coords
@@ -84,6 +84,16 @@ function carveMesh(m, gates) {                                     // gates in w
 }
 
 // scenery the arena GLBs place outside their own wall (merged into big meshes): drop every triangle whose centre lies outside
+function filterTris(m, keepFn) {                                    // keepFn(centroid world Vector3) -> bool
+  const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry, pos = src.attributes.position, n = pos.count, mw = m.matrixWorld, P = new THREE.Vector3(), Q = new THREE.Vector3(), keep = [];
+  for (let t = 0; t < n; t += 3) { Q.set(0, 0, 0); for (let i = 0; i < 3; i++) Q.add(P.fromBufferAttribute(pos, t + i).applyMatrix4(mw)); keep.push(keepFn(Q.divideScalar(3))); }
+  if (keep.every(Boolean)) return;
+  const geo = new THREE.BufferGeometry(), map = [];
+  for (let t = 0; t < keep.length; t++) if (keep[t]) map.push(t * 3, t * 3 + 1, t * 3 + 2);
+  for (const nm in src.attributes) { const at = src.attributes[nm], sz = at.itemSize, arr = new at.array.constructor(map.length * sz); map.forEach((v, i) => { for (let c = 0; c < sz; c++) arr[i * sz + c] = at.getComponent(v, c); }); geo.setAttribute(nm, new THREE.BufferAttribute(arr, sz, at.normalized)); }
+  if (src.groups.length) { const o2n = new Int32Array(n + 1); let k = 0; for (let v = 0; v < n; v++) { o2n[v] = k; if (keep[(v / 3) | 0]) k++; } o2n[n] = k; for (const g of src.groups) geo.addGroup(o2n[g.start], o2n[Math.min(n, g.start + g.count)] - o2n[g.start], g.materialIndex); }
+  geo.computeBoundingBox(); geo.computeBoundingSphere(); m.geometry = geo;
+}
 function trimOutside(m, x0, z0, x1, z1) {
   const src = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry, pos = src.attributes.position, n = pos.count, mw = m.matrixWorld, P = new THREE.Vector3(), Q = new THREE.Vector3();
   const keep = [];
@@ -125,7 +135,7 @@ export function buildBrIsland(world, scene) {
     const bands = bandBoxes(def, BANDS[id][0]), bw = bands.map(g => [g[0] + ox, g[1], g[2] + oz, g[3] + ox, g[4], g[5] + oz]);
     vis.traverse(m => { if (!m.isMesh || !m.geometry.attributes.position?.count) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); wb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld);
       const hit = bw.filter(g => wb.intersectsBox(gb.set(V(g[0], g[1], g[2]), V(g[3], g[4], g[5])))); if (hit.length) carveMesh(m, hit); });
-    const capKey = f(BANDS[id][1]), caps = [];
+    const capKey = f(BANDS[id][1]), caps = [], solid = [];
     const cut = bx => [...gates, ...bands].reduce((list, g) => list.flatMap(q => splitBox(q, g)), [bx]), tops = gates.map(() => LOW_WALL);
     const capOf = b => { if (b[1] >= LOW_WALL - 0.05 || b[4] <= LOW_WALL + 0.05) return; for (const g of bands) { const x0 = Math.max(b[0], g[0]), x1 = Math.min(b[3], g[3]), z0 = Math.max(b[2], g[2]), z1 = Math.min(b[5], g[5]);
       if (x1 - x0 > 0.05 && z1 - z0 > 0.05) caps.push([x0, z0, x1, z1]); } };
@@ -136,11 +146,17 @@ export function buildBrIsland(world, scene) {
       if (b.x1 - b.x0 < 0.01 || b.z1 - b.z0 < 0.01 || b.y1 - b.y0 < 0.01) continue;
       if (id === 'lantern' && b.x0 >= 33.4 && b.x1 <= 36.6 && b.y1 <= 2.7 && b.z0 > 10 && b.z1 < 30) continue;
       if (!inFoot([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1])) continue;
-      for (const q of cut([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1])) pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5]));
+      for (const q of cut([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1])) { pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5])); solid.push(q); }
       capOf([b.x0, b.y0, b.z0, b.x1, b.y1, b.z1]);
       if (b.y1 - b.y0 > 2.2 && (b.x1 - b.x0) * (b.z1 - b.z0) > 1.5 && b.y0 < 1) k.minimap.push({ x0: b.x0 + ox, z0: b.z0 + oz, x1: b.x1 + ox, z1: b.z1 + oz, y: b.y1, kind: 'building' });
     }
-    for (const b of r.extra) if (inFoot(b)) { for (const q of cut(b)) pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5])); capOf(b); }
+    for (const b of r.extra) if (inFoot(b)) { for (const q of cut(b)) { pw.addBox(V(q[0], q[1], q[2]), V(q[3], q[4], q[5])); solid.push(q); } capOf(b); }
+    { // decor that hung on the cut walls (windows, signs, poles, trim): meshes that start above the ground keep only triangles with a solid wall behind them
+      const near = (x, y, z) => solid.some(q => x > q[0] - 0.9 && x < q[3] + 0.9 && z > q[2] - 0.9 && z < q[5] + 0.9 && y < q[4] + 0.6 && y > q[1] - 0.6);
+      const M = id === 'neon' ? 14 : 4, inBandZone = (x, z) => { const [n, s2, w2, e2] = BANDS[id][0]; return z < n + M || z > def.d - s2 - M || x < w2 + M || x > def.w - e2 - M; };
+      vis.traverse(m => { if (!m.isMesh || !m.geometry.attributes.position?.count) return; m.geometry.computeBoundingBox(); wb.copy(m.geometry.boundingBox).applyMatrix4(m.matrixWorld); if (wb.min.y < 0.9) return;
+        filterTris(m, c => { const x = c.x - ox, z = c.z - oz; return !inBandZone(x, z) || c.y < LOW_WALL + 0.2 || near(x, c.y, z); }); });
+    }
     for (const [x0, z0, x1, z1] of caps) {                          // stone cap on every cut wall, minus the gate openings
       const parts = gates.reduce((list, g) => list.flatMap(q => splitBox(q, [g[0], -1, g[2], g[3], 9, g[5]])), [[x0, LOW_WALL - 0.12, z0, x1, LOW_WALL + 0.04, z1]]);
       for (const q of parts) if (q[1] < LOW_WALL) k.box(ox + (q[0] + q[3]) / 2 , q[1], oz + (q[2] + q[5]) / 2, q[3] - q[0] + 0.08, q[4] - q[1], q[5] - q[2] + 0.08, capKey, { collide: false });
