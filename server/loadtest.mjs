@@ -13,13 +13,28 @@ const clk = Number(execSync('getconf CLK_TCK')) || 100;
 function cpuOf(pid) { const f = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ')[1].split(' '); return (Number(f[11]) + Number(f[12])) / clk; }
 async function stats() { return (await fetch(`http://127.0.0.1:${PORT}/stats`)).json(); }
 
+// How a fake player moves (humans and bots): runs 2-8 s at 5.5 m/s with smooth turns, then stands 1-5 s looking around (looting,
+// aiming), jumps now and then; the ground goes up and down so heights change while moving.
+const ground = (x, z) => 0.2 + 1.2 * Math.sin(x / 17) * Math.cos(z / 13);
+function walk(m, p, dt) {
+  const t = performance.now() / 1000;
+  if (!m.ph || t > m.until) { m.ph = m.ph === 'run' ? 'stand' : 'run'; m.until = t + (m.ph === 'run' ? 2 + Math.random() * 6 : 1 + Math.random() * 4); m.turn = (Math.random() - 0.5) * 1.5; m.yaw ??= Math.random() * 6.283; m.pi = 0; m.jt = -1; }
+  if (m.ph === 'run') {
+    m.turn += (Math.random() - 0.5) * 0.3; m.turn = Math.max(-1.5, Math.min(1.5, m.turn)); m.yaw += m.turn * dt;
+    p[0] += Math.sin(m.yaw) * 5.5 * dt; p[2] += Math.cos(m.yaw) * 5.5 * dt;
+    if (m.jt < 0 && Math.random() < 0.01) m.jt = 0;
+  } else if (Math.random() < 0.05) m.turn = (Math.random() - 0.5) * 2; else if (m.ph === 'stand') m.yaw += m.turn * dt * (Math.random() < 0.5 ? 1 : 0);
+  let y = ground(p[0], p[2]); if (m.jt >= 0) { m.jt += dt; y += Math.max(0, 5 * m.jt - 9.8 * m.jt * m.jt); if (m.jt > 0.55) m.jt = -1; }
+  p[1] = y; m.pi += ((Math.random() - 0.5) * 0.2 - m.pi * 0.2) * (m.ph === 'stand' ? 1 : 0.2);
+}
+
 function fakeClient(mode, room, tight, onWelcome) {
   return new Promise(res => {
     const ws = new WebSocket(WS_URL), c = { ws, id: 0, host: false, bots: new Set(), room: '', inB: 0, p: [0, 0, 0], v: [0, 0], t0: 0 };
     const centre = 116, R = tight ? 60 : 160;
     const rnd = () => { const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * R / 2; return [centre + Math.cos(a) * r, 0.2, centre + Math.sin(a) * r]; };
     c.p = mode === 'br' ? rnd() : [Math.random() * 60, 0.2, Math.random() * 44];
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'join', v: 1, mode, name: 'Load' + ((Math.random() * 1e4) | 0), room, dev: 'd' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'join', v: 2, mode, name: 'Load' + ((Math.random() * 1e4) | 0), room, dev: 'd' })));
     ws.on('message', (d, bin) => {
       c.inB += d.length;
       if (bin) { if (d[0] === 9) for (let k = 1; k + 3 <= d.length;) { const n = d.readUInt16LE(k), kind = d[k + 2]; if (kind === 0) onJson(JSON.parse(d.subarray(k + 3, k + 3 + n))); k += 3 + n; } return; }
@@ -39,15 +54,14 @@ function fakeClient(mode, room, tight, onWelcome) {
 const botPos = new Map();
 function drive(clients, all) {                                         // 20 Hz like the game: state, bots (host), shots and hits now and then (binary, as game/net.js sends)
   const buf = Buffer.alloc(6 + 11 * 255), st = Buffer.alloc(16), sh = Buffer.alloc(14), t0 = performance.now();
-  const shot = (c, sl, a, b) => { sh[0] = 5; sh[1] = sl; [a[0], a[1], a[2], b[0], b[1], b[2]].forEach((v, i) => sh.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(v * 50))), 2 + i * 2)); c.ws.send(sh); };
+  const shot = (c, sl, a, b) => { sh[0] = 5; sh[1] = sl; [a[0], a[1], a[2], b[0], b[1], b[2]].forEach((v, i) => sh.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(v * 50))), 2 + i * 2)); c.ws.send(Buffer.from(sh)); };   // copies: ws may hold a buffer until compression is done
   return setInterval(() => {
     const ms = Math.round(performance.now() - t0) >>> 0;
     for (const c of clients) {
       if (c.ws.readyState !== 1) continue;
-      c.v[0] += (Math.random() - 0.5) * 0.4; c.v[1] += (Math.random() - 0.5) * 0.4; c.v[0] *= 0.95; c.v[1] *= 0.95;
-      c.p[0] += c.v[0] * 0.25; c.p[2] += c.v[1] * 0.25; c.yaw = (c.yaw || 0) + (Math.random() - 0.5) * 0.2;
+      walk(c.m || (c.m = {}), c.p, 0.05); c.yaw = c.m.yaw;
       st[0] = 4; st.writeUInt32LE(ms, 1); st.writeInt16LE(Math.round(c.p[0] * 50), 5); st.writeInt16LE(Math.round(c.p[1] * 50), 7); st.writeInt16LE(Math.round(c.p[2] * 50), 9);
-      st.writeUInt16LE(Math.round((c.yaw % 6.283 + 6.283) % 6.283 / 6.283 * 65535), 11); st.writeInt8(0, 13); st[14] = 32; st[15] = 3; c.ws.send(st);
+      st.writeUInt16LE(Math.round((c.yaw % 6.283 + 6.283) % 6.283 / 6.283 * 65535), 11); st.writeInt8(Math.round(c.m.pi * 80), 13); st[14] = 32; st[15] = 3; c.ws.send(Buffer.from(st));
       if (Math.random() < 0.15) {                                                     // ~3 shots a second, every 3rd one hits someone
         const tg = all[(Math.random() * all.length) | 0];
         shot(c, c.sl, c.p, tg.p);
@@ -57,10 +71,11 @@ function drive(clients, all) {                                         // 20 Hz 
         let n = 0;
         for (const id of c.bots) {
           let p = botPos.get(id); if (!p) botPos.set(id, p = [c.p[0] + (Math.random() - 0.5) * 120, 0.2, c.p[2] + (Math.random() - 0.5) * 120]);
-          p[0] += (Math.random() - 0.5) * 0.3; p[2] += (Math.random() - 0.5) * 0.3;
-          const o = 6 + n * 11; buf[o] = c.slot.get(id); buf.writeInt16LE(Math.round(p[0] * 50), o + 1); buf.writeInt16LE(10, o + 3); buf.writeInt16LE(Math.round(p[2] * 50), o + 5); buf.writeUInt16LE(30000, o + 7); buf[o + 9] = 30; buf[o + 10] = 0; n++;
+          walk(p.m || (p.m = {}), p, 0.05);
+          const o = 6 + n * 11; buf[o] = c.slot.get(id); buf.writeInt16LE(Math.round(p[0] * 50), o + 1); buf.writeInt16LE(Math.round(p[1] * 50), o + 3); buf.writeInt16LE(Math.round(p[2] * 50), o + 5);
+          buf.writeUInt16LE(Math.round((p.m.yaw % 6.283 + 6.283) % 6.283 / 6.283 * 65535), o + 7); buf[o + 9] = p.m.ph === 'run' ? 55 : 0; buf[o + 10] = 0; n++;
         }
-        buf[0] = 6; buf.writeUInt32LE(ms, 1); buf[5] = n; c.ws.send(buf.subarray(0, 6 + n * 11));
+        buf[0] = 6; buf.writeUInt32LE(ms, 1); buf[5] = n; c.ws.send(Buffer.from(buf.subarray(0, 6 + n * 11)));
         if (Math.random() < 0.3) {                                                    // bots shoot too: ~6 shots/s per room, a third hit
           const s = [...c.bots][(Math.random() * c.bots.size) | 0], v = all[(Math.random() * all.length) | 0];
           shot(c, c.slot.get(s), botPos.get(s) || c.p, v.p);

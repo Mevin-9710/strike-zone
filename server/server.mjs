@@ -11,7 +11,7 @@ import http from 'node:http';
 import { losOk as losMap } from './los.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
-const VERSION = 1;                                     // protocol version: clients with another version are refused
+const VERSION = 2;                                     // protocol version: clients with another version are refused
 const TICK = Number(process.env.SNAP_HZ || 15);         // ticks (and snapshots) per second
 const MODES = {
   tdm: { size: 8, time: 300, target: 40 },             // 4 v 4, first team to 40 kills or most kills after 5 min
@@ -388,13 +388,17 @@ function tickRooms(t, dt) {
 // ordered and reliable, so deltas are safe); positions use 1 byte per axis while the move fits.
 // The host gets every human every tick (it aims the bots at them). Shots ride along in the shooter's record.
 // Layout (little endian):
-//   u8 4, u8 flags (1: info block), u32 server ms, [info: u16 clock*10, u16 scoreA, u16 scoreB, u8 alive, u16 zoneNext*10, u16 zoneShrink*10],
-//   u8 n, n records: u8 slot, u8 mask, then by mask bit:
-//     1 pos delta i8 x3 (2 cm)   2 pos i16 x3 (2 cm)   [1|2 and not 16: u8 position age, 2 ms steps]   4 yaw: i8 change (2pi/4096), or -128 + u16 absolute
+//   u8 5, u8 flags (1: info block, 2: slot bitmap), u32 server ms, [info: u16 clock*10, u16 scoreA, u16 scoreB, u8 alive, u16 zoneNext*10, u16 zoneShrink*10],
+//   then either (no flag 2) u8 n and n records "u8 slot, u8 mask, ..." or (flag 2) u8 nb, nb bytes of slot bitmap (bit i = slot i)
+//   and one record "u8 mask, ..." per set bit, in slot order (whichever is shorter). After the mask, by mask bit:
+//     1 pos delta i8 x3 (2 cm)   2 pos i16 x3 (2 cm)   1|2 both: pos delta i8 x, i8 z (height unchanged)
+//     [any of 1|2 and not 16: u8 position age, 2 ms steps]   4 yaw: i8 change (2pi/4096), or -128 + u16 absolute
 //     8 pitch i8 (1/80 rad)   16 (with 1|2) the position age byte is left out: same as the last one in this snapshot   32 flags u8 (alive | fl<<1)
 //     64 shot: u8 count, u16 yaw, i8 pitch (1/120 rad), u8 range m   128 hold: u8, the previous position held until this long ago (4 ms steps)
-const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = TICK, POS_STEP = 50;
-let tickN = 0, out = Buffer.alloc(8192);
+// Past NEAR_A, small turns are left out (YAW_DB, PITCH_DB): a few degrees can't be seen at that range and the error never grows past it.
+const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = TICK, POS_STEP = 50, YAW_DB = 23, PITCH_DB = 3;
+let tickN = 0, out = Buffer.alloc(8192), out2 = Buffer.alloc(8192), recAt = new Int32Array(256);
+const bySl = (a, b) => a.sl - b.sl;
 const stats = { snapBytes: 0, snaps: 0, tickMs: 0, ticks: 0, hits: 0, inBytes: 0, packets: 0 };
 const q16 = v => Math.max(-32768, Math.min(32767, Math.round(v)));
 const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
@@ -412,15 +416,15 @@ function onShot(e, a, b) {                                                      
   e.shotPi = Math.max(-127, Math.min(127, Math.round(Math.atan2(dy, h) * 120))); e.shotD = Math.min(255, Math.round(Math.hypot(h, dy)));
 }
 function snapRoom(r, t) {
-  const list = [...r.ents.values()], n = list.length;
+  const list = [...r.ents.values()].sort(bySl), n = list.length;              // slot order (the bitmap form needs it)
   for (const e of list) quant(e);
   tickN++;
   const br = isBr(r);
   for (const rc of list) {
     if (rc.bot || rc.ws.readyState !== 1) continue;
-    if (out.length < 32 + n * 24) out = Buffer.alloc(32 + n * 48);
+    if (out.length < 64 + n * 24) { out = Buffer.alloc(64 + n * 48); out2 = Buffer.alloc(64 + n * 48); }
     const host = rc.id === r.host, px = rc.p[0], pz = rc.p[2], all = !rc.alive, seen = rc.seen;
-    let k = 0; out[k++] = 4; const info = (tickN - (rc.info | 0)) >= INFO_EVERY; out[k++] = info ? 1 : 0; out.writeUInt32LE(Math.round(t * 1000) >>> 0, k); k += 4;
+    let k = 0; out[k++] = 5; const info = (tickN - (rc.info | 0)) >= INFO_EVERY; out[k++] = info ? 1 : 0; out.writeUInt32LE(Math.round(t * 1000) >>> 0, k); k += 4;
     if (info) {
       rc.info = tickN;
       out.writeUInt16LE(Math.round(r.clock * 10), k); out.writeUInt16LE(r.score.A, k + 2); out.writeUInt16LE(r.score.B, k + 4); k += 6;
@@ -439,16 +443,19 @@ function snapRoom(r, t) {
       if (s[9] < 0) mask = 2 | 4 | 8 | 32;                                              // first time: everything, absolute
       else {
         dx = q[0] - s[0]; dy = q[1] - s[1]; dz = q[2] - s[2];
-        if (dx || dy || dz) mask |= (dx >= -127 && dx <= 127 && dy >= -127 && dy <= 127 && dz >= -127 && dz <= 127) ? 1 : 2;
-        if (q[3] !== s[3]) mask |= 4; if (q[4] !== s[4]) mask |= 8; if (q[6] !== s[6]) mask |= 32;
+        if (dx || dy || dz) mask |= (dx >= -127 && dx <= 127 && dy >= -127 && dy <= 127 && dz >= -127 && dz <= 127) ? (dy ? 1 : 3) : 2;
+        const dyw = Math.abs(((q[3] - s[3] + 6144) % 4096) - 2048), dpi = Math.abs(q[4] - s[4]), near = all || d2 < NEAR_A * NEAR_A;
+        if (dyw && (near || dyw >= YAW_DB)) mask |= 4; if (dpi && (near || dpi >= PITCH_DB)) mask |= 8; if (q[6] !== s[6]) mask |= 32;
         if (q[7] !== s[7]) mask |= 64;
       }
       if (!mask) continue;                                                                   // nothing new: costs nothing
       const c = e.cq, hold = (mask & 3) && s[9] >= 0 && s[0] === c[3] && s[1] === c[4] && s[2] === c[5] && e.holdT > s[10] + 0.06;
       if (hold) mask |= 128;                                                                 // it stood still a while: say until when, so the client doesn't glide
-      out[k++] = e.sl; const mAt = k; out[k++] = mask;
-      if (mask & 1) { out.writeInt8(dx, k); out.writeInt8(dy, k + 1); out.writeInt8(dz, k + 2); k += 3; }
-      if (mask & 2) { out.writeInt16LE(q[0], k); out.writeInt16LE(q[1], k + 2); out.writeInt16LE(q[2], k + 4); k += 6; }
+      recAt[cnt] = k; out[k++] = e.sl; const mAt = k; out[k++] = mask;
+      const pm = mask & 3;
+      if (pm === 1) { out.writeInt8(dx, k); out.writeInt8(dy, k + 1); out.writeInt8(dz, k + 2); k += 3; }
+      else if (pm === 3) { out.writeInt8(dx, k); out.writeInt8(dz, k + 1); k += 2; }
+      else if (pm === 2) { out.writeInt16LE(q[0], k); out.writeInt16LE(q[1], k + 2); out.writeInt16LE(q[2], k + 4); k += 6; }
       if (mask & 3) {                                                                        // how old this position is (2 ms steps); 16: same as the record before
         const age = Math.min(255, Math.max(0, Math.round((t - e.posT) * 500)));
         if (age === lastAge) out[mAt] |= 16; else { out[k++] = age; lastAge = age; }
@@ -461,11 +468,21 @@ function snapRoom(r, t) {
       if (mask & 8) out.writeInt8(q[4], k++);
       if (mask & 32) out[k++] = q[6];
       if (mask & 64) { out[k++] = Math.min(255, q[7] - s[7]); out.writeUInt16LE(e.shotYaw | 0, k); out.writeInt8(e.shotPi | 0, k + 2); out[k + 3] = e.shotD | 0; k += 4; }
-      for (let j = 0; j < 8; j++) s[j] = q[j]; s[8] = tickN; s[9] = 1; if (mask & 3) s[10] = e.posT; cnt++;
+      for (let j = 0; j < 8; j++) if (j !== 3 && j !== 4) s[j] = q[j]; if (mask & 4) s[3] = q[3]; if (mask & 8) s[4] = q[4];   // left-out turns stay as the client has them
+      s[8] = tickN; s[9] = 1; if (mask & 3) s[10] = e.posT; cnt++;
     }
     out[nAt] = cnt;
     if (!cnt && !info) { if (rc.ws.q?.length) { flush(rc.ws, null); pending.delete(rc.ws); } continue; }   // nothing changed: no snapshot at all
-    flush(rc.ws, Buffer.from(out.subarray(0, k))); pending.delete(rc.ws);
+    let pk = out.subarray(0, k);
+    const nb = cnt ? (out[recAt[cnt - 1]] >> 3) + 1 : 0;                              // bitmap bytes up to the highest slot sent
+    if (nb < cnt) {                                                                    // the bitmap is shorter than one slot byte per record
+      out.copy(out2, 0, 0, nAt); out2[1] |= 2; let j = nAt; out2[j++] = nb; out2.fill(0, j, j + nb);
+      for (let i = 0; i < cnt; i++) { const a = recAt[i], sl = out[a]; out2[j + (sl >> 3)] |= 1 << (sl & 7); }
+      let w = j + nb; recAt[cnt] = k;
+      for (let i = 0; i < cnt; i++) { out.copy(out2, w, recAt[i] + 1, recAt[i + 1]); w += recAt[i + 1] - recAt[i] - 1; }
+      pk = out2.subarray(0, w); k = w;
+    }
+    flush(rc.ws, Buffer.from(pk)); pending.delete(rc.ws);
     stats.snapBytes += k; stats.snaps++; outBy.snap = (outBy.snap || 0) + k;
   }
 }

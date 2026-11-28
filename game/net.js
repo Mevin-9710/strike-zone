@@ -1,6 +1,6 @@
 // Online play: the WebSocket link to the Blastline server (server/server.mjs) + snapshot interpolation.
 // The game logic for online matches lives in game.js (section "online"); this file only moves messages.
-export const NET_VERSION = 1;
+export const NET_VERSION = 2;
 let TICK = 1 / 15;                                      // server snapshot interval (s); the server says in 'welcome'
 const JITTER = 0.04;                                    // least extra delay that hides late packets (it grows with the measured lateness); an entity sent every `iv` ticks is drawn TICK*iv + that in the past
 const BUF = 16;                                         // samples kept per entity
@@ -135,8 +135,8 @@ export function createNet() {
   }
   // binary snapshot (layout in server/server.mjs, "binary snapshots"): applies the deltas, fills the interpolation buffers
   function snapBin(ab) {
-    const d = new DataView(ab), L = d.byteLength; if (L < 7 || d.getUint8(0) !== 4) return false;
-    const info = d.getUint8(1) & 1, st = d.getUint32(2, true) / 1000, now = performance.now() / 1000; let o = 6;
+    const d = new DataView(ab), L = d.byteLength; if (L < 7 || d.getUint8(0) !== 5) return false;
+    const fl = d.getUint8(1), info = fl & 1, st = d.getUint32(2, true) / 1000, now = performance.now() / 1000; let o = 6;
     const off = now - st;                                                              // clock sync: the smallest delay seen, creeping up slowly
     if (!N.offOk || off < N.off || off - N.off > 5) { if (!N.offOk) N.offS = off; N.off = off; N.offOk = true; } else N.off += (off - N.off) * 0.002;
     const lt = Math.min(0.4, off - N.off), dl = lt - N.lateM; N.lateM += dl * 0.03; N.lateV += (dl * dl - N.lateV) * 0.03;
@@ -146,12 +146,18 @@ export function createNet() {
       const al = d.getUint8(o + 6); if (N.br) { N.alive = al; const zn = d.getUint16(o + 7, true) / 10, zs = d.getUint16(o + 9, true) / 10; if (Z.to) { if (zs > 0) Z.t1 = now + zs; Z.next = now + zn; } }
       o += 11;
     }
-    const n = d.getUint8(o++); let lastAge = 0;
-    for (let r = 0; r < n && o + 2 <= L; r++) {
-      const e = N.slots[d.getUint8(o)], mask = d.getUint8(o + 1); o += 2;
+    const bm = fl & 2, n = d.getUint8(o++), bAt = o, nbits = bm ? n * 8 : 0; let lastAge = 0, bi = -1;
+    if (bm) o += n;                                                                    // slot bitmap: one record per set bit, in slot order
+    for (let r = 0; ; r++) {
+      let sl;
+      if (bm) { do bi++; while (bi < nbits && !((d.getUint8(bAt + (bi >> 3)) >> (bi & 7)) & 1)); if (bi >= nbits) break; sl = bi; }
+      else { if (r >= n || o + 2 > L) break; sl = d.getUint8(o++); }
+      if (o >= L) break;
+      const e = N.slots[sl], mask = d.getUint8(o++), pm = mask & 3;
       const q = e ? e.q : SCRATCH; let age = 0, hold = -1;
-      if (mask & 1) { q[0] += d.getInt8(o); q[1] += d.getInt8(o + 1); q[2] += d.getInt8(o + 2); o += 3; }
-      if (mask & 2) { q[0] = d.getInt16(o, true); q[1] = d.getInt16(o + 2, true); q[2] = d.getInt16(o + 4, true); o += 6; }
+      if (pm === 1) { q[0] += d.getInt8(o); q[1] += d.getInt8(o + 1); q[2] += d.getInt8(o + 2); o += 3; }
+      else if (pm === 3) { q[0] += d.getInt8(o); q[2] += d.getInt8(o + 1); o += 2; }     // height unchanged
+      else if (pm === 2) { q[0] = d.getInt16(o, true); q[1] = d.getInt16(o + 2, true); q[2] = d.getInt16(o + 4, true); o += 6; }
       if (mask & 3) { if (!(mask & 16)) lastAge = d.getUint8(o++) / 500; age = lastAge; }
       if (mask & 128) hold = d.getUint8(o++) / 250;
       if (mask & 4) { const dy = d.getInt8(o++); if (dy === -128) { q[3] = d.getUint16(o, true); o += 2; } else q[3] = (q[3] + dy + 4096) & 4095; }
@@ -160,7 +166,7 @@ export function createNet() {
       let sh = 0, sy = 0, sp = 0, sd = 0;
       if (mask & 64) { sh = d.getUint8(o); sy = d.getUint16(o + 1, true); sp = d.getInt8(o + 3); sd = d.getUint8(o + 4); o += 5; }
       if (!e) continue;
-      if (mask & 2) e.has = true; if (!e.has) continue;                                // a delta without a base (should not happen): wait for a full record
+      if (pm === 2) e.has = true; if (!e.has) continue;                                // a delta without a base (should not happen): wait for a full record
       e.alive = !!(q[6] & 1);
       const b = e.buf, last = b.length ? b[b.length - 1] : null;
       let t = (mask & 3) ? st - age : last ? Math.max(last[0], st - TICK) : st;         // position records carry when they were captured
