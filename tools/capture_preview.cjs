@@ -5,9 +5,9 @@
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const [out = 'media/raw/preview', W = '1920', H = '1080', scenesArg = 'lantern,neon,belltower', secsArg = '6'] = process.argv.slice(2);
-const MAPS = { belltower: 0, lantern: 1, neon: 2, sandkeep: 3, sunbreak: 4, skyline: 5 };
-const PRIMARY = { lantern: 'ar7_lance', neon: 'kestrel_bp', belltower: 'grinder_lmg', sandkeep: 'warden_br', sunbreak: 'ar7_lance', skyline: 'kestrel_bp' };
-// a scene may name a mode: 'sunbreak:hill' (dm | tdm | gun | hill); the clip file keeps the map name
+const MAPS = { belltower: 0, lantern: 1, neon: 2, sandkeep: 3 };
+const PRIMARY = { lantern: 'ar7_lance', neon: 'kestrel_bp', belltower: 'grinder_lmg', sandkeep: 'warden_br' };
+// a scene may name a mode: 'lantern:hill' (dm | tdm | gun | hill); the clip file keeps the map name
 const MODE = (m) => ({ sz_teams: +(m === 'tdm' || m === 'hill'), sz_gun: +(m === 'gun'), sz_hill: +(m === 'hill') });
 fs.mkdirSync(out, { recursive: true });
 
