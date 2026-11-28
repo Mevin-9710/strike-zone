@@ -1,6 +1,6 @@
 # Blastline online server
 
-One small Node process (`server.mjs`, only dependency: `ws`). It runs the rooms for online Team Deathmatch and Hold the Hill.
+One small Node process (`server.mjs`, only dependency: `ws`). It runs the rooms for online Team Deathmatch, Hold the Hill and Battle Royale.
 
 ## What it does
 - **Rooms of 8 (4 v 4).** A player who presses PLAY drops straight into a running room of that mode (the fullest one first, so people meet). No room? A new one starts at once.
@@ -8,6 +8,7 @@ One small Node process (`server.mjs`, only dependency: `ws`). It runs the rooms 
 - **Who runs the bots.** The player who has been in the room longest (the "host") runs the bot AI in their game and streams the bots to the server. If the host leaves, the next player takes over.
 - **Server-checked hits.** Your game says "I hit X for N damage"; the server checks the damage fits the gun, the range is possible, and the fire rate is real, then applies it. The server owns everyone's health, kills, team scores, the clock and Hold the Hill scoring.
 - **Rounds.** 5 minutes, or first team to 40 kills (TDM) / 100 hill points. After 12 s on the end screen the same room starts the next round on a new map (CrazyGames: the same group keeps playing).
+- **Battle royale** (Island Ring map): 24 players by default (`BR_SIZE=50` to raise it), everyone for themselves, one life each. Bots fill only during the first 40 s, the drop. The server runs the shrinking zone (5 phases) and its damage, the loot pickups (first come first served), armor and the placement. The round ends when one player is left.
 - `GET /` on the same port returns `{ ok, players, rooms }` (the lobby shows "N ONLINE").
 
 ## Run it locally
