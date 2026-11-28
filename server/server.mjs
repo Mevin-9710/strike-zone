@@ -417,7 +417,17 @@ function onShot(e, a, b) {                                                      
   e.shotN = (e.shotN | 0) + 1; e.shotYaw = Math.round((Math.atan2(dx, dz) + Math.PI) / (2 * Math.PI) * 65536) & 65535;
   e.shotPi = Math.max(-127, Math.min(127, Math.round(Math.atan2(dy, h) * 120))); e.shotD = Math.min(255, Math.round(Math.hypot(h, dy)));
 }
+// Mid-range pairs behind walls go at the far rate. Line of sight per pair of slots, re-checked about every LOS_EVERY ticks
+// (spread out, at most LOS_BUDGET checks a tick per room; a pair not checked yet counts as visible).
+const LOS_EVERY = 8, LOS_BUDGET = 120;
+function seesMid(r, a, b) {
+  const i = a.sl < b.sl ? a.sl * 256 + b.sl : b.sl * 256 + a.sl;
+  if (!r.vis) { r.vis = new Uint8Array(65536); r.visT = new Int32Array(65536).fill(-1e6); r.visN = 0; }
+  if (tickN - r.visT[i] >= LOS_EVERY && r.visN < LOS_BUDGET) { r.visN++; r.visT[i] = tickN; r.vis[i] = losMap(r.map, a.p, b.p) || losMap(r.map, b.p, a.p) ? 0 : 1; }
+  return r.vis[i] === 0;
+}
 function snapRoom(r, t) {
+  r.visN = 0;
   const list = [...r.ents.values()].sort(bySl), n = list.length;              // slot order (the bitmap form needs it)
   for (const e of list) quant(e);
   tickN++;
@@ -437,7 +447,8 @@ function snapRoom(r, t) {
     for (const e of list) {
       if (e === rc || cnt >= 255) continue;
       const d2 = (e.p[0] - px) ** 2 + (e.p[2] - pz) ** 2;
-      const iv = all || (host && !e.bot) || d2 < NEAR_A * NEAR_A ? 1 : d2 < NEAR_B * NEAR_B ? 2 : FAR_IV;   // dead receivers spectate anywhere: everyone at full rate
+      let iv = all || (host && !e.bot) || d2 < NEAR_A * NEAR_A ? 1 : d2 < NEAR_B * NEAR_B ? 2 : FAR_IV;   // dead receivers spectate anywhere: everyone at full rate
+      if (iv === 2 && br && !seesMid(r, rc, e)) iv = FAR_IV;                           // mid range behind walls: the far rate
       if (iv > 1 && tickN % iv) continue;                                             // all on the same ticks: a player with nobody close gets no packet at all in between
       const q = e.q; let s = seen.get(e.id);
       if (!s) { s = new Float64Array(11); s[9] = -1; seen.set(e.id, s); }
