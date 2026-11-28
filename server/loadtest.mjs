@@ -23,8 +23,8 @@ function fakeClient(mode, room, tight, onWelcome) {
     ws.on('message', (d, bin) => {
       c.inB += d.length; if (bin) return;
       const m = JSON.parse(d);
-      if (m.t === 'welcome') { c.id = m.you; c.host = m.host; c.room = m.room; for (const e of m.ents) if (e.bot) c.bots.add(e.id); ws.send(JSON.stringify({ t: 'r', p: c.p })); res(c); }
-      else if (m.t === 'add' && m.e.bot) c.bots.add(m.e.id);
+      if (m.t === 'welcome') { c.id = m.you; c.host = m.host; c.room = m.room; c.sl = m.ents.find(e => e.id === m.you).sl; c.slot = new Map(); for (const e of m.ents) { c.slot.set(e.id, e.sl); if (e.bot) c.bots.add(e.id); } ws.send(JSON.stringify({ t: 'r', p: c.p })); res(c); }
+      else if (m.t === 'add') { c.slot.set(m.e.id, m.e.sl); if (m.e.bot) c.bots.add(m.e.id); }
       else if (m.t === 'del') c.bots.delete(m.id);
       else if (m.t === 'host') c.host = m.on !== false;
       else if (m.t === 'kill' && m.v === c.id && mode !== 'br') setTimeout(() => ws.readyState === 1 && ws.send(JSON.stringify({ t: 'r', p: c.p })), 2000);
@@ -34,17 +34,20 @@ function fakeClient(mode, room, tight, onWelcome) {
   });
 }
 const botPos = new Map();
-function drive(clients, all) {                                         // 20 Hz like the game: state, bots (host), shots and hits now and then
-  const buf = Buffer.alloc(3 + 14 * 64);
+function drive(clients, all) {                                         // 20 Hz like the game: state, bots (host), shots and hits now and then (binary, as game/net.js sends)
+  const buf = Buffer.alloc(6 + 11 * 255), st = Buffer.alloc(16), sh = Buffer.alloc(14), t0 = performance.now();
+  const shot = (c, sl, a, b) => { sh[0] = 5; sh[1] = sl; [a[0], a[1], a[2], b[0], b[1], b[2]].forEach((v, i) => sh.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(v * 50))), 2 + i * 2)); c.ws.send(sh); };
   return setInterval(() => {
+    const ms = Math.round(performance.now() - t0) >>> 0;
     for (const c of clients) {
       if (c.ws.readyState !== 1) continue;
       c.v[0] += (Math.random() - 0.5) * 0.4; c.v[1] += (Math.random() - 0.5) * 0.4; c.v[0] *= 0.95; c.v[1] *= 0.95;
-      c.p[0] += c.v[0] * 0.25; c.p[2] += c.v[1] * 0.25;
-      c.ws.send(JSON.stringify({ t: 's', p: c.p.map(v => +v.toFixed(2)), y: Math.random() * 6 - 3, pi: 0, sp: 3.2, w: 'ar7_lance' }));
+      c.p[0] += c.v[0] * 0.25; c.p[2] += c.v[1] * 0.25; c.yaw = (c.yaw || 0) + (Math.random() - 0.5) * 0.2;
+      st[0] = 4; st.writeUInt32LE(ms, 1); st.writeInt16LE(Math.round(c.p[0] * 50), 5); st.writeInt16LE(Math.round(c.p[1] * 50), 7); st.writeInt16LE(Math.round(c.p[2] * 50), 9);
+      st.writeUInt16LE(Math.round((c.yaw % 6.283 + 6.283) % 6.283 / 6.283 * 65535), 11); st.writeInt8(0, 13); st[14] = 32; st[15] = 3; c.ws.send(st);
       if (Math.random() < 0.15) {                                                     // ~3 shots a second, every 3rd one hits someone
         const tg = all[(Math.random() * all.length) | 0];
-        c.ws.send(JSON.stringify({ t: 'f', s: c.id, a: c.p, b: tg.p, w: 'ar7_lance' }));
+        shot(c, c.sl, c.p, tg.p);
         if (tg !== c && tg.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s: c.id, v: tg.id, d: 1, hd: 0, w: 'ar7_lance' }));
       }
       if (c.host && c.bots.size) {
@@ -52,13 +55,12 @@ function drive(clients, all) {                                         // 20 Hz 
         for (const id of c.bots) {
           let p = botPos.get(id); if (!p) botPos.set(id, p = [c.p[0] + (Math.random() - 0.5) * 120, 0.2, c.p[2] + (Math.random() - 0.5) * 120]);
           p[0] += (Math.random() - 0.5) * 0.3; p[2] += (Math.random() - 0.5) * 0.3;
-          const o = 3 + n * 14; buf.writeUInt32LE(id, o); buf.writeInt16LE(Math.round(p[0] * 50), o + 4); buf.writeInt16LE(10, o + 6); buf.writeInt16LE(Math.round(p[2] * 50), o + 8); buf.writeInt16LE(0, o + 10); buf[o + 12] = 30; buf[o + 13] = 0; n++;
-          if (n >= 64) break;
+          const o = 6 + n * 11; buf[o] = c.slot.get(id); buf.writeInt16LE(Math.round(p[0] * 50), o + 1); buf.writeInt16LE(10, o + 3); buf.writeInt16LE(Math.round(p[2] * 50), o + 5); buf.writeUInt16LE(30000, o + 7); buf[o + 9] = 30; buf[o + 10] = 0; n++;
         }
-        buf[0] = 2; buf.writeUInt16LE(n, 1); c.ws.send(buf.subarray(0, 3 + n * 14));
+        buf[0] = 6; buf.writeUInt32LE(ms, 1); buf[5] = n; c.ws.send(buf.subarray(0, 6 + n * 11));
         if (Math.random() < 0.3) {                                                    // bots shoot too: ~6 shots/s per room, a third hit
           const s = [...c.bots][(Math.random() * c.bots.size) | 0], v = all[(Math.random() * all.length) | 0];
-          c.ws.send(JSON.stringify({ t: 'f', s, a: botPos.get(s) || c.p, b: v.p, w: '' }));
+          shot(c, c.slot.get(s), botPos.get(s) || c.p, v.p);
           if (v.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s, v: v.id, d: 1, hd: 0 }));
         }
       }
@@ -85,7 +87,10 @@ function drive(clients, all) {                                         // 20 Hz 
     const s1 = await stats(), c1 = cpuOf(srv.pid), dt = (performance.now() - t0) / 1000, in1 = clients.reduce((a, c) => a + c.inB, 0);
     const row = { step, players: nRooms * humans, ents: s1.ents, cpu: +((c1 - c0) / dt * 100).toFixed(1), tickMs: +((s1.tickMs - s0.tickMs) / (s1.ticks - s0.ticks)).toFixed(2),
       outKBs: +((in1 - in0) / dt / 1024).toFixed(0), perPlayerKBs: +((in1 - in0) / dt / 1024 / clients.length).toFixed(1), inKBs: +((s1.inBytes - s0.inBytes) / dt / 1024).toFixed(0),
-      snapB: Math.round((s1.snapBytes - s0.snapBytes) / Math.max(1, s1.snaps - s0.snaps)), memMB: s1.mem, hitsS: +((s1.hits - s0.hits) / dt).toFixed(0) };
+      pktS: +((s1.packets - s0.packets) / dt / clients.length).toFixed(1),
+      wireKBs: +(((in1 - in0) / dt + (s1.packets - s0.packets) / dt * 70) / 1024 / clients.length).toFixed(1),   // + ~70 B TCP/IP+TLS+WS headers per packet
+      snapB: Math.round((s1.snapBytes - s0.snapBytes) / Math.max(1, s1.snaps - s0.snaps)),
+      by: Object.fromEntries(Object.keys(s1.outBy).map(k => [k, +((s1.outBy[k] - (s0.outBy[k] || 0)) / dt / 1024 / clients.length).toFixed(2)]).filter(x => x[1] > 0.05)), memMB: s1.mem, hitsS: +((s1.hits - s0.hits) / dt).toFixed(0) };
     rows.push(row); console.log(JSON.stringify(row));
     clearInterval(timer); for (const c of clients) c.ws.terminate(); srv.kill(); await sleep(500);
   }

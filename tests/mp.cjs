@@ -57,6 +57,16 @@ const until = (pg, fn, arg, ms = 30000) => pg.waitForFunction(fn, arg, { timeout
     const posA = (await A.pg.evaluate(() => __game.state.pos)), seen = await B.pg.evaluate(id => __game.netObj(id), a.me);
     const dd = seen ? Math.hypot(seen.pos[0] - posA[0], seen.pos[2] - posA[2]) : 99;
     check('host position reaches the phone (interpolated, < 1.5 m off)', dd < 1.5, `d=${dd.toFixed(2)}`);
+    // movement: the host walks a straight line at 5 m/s; the phone's puppet must follow it smoothly (no stalls or jumps)
+    const walk = await A.pg.evaluate(() => { const p = __game.state.pos, x0 = p[0], z0 = p[2], t0 = performance.now() / 1000;
+      window.__walkFn = (pos, t) => { const d = 2.5 - Math.abs(((t - t0) * 5) % 10 - 5); pos.x = x0 + d; pos.z = z0; }; return [x0, z0]; });
+    const tr = await B.pg.evaluate(id => new Promise(res => { const N = __game.NET; N.trace = []; N.traceId = id; setTimeout(() => { N.traceId = 0; res(N.trace.map(q => [q[0], q[1], q[2]])); }, 4000); }), a.me);
+    await A.pg.evaluate(() => { window.__walkFn = null; });
+    const lo = Math.min(...tr.map(q => q[1])), hi = Math.max(...tr.map(q => q[1])), span = hi - lo;
+    const sp = []; for (let i = 1; i < tr.length; i++) { const dt = (tr[i][0] - tr[i - 1][0]) / 1000, x = (tr[i][1] + tr[i - 1][1]) / 2; if (dt > 0 && x > lo + 0.6 && x < hi - 0.6) sp.push(Math.hypot(tr[i][1] - tr[i - 1][1], tr[i][2] - tr[i - 1][2]) / dt); }   // skip the turn-arounds
+    const mid = sp, mean = mid.reduce((x, y) => x + y, 0) / Math.max(1, mid.length);
+    const jerk = mid.filter(v => Math.abs(v - 5) > 2.5).length / Math.max(1, mid.length);
+    check('a walking player moves smoothly on other screens (5 m/s, few jumps)', span > 3 && Math.abs(mean - 5) < 1.2 && jerk < 0.2, JSON.stringify({ span: +span.toFixed(1), mean: +mean.toFixed(2), jerk: +jerk.toFixed(2), frames: tr.length, from: walk }));
 
     // 4. a real shot: the host stands next to the phone player and fires; the server applies the damage
     const pB = await B.pg.evaluate(() => __game.state.pos);

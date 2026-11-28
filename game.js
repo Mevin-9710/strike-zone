@@ -2335,7 +2335,7 @@ function frame(now) {
 // Teams: the server says A or B; locally your team is always "blue" (allies array) and the map is flipped for team B so
 // your base is the blue end. Other players and (unless you are the host) the bots are puppets: Enemy models driven by
 // snapshots, no AI. The host (longest-connected player) runs the bot AI and streams the bots to everyone.
-const NET = createNet(), mpUrl = () => serverUrl(Q, RC), _np = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, sp: 0, fl: 0 };
+const NET = createNet(), mpUrl = () => serverUrl(Q, RC), _np = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, sp: 0, fl: 0, shot: 0, shotYaw: 0, shotPitch: 0, shotD: 0 };
 let netOnlineN = 0;
 const otherTeam = t => t === 'A' ? 'B' : 'A';
 function netMsgBox(txt) {                                                          // small centred status line (connecting / lost)
@@ -2493,8 +2493,9 @@ function brHumans() {
   _brHumN = 0; if (player.alive) _brHum[_brHumN++] = player.pos;
   for (const e of enemies) if (e.net && e.human && e.alive && e.netOk) _brHum[_brHumN++] = e.pos;
 }
+function brNearestHuman(e) { let d = 1e9; for (let i = 0; i < _brHumN; i++) { const p = _brHum[i], q = (p.x - e.pos.x) ** 2 + (p.z - e.pos.z) ** 2; if (q < d) d = q; } return d; }   // squared m
 function brLodPer(e) {
-  let d = 1e9; for (let i = 0; i < _brHumN; i++) { const p = _brHum[i], q = (p.x - e.pos.x) ** 2 + (p.z - e.pos.z) ** 2; if (q < d) d = q; }
+  const d = brNearestHuman(e);
   const c = e.state === 'combat';
   return d < 3600 ? 1 : d < 16900 ? (c ? 2 : 3) : (c ? 3 : 6);
 }
@@ -2542,7 +2543,13 @@ function netObj(id, any) {                                                      
 function netPuppetTick(e, dt) {
   e.mixer.update(dt);
   if (!NET.pose(e.nid, _np) || _np.y < -40) { e.root.visible = e.netOk = false; return; }
-  e.root.visible = e.netOk = true;                                                // (render() still frustum-culls it) e.pos.set(_np.x, _np.y, _np.z); e.yaw = _np.yaw; e.flinch = Math.max(0, e.flinch - dt * 6);
+  e.root.visible = e.netOk = true;                                                // (render() still frustum-culls it)
+  e.pos.set(_np.x, _np.y, _np.z); e.yaw = _np.yaw; e.flinch = Math.max(0, e.flinch - dt * 6);
+  if (_np.shot) {                                                                  // shots ride in the snapshots: draw them as the puppet reaches that moment
+    const c = Math.cos(_np.shotPitch); _netA.set(e.pos.x, e.pos.y + 1.45 * RC.dmBotScale, e.pos.z);
+    _netB.set(_netA.x + Math.sin(_np.shotYaw) * c * _np.shotD, _netA.y + Math.sin(_np.shotPitch) * _np.shotD, _netA.z + Math.cos(_np.shotYaw) * c * _np.shotD);
+    e.shotK = 0.35; for (let i = Math.min(3, _np.shot); i > 0; i--) enemyFired(e, _netA, _netB, 0, null);
+  }
   e.shotK -= dt; const sp = _np.sp;
   e.play(e.shotK > 0 && sp < 2.6 ? e.cn('shoot') : sp > 2.6 ? e.cn('run') : sp > 0.2 ? e.cn('walk') : e.cn('idle'));
   const a = e.actions[e.clip]; if (a && /walk|run/.test(e.clip)) a.timeScale = clamp(sp / (e.clip.startsWith('run') ? 3.6 : 1.6), 0.5, 1.6);
@@ -2550,10 +2557,17 @@ function netPuppetTick(e, dt) {
 }
 function netPump() {                                                               // every frame: my state + (host) the bots
   if (!NET.ready || mode !== 'dm') return;
+  NET.frame();
   const t = performance.now() / 1000, sp = Math.hypot(player.vel.x, player.vel.z);
-  NET.sendState(t, player.alive ? player.pos : _netDead, player.yaw + Math.PI, player.pitch, sp, cur());
+  if (TEST && window.__walkFn) window.__walkFn(player.pos, t);                      // tests: a scripted walk, sampled right when the state goes out
+  NET.sendState(t, player.alive ? player.pos : _netDead, player.yaw + Math.PI, player.pitch, sp, cur(), player.alive);
   if (NET.host && NET.botsBegin(t)) {
-    for (const r of DM.roster) { const e = r.e; if (!e || !e.alive) continue; NET.bot(r.nid, e.pos.x, e.pos.y, e.pos.z, e.yaw, Math.hypot(e.vel.x, e.vel.z), e.state === 'combat' ? 1 : 0); }
+    const lod = DM.br; NET.botN = (NET.botN || 0) + 1;
+    for (const r of DM.roster) {
+      const e = r.e; if (!e || !e.alive) continue;
+      if (lod && (NET.botN + r.nid) % 4 && brNearestHuman(e) > 14400) continue;      // BR: bots over 120 m from every human go up at 5 Hz
+      NET.bot(r.nid, e.pos.x, e.pos.y, e.pos.z, e.yaw, Math.hypot(e.vel.x, e.vel.z), e.state === 'combat' ? 1 : 0);
+    }
     NET.botsSend();
   }
 }
