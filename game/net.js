@@ -13,7 +13,7 @@ export function serverUrl(Q, RC) {                      // ?mp=wss://host overri
 }
 
 const SNAP = { t: 'snap' }, SC = { A: 0, B: 0 }, ZC = [0, 0, 0], BOT_BUF = new ArrayBuffer(7 + 12 * 255), STILL = new Uint8Array(255), BV = new DataView(BOT_BUF);
-const UP = new ArrayBuffer(16), UV = new DataView(UP), SH = new ArrayBuffer(14), SV = new DataView(SH), HB = new ArrayBuffer(7), HV = new DataView(HB);
+const UP = new ArrayBuffer(16), UV = new DataView(UP), SH = new ArrayBuffer(14), SV = new DataView(SH), HB = new ArrayBuffer(11), HV = new DataView(HB);
 const DEC = new TextDecoder();
 const DM = { t: 'dmg', s: 0, v: 0, d: 0, hp: 0, ar: 0, hd: false, z: 0 };            // reused for every binary damage message
 // weapon ids in the server's WPN table order (server/server.mjs)
@@ -97,10 +97,11 @@ export function createNet() {
       SV.setUint8(0, 5); SV.setUint8(1, e.sl); SV.setInt16(2, q16(a.x * 50), true); SV.setInt16(4, q16(a.y * 50), true); SV.setInt16(6, q16(a.z * 50), true);
       SV.setInt16(8, q16(b.x * 50), true); SV.setInt16(10, q16(b.y * 50), true); SV.setInt16(12, q16(b.z * 50), true); N.ws.send(new Uint8Array(SH, 0, 14));
     },
-    hit(s, v, d, hd, w) {                                                          // binary: u8 8, u8 shooter slot, u8 victim slot, u16 damage*10, u8 flags, u8 weapon
+    hit(s, v, d, hd, w) {                                                          // binary: u8 8, u8 shooter slot, u8 victim slot, u16 damage*10, u8 flags, u8 weapon, u32 victim time
       const a = N.ents.get(s), b = N.ents.get(v); if (!a || !b || !N.ws || N.ws.readyState !== 1) return;
       HV.setUint8(0, 8); HV.setUint8(1, a.sl); HV.setUint8(2, b.sl); HV.setUint16(3, Math.min(65535, Math.round(d * 10)), true); HV.setUint8(5, hd ? 1 : 0); HV.setUint8(6, w ? Math.max(0, WPN_IDS.indexOf(w)) : 255);
-      N.ws.send(new Uint8Array(HB, 0, 7));
+      HV.setUint32(7, Math.round((performance.now() / 1000 - N.offS - b.del) * 1000) >>> 0, true);   // when the victim was where my screen showed it (server ms)
+      N.ws.send(new Uint8Array(HB, 0, 11));
     },
     // once per frame: the drawn clock follows the measured server clock without jumps (at most 5% faster or slower)
     frame() {

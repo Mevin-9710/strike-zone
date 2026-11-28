@@ -196,18 +196,19 @@ function hit(r, from, m) {
   const s = r.ents.get(m.s), v = r.ents.get(m.v); let d = Number(m.d);
   if (!s || !v || !s.alive || !v.alive || s.team === v.team || !(d > 0)) return;
   if (s.bot ? from.id !== r.host : s.id !== from.id) return;                         // you may only shoot as yourself; only the host shoots for bots
-  const t = now();
+  const t = now(), vt = Number(m.vt);                                               // vt: the moment of the victim the shooter's screen showed (server time)
+  const vp = vt > t - REWIND_MAX && vt < t ? posAt(v, vt, _vp) : null;
   if (t - v.spawnT < SPAWN_PROTECT) return;
   if (s.bot) {
     if (t - s.lastHit < BOT_MIN_GAP) return; d = Math.min(d, BOT_MAX_HIT);
   } else {
     const w = WPN[m.w] || WPN[s.w] || WPN.ar7_lance, [rpm, dmg, head, range] = w;
     if (d > dmg * head * DMG_SLACK) return reject(s, 'dmg');
-    if (dist(s.p, v.p) > range * RANGE_SLACK + 4) return reject(s, 'range');
+    if (Math.min(dist(s.p, v.p), vp ? dist(s.p, vp) : 1e9) > range * RANGE_SLACK + 4) return reject(s, 'range');
     s.hitLog = s.hitLog.filter(x => t - x < 1); s.hitLog.push(t);                  // fire rate: hits in the last second vs the gun's rpm
     if (s.hitLog.length > rpm / 60 * 1.5 + 2) return reject(s, 'rate');
   }
-  if (m.w !== 'blast' && !losMap(r.map, s.p, v.p)) return reject(s, 'wall');                  // splash damage (airstrike, barrels) goes round corners
+  if (m.w !== 'blast' && !losMap(r.map, s.p, v.p) && !(vp && losMap(r.map, s.p, vp))) return reject(s, 'wall');   // splash damage goes round corners; the victim may be where the shooter saw them
   s.lastHit = t; stats.hits++;
   if (isBr(r) && v.ar > 0) { const soak = Math.min(v.ar, d * 0.6); v.ar -= soak; d -= soak; }   // armor takes 60% of each hit until it is gone
   v.hp = Math.max(0, v.hp - d);
@@ -278,12 +279,24 @@ function capTime(e, ms) {                                                       
   if (e.coff == null || o < e.coff || o - e.coff > 5) e.coff = o; else e.coff += (o - e.coff) * 0.002;
   return Math.min(t, ms / 1000 + e.coff);
 }
+const HIST = 32, REWIND_MAX = 0.6;
+function posAt(e, t, out) {                                                               // where e was at server time t (from its recent uploads)
+  const h = e.hist; out[0] = e.p[0]; out[1] = e.p[1]; out[2] = e.p[2]; if (!h) return out;
+  let best = -1, bt = -1e9;
+  for (let k = 0; k < HIST; k++) { const ht = h[k * 4]; if (ht && ht <= t && ht > bt) { bt = ht; best = k; } }   // newest sample at or before t
+  if (best >= 0) { out[0] = h[best * 4 + 1]; out[1] = h[best * 4 + 2]; out[2] = h[best * 4 + 3]; }
+  return out;
+}
+const _vp = [0, 0, 0];
 function setPos(e, x, y, z, ct) {                                                         // a new position; remembers how long the old one held
   e.p = [x, y, z];
   const qx = q16(x * POS_STEP), qy = q16(y * POS_STEP), qz = q16(z * POS_STEP), c = e.cq || (e.cq = new Int32Array(6));
   if (qx !== c[0] || qy !== c[1] || qz !== c[2]) { c[3] = c[0]; c[4] = c[1]; c[5] = c[2]; c[0] = qx; c[1] = qy; c[2] = qz; e.holdT = e.confT || ct; e.posT = ct; }
+  const h = e.hist || (e.hist = new Float64Array(HIST * 4)), i = (e.hi = ((e.hi | 0) + 1) % HIST) * 4;   // recent positions (for hit checks against what the shooter saw)
+  h[i] = ct; h[i + 1] = x; h[i + 2] = y; h[i + 3] = z;
   e.confT = ct;
 }
+const unwrapMs = ms => { const t = now(), base = Math.round(t * 1000) >>> 0, d = ((ms - base) | 0) / 1000; return t + d; };   // u32 server ms -> server time
 const bySlot = (r, sl) => { for (const e of r.ents.values()) if (e.sl === sl) return e; return null; };
 function onBin(ws, b) {
   const e = ws.ent, r = ws.room; if (!e || !r || b.length < 2) return;
@@ -295,9 +308,10 @@ function onBin(ws, b) {
   } else if (b[0] === 5 && b.length >= 14) {
     const sh = b[1] === e.sl ? e : e.id === r.host ? bySlot(r, b[1]) : null; if (!sh || (sh !== e && !sh.bot)) return;
     onShot(sh, [b.readInt16LE(2) / 50, b.readInt16LE(4) / 50, b.readInt16LE(6) / 50], [b.readInt16LE(8) / 50, b.readInt16LE(10) / 50, b.readInt16LE(12) / 50]);
-  } else if (b[0] === 8 && b.length >= 7) {                                              // 8 a hit: u8 8, u8 shooter slot, u8 victim slot, u16 damage*10, u8 flags (1 head), u8 weapon
+  } else if (b[0] === 8 && b.length >= 7) {                                              // 8 a hit: u8 8, u8 shooter slot, u8 victim slot, u16 damage*10, u8 flags (1 head), u8 weapon, [u32 victim time, server ms]
     const sh = bySlot(r, b[1]), v = bySlot(r, b[2]); if (!sh || !v) return;
-    hit(r, e, { s: sh.id, v: v.id, d: b.readUInt16LE(3) / 10, hd: b[5] & 1, w: WPN_IDS[b[6]] });
+    const vt = b.length >= 11 ? unwrapMs(b.readUInt32LE(7)) : 0;
+    hit(r, e, { s: sh.id, v: v.id, d: b.readUInt16LE(3) / 10, hd: b[5] & 1, w: WPN_IDS[b[6]], vt });
   } else if (b[0] === 6 && b.length >= 6 && e.id === r.host) {
     const ct = capTime(e, b.readUInt32LE(1)), n = Math.min(b[5], ((b.length - 6) / 11) | 0);
     for (let i = 0, o = 6; i < n; i++, o += 11) {

@@ -14,7 +14,7 @@ Phase 1 (28 Nov 2026): online Team Deathmatch + Hold the Hill, 4 v 4, real playe
 - Smoothness (`game/net.js` `pose`): positions carry the time they were captured on the sender; the drawn clock is slewed (no jumps); the delay per entity covers the sample spacing plus the whole capture-to-screen lateness (mean + 2.5 sd, or 80% of the worst in the last 4-8 s), grows fast and shrinks slowly; when samples run out the puppet keeps going up to 0.1 s.
 - Server line of sight: `server/los.mjs` + `server/maps.json` (re-export with `tools/export_server_maps.cjs` after map changes).
 - Capacity: `node server/loadtest.mjs` (table in `server/README.md`). 50 humans in one BR match: about 3.3 KB/s per player on the wire (was ~50 KB/s in phase 1), 8% of one CPU core. Eliminated BR players get no records after the 4 s kill cam; mid-range players behind walls go at the far rate; the host gets no records of its own bots and sends unchanged bots as a slot list.
-- Tests: `tests/mp.cjs` (includes a smoothness check of a walking player), `tests/br.cjs`. Benches: `tools/net/` (jitter/stall proxy, smoothness with two browsers or a node walker, shot direction check, 50-slot decode check).
+- Tests: `tests/mp.cjs` (includes a smoothness check of a walking player), `tests/br.cjs`. Benches: `tools/net/` (jitter/stall proxy, smoothness with two browsers or a node walker, shot direction check, 50-slot decode check, hit rewind check).
 
 ## Next
 - Reconnect after a dropped connection, invite links tested on CrazyGames, 16-player rooms.
