@@ -36,13 +36,17 @@ Then point the game at it:
 ## Capacity (load test, server pinned to 1 CPU core)
     node server/loadtest.mjs        # simulated players; prints CPU, tick time, memory and bandwidth per step
 
-| Load | CPU (1 core) | Tick | RAM | Out |
+| Load | CPU (1 core) | RAM | Down per player | On the wire* |
 |---|---|---|---|---|
-| 1 BR room, 50 humans | 5% | 0.5 ms | 74 MB | 1.7 MB/s |
-| 4 BR rooms of 50 (160 humans + 40 bots) | 14% | 1.7 ms | 88 MB | 5.0 MB/s |
-| 25 TDM rooms of 8 (100 humans) | 4% | 0.6 ms | 82 MB | 0.5 MB/s |
+| 1 BR match, 50 humans | 3% | 83 MB | 3.7 KB/s | 4.8 KB/s |
+| 1 BR match, 10 humans + 40 bots | 2% | 67 MB | 2.6 KB/s | 3.6 KB/s |
+| 4 BR matches (160 humans + 40 bots) | 8% | 90 MB | 3.2 KB/s | 4.2 KB/s |
+| 25 TDM rooms of 8 (100 humans) | 4% | 81 MB | 0.9 KB/s | 1.9 KB/s |
 
-A BR player costs about 30 KB/s (about 110 MB per hour of play); a TDM player about 5 KB/s. On a 1 CPU / 1 GB VPS the network and the monthly traffic cap run out long before the CPU does.
+*payload plus about 70 bytes of TCP/IP, TLS and WebSocket headers per packet (15 packets a second).
+A BR player costs about 17 MB per hour of play on the wire (was about 110 MB before the 28 Nov bandwidth work).
+
+Bandwidth settings (env): `SNAP_HZ` (default 15 snapshots a second; 20 is a little more responsive, 10 saves another 25% but looks less smooth).
 
 ## Line of sight
 Hits are refused when walls block every line from the shooter to the victim (`los.mjs`, colliders in `maps.json`). After changing a map, rebuild it: `python3 tools/serve.py & node tools/export_server_maps.cjs`.

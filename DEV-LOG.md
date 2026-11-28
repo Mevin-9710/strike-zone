@@ -644,3 +644,15 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - `GET /stats`: snapshot bytes, tick time, hits, refusals by reason, memory.
 - Load test `server/loadtest.mjs` (server pinned to 1 core). Result: 4 full BR rooms (200 slots, 160 simulated humans) used 14% of one core, 1.7 ms per tick, 88 MB RAM. About 31 KB/s down per player in BR, 5 KB/s in TDM. Bandwidth is the limit, not CPU.
 - Tests: `tests/br.cjs` 18/18 (new: bots loot, LOS refusals under 25%, binary snapshot size, desktop takes over from a phone host), `tests/mp.cjs` 15/15.
+
+## BR bandwidth cut (28 Nov 2026 night, branch claude/project-thread-vvbk6z)
+- Measured first (`GET /stats` now has bytes per message type): per player in a 50-human BR match, shot messages 18 KB/s, snapshots 14 KB/s, damage 2 KB/s.
+- Snapshots v4 (`server/server.mjs` "binary snapshots"): entities as 1-byte room slots (`sl` in `pub`), delta coded per receiver (the socket is ordered, so deltas are safe), only changed fields, nothing at all for an unchanged entity, no snapshot when nothing changed. Rates by distance: under 50 m every tick, under 120 m every 2nd, else every 4th. 12-bit yaw sent as a 1-byte change. Speed dropped (clients work it out from positions). Zone, clock, scores and alive count once a second; clients run the zone and the clock locally from the `zone` events.
+- Shots are no longer messages: a count + direction + range ride in the shooter's snapshot record, and the tracer fires when the puppet reaches that moment. Damage is a 7-byte binary message, in BR only to the two players, the host and players within 160 m.
+- Uploads are binary too (state 16 B, shot 14 B, hit 7 B, host bots 11 B each); host bots more than 120 m from every human go up at 5 Hz.
+- Every message for a player waits for the tick and goes out with the snapshot in one packet (cork/uncork): about 70 B of headers per packet saved.
+- `SNAP_HZ` default 15 (was 20). The smoothness test passes at 15 and 20, not at 10.
+- Smoothness (`game/net.js`): positions carry the moment they were captured on the sender (clock offset learned per connection), so upload jitter does not become stutter. The drawn clock is slewed (at most 5% fast/slow). The per-entity delay adapts to the send rate, the sample spacing and the measured packet lateness (mean + 2 sd). Tested with a jitter proxy up to 150 ms.
+- Bug fixed: online puppets never moved (the `e.pos.set` line had ended up inside a comment in phase 1); the old mp test missed it because the host stood still. New check in `tests/mp.cjs`: a walking player must move at 5 m/s on the other screen with few jumps.
+- Online players who fired in the last few seconds stay visible past the 55-70 m enemy draw distance.
+- Result (load test, 1 core): 50 humans in one BR match 34 KB/s -> 3.7 KB/s per player (4.8 KB/s on the wire); 160 humans in 4 matches use 8% of the core.
