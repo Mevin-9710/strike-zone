@@ -5,8 +5,10 @@
 const { chromium } = require('playwright');
 const fs = require('fs'), path = require('path'), { execFileSync } = require('child_process');
 const [out = 'media/raw/preview', W = '1920', H = '1080', scenesArg = 'lantern,neon,belltower', secsArg = '6'] = process.argv.slice(2);
-const MAPS = { belltower: 0, lantern: 1, neon: 2 };
-const PRIMARY = { lantern: 'ar7_lance', neon: 'kestrel_bp', belltower: 'grinder_lmg' };
+const MAPS = { belltower: 0, lantern: 1, neon: 2, sandkeep: 3, sunbreak: 4, skyline: 5 };
+const PRIMARY = { lantern: 'ar7_lance', neon: 'kestrel_bp', belltower: 'grinder_lmg', sandkeep: 'warden_br', sunbreak: 'ar7_lance', skyline: 'kestrel_bp' };
+// a scene may name a mode: 'sunbreak:hill' (dm | tdm | gun | hill); the clip file keeps the map name
+const MODE = (m) => ({ sz_teams: +(m === 'tdm' || m === 'hill'), sz_gun: +(m === 'gun'), sz_hill: +(m === 'hill') });
 fs.mkdirSync(out, { recursive: true });
 
 const HELPERS = () => {
@@ -37,8 +39,9 @@ const HELPERS = () => {
   await pg.goto('http://localhost:8765/index.html?test=1');
   await pg.waitForFunction(() => window.__game?.ready, null, { timeout: 120000 });
   const fps = 30, secs = +secsArg;
-  for (const sc of scenesArg.split(',')) {
-    const t0 = Date.now();
+  for (const spec of scenesArg.split(',')) {
+    const [sc, mode = 'dm'] = spec.split(':'), t0 = Date.now();
+    await pg.evaluate((o) => { for (const [k, v] of Object.entries(o)) localStorage.setItem(k, v); }, MODE(mode));
     await pg.evaluate(async (id) => { const m = await import('./world/dm-maps.js'); await m.loadDmMap(id); }, sc);
     await pg.evaluate(([m, gun]) => { const g = __game; g.start(0, { mode: 'dm', dmMap: m, primary: gun }); g.auto?.();
       document.querySelectorAll('.toast,#hint,#ctlCard,#coach,.coach,#gate,#clickGate').forEach((n) => n.style.display = 'none');

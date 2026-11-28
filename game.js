@@ -781,7 +781,7 @@ function faceFoe() {                                                            
   for (let i = 0; i < 16; i++) {
     const yaw = fy + (i - 8) / 16 * Math.PI * 2; let free = 0;
     for (const d of [3, 6, 10, 15, 22]) { _spH.set(_spE.x - Math.sin(yaw) * d, _spE.y, _spE.z - Math.cos(yaw) * d); if (!world.lineClear(_spE, _spH)) break; free = d; }
-    const sc = free + Math.cos(yaw - fy) * 6; if (sc > bs) { bs = sc; by = yaw; }
+    const sc = free + Math.cos(yaw - fy) * 6 + (free >= 10 ? 8 : 0); if (sc > bs) { bs = sc; by = yaw; }   // strongly prefer 10 m+ of open view
   }
   player.yaw = by;
 }
