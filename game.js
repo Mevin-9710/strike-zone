@@ -1,4 +1,4 @@
-// Strike Zone: Season 1. Full game: maps + collision, rigged enemies with AI, first-person weapons,
+// Blastline (built on Strike Zone: Season 1). Full game: maps + collision, rigged enemies with AI, first-person weapons,
 // abilities that drive gameplay, objectives, story radio, style D HUD. See DEV-LOG.md.
 import { createFlow } from './game/menu-flow.js';
 import * as THREE from 'three';
@@ -1935,7 +1935,7 @@ function quitAsk() {
   let el = $('quitAsk');
   if (!el) {
     el = document.createElement('div'); el.id = 'quitAsk';
-    el.innerHTML = `<div class="qa"><h2>LEAVE THE MATCH?</h2><p>Your progress in this match will be lost.</p><div id="qaChips"></div><label for="qaText">How can we make Strike Zone better? <small>(optional)</small></label><textarea id="qaText" maxlength="500" rows="3" placeholder="Bugs, ideas, what felt bad…"></textarea><div class="qaB"><button id="qaStay" class="go">STAY</button><button id="qaLeave">LEAVE</button></div></div>`;
+    el.innerHTML = `<div class="qa"><h2>LEAVE THE MATCH?</h2><p>Your progress in this match will be lost.</p><div id="qaChips"></div><label for="qaText">How can we make Blastline better? <small>(optional)</small></label><textarea id="qaText" maxlength="500" rows="3" placeholder="Bugs, ideas, what felt bad…"></textarea><div class="qaB"><button id="qaStay" class="go">STAY</button><button id="qaLeave">LEAVE</button></div></div>`;
     document.body.append(el);
     el.querySelector('#qaText').addEventListener('keydown', e => e.stopPropagation());   // typing never triggers game keys
     $('qaStay').onclick = () => { el.classList.remove('show'); track('ui', { k: 'quitStay' }); };
@@ -2441,7 +2441,7 @@ function lobbyModes() {                                                         
   try { await loadAll(); }
   catch (e) { $('ltext').textContent = `Failed to load: ${e.message}`; errors.push(String(e)); return; }
   await rcP; applyRemote();
-  crazy.loading(false); stage('ready'); track('boot', { b: 46, load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
+  crazy.loading(false); stage('ready'); track('boot', { b: 100, g: 'blastline', load: Math.round(performance.now() / 100) / 10, q: settings.quality, rc: RC.loaded ? RC.v : 0 });
   if (!PRIMARIES.includes(loadout.primary)) loadout.primary = 'ar7_lance';
   if (!SIDEARMS.includes(loadout.sidearm)) loadout.sidearm = 'vex_p9';
   FX.initFeel($('hud'));

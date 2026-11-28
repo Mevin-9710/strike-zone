@@ -28,7 +28,7 @@ export const CHARMS = {
   charm_heart: { name: 'Heartbreaker', price: 250, shape: 'heart', color: 0xff3b47 },
   charm_ring: { name: 'Signal Ring', price: 250, shape: 'ring', color: 0x5fe6ff },
   charm_gem: { name: 'Covenant Gem', price: 350, shape: 'gem', color: 0xb44bff },
-  charm_coin: { name: 'Halvane Coin', price: 300, shape: 'coin', color: 0xe6a93b },
+  charm_coin: { name: 'Blast Coin', price: 300, shape: 'coin', color: 0xe6a93b },
   charm_skull: { name: 'Dead Air', price: 400, shape: 'skull', color: 0xeeeeee },
   charm_bolt: { name: 'Live Wire', price: 450, shape: 'bolt', color: 0x3ddc84 },
 };

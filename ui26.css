@@ -309,3 +309,13 @@ body.touch #vit{right:calc(50% + 98px)!important}
   body .sz-ann{font-size:6.4vw!important;letter-spacing:.04em!important;top:24%!important}
 }
 @media (orientation:landscape){body.touch #wep{bottom:52px!important}}
+
+/* Blastline brand: wordmark in the loading screen and lobby, night loading ground with a blast-yellow bar */
+#loading{background:#0e141e!important}
+#loading .card h1{margin:0}
+#loading .blLogo{display:block;width:min(560px,78vw);height:auto;margin:0 auto}
+#loading #ltext{color:#b8c2cc}
+#loading #lbar{background:#1a2232!important;border-color:#111!important}#loading #lbar>i{background:#ffd23b!important}
+#lobbyTop .logo .blLogo{display:block;height:calc(var(--u)*2.6);width:auto}
+#lobby.v14 #lobbyTop .logo{padding:0;overflow:visible}
+#lobbyTop .logo::after{display:none!important}
