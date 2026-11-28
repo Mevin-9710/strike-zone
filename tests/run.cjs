@@ -376,7 +376,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       g.start(0, { mode: 'dm' }); g.step(0.3); out.target1 = g.DM.target; out.lvl1 = g.DM.level;
       const ids = ['tfire', 'treload', 'taim', 'tjump', 'wep']; const R = ids.map(i => document.getElementById(i).getBoundingClientRect()); out.overlap = 0;
       for (let a = 0; a < 5; a++) for (let b = a + 1; b < 5; b++) { const p = R[a], q = R[b]; if (p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom) out.overlap++; }
-      out.bigBots = g.enemies.every(e => e.root.scale.y > 1.1 && e.hp === 100);
+      out.bigBots = g.enemies.every(e => e.root.scale.y > 1.05 &&  e.hp === 100);
       const up0 = g.META.profile.upPoints;
       g.addKills(15); g.step(0.2);
       out.victory = /VICTORY/.test(document.getElementById('endTitle').textContent) && /NEXT LEVEL 2/.test(document.getElementById('again').textContent);
