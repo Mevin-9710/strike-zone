@@ -488,6 +488,12 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     await pg.tap('#treload');
     const rl = await pg.evaluate(() => { __game.step(0.1); return __game.state.reloading; });
     check('phone: RELOAD button reloads like R', rl);
+    { // Blastline: the bottom weapon cards switch weapons (they sit under the full-screen touch layer)
+      const c = await pg.evaluate(() => { const d = [...document.querySelectorAll('#wslots .ws')].find(x => !x.classList.contains('on')); if (!d) return null; const r = d.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, i: +d.dataset.i }; });
+      if (c) { await pg.touchscreen.tap(c.x, c.y); await pg.evaluate(() => __game.step(0.1)); }
+      const now = await pg.evaluate(() => document.querySelector('#wslots .ws.on')?.dataset.i);
+      check('phone: tapping a weapon card switches to that weapon', !!c && +now === c.i, JSON.stringify({ c, now }));
+    }
     const hl = await pg.evaluate(async () => {
       const { createTutorial } = await import('./game/tutorial.js');
       const t = createTutorial({ isTouch: true }); t.start({ force: true });

@@ -142,6 +142,7 @@ const IS_TOUCH = isTouchDevice();
 document.head.insertAdjacentHTML('beforeend', `<style>${TOUCH_CSS}</style>`);
 if (IS_TOUCH) document.body.classList.add('touch');
 const touch = IS_TOUCH ? new TouchControls(document.body, settings) : null;
+if (touch) touch.onSlot = i => { if (running && player.alive && i !== W.cur && W.slots[i]) equip(i); };   // Blastline: tap a weapon card to switch
 if (touch) document.getElementById('touch')?.addEventListener('touchstart', () => noteInput('touch'), { passive: true });
 if (touch) for (const [id, ic] of [['tfire', 'crosshair'], ['taim', 'ads'], ['tjump', 'extraction'], ['treload', 'reload']]) { const b = document.getElementById(id); if (b) b.innerHTML = icon(ic, 'ic tic'); }   // v14 kit icons
 // Mobile browsers only allow fullscreen inside a user gesture, so request it on every tap until it sticks.
@@ -2355,7 +2356,7 @@ function stripTick() {                                                          
 function wslots() {                                                                // right-hand weapon column: slot keys + rendered gun icons
   const el = $('wslots'); if (!el) return;
   el.innerHTML = W.slots.map((id, i) => `<div class="ws${i === W.cur ? ' on' : ''}" data-i="${i}"><img src="${A.icons[id] || ''}" alt=""><span class="k">${i + 1}</span></div>`).reverse().join('');
-  if (touch) el.querySelectorAll('.ws').forEach(d => d.onpointerdown = e => { e.stopPropagation(); e.preventDefault(); if (+d.dataset.i !== W.cur) equip(+d.dataset.i); });   // Blastline: tappable weapon cards bottom-centre
+  if (!touch) el.querySelectorAll('.ws').forEach(d => d.onmousedown = e => { e.stopPropagation(); if (running && +d.dataset.i !== W.cur) equip(+d.dataset.i); });   // desktop: click a slot (phones go through the touch layer)
 }
 function boardRows() {
   const me = { name: 'YOU', k: stats.kills - DM.k0, d: DM.d, me: true, ally: true };

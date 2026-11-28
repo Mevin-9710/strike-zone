@@ -594,3 +594,6 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Mevin: keep the original four maps only. Removed the code-built arenas Sunbreak Yard and Skyline Courts (`world/arena-maps.js` deleted, `DM_MAPS` back to Belltower, Lantern, Neon, Sandkeep). Arena test expects 4 again. Site copy says four arenas.
 - Home screen (lobby) now follows the Blastline design system (`ui26.css`, end of file): night top bar with a yellow rule, yellow selected tab, comic ink outlines + hard offset shadows on every panel, chip and card, -8deg UI skew, -12deg pulsing PLAY block, cyan for interactive accents, go/loot colours on the daily strip, yellow quest bars. Compact outlines on phones.
 - Preview videos + site screenshots re-shot on the original maps (Lantern Canal: Hold the Hill, Belltower Square: Gun Run, Neon Alley: TDM).
+
+## Fix: weapon cards could not switch weapons on phones (28 Nov 2026)
+- The full-screen touch layer (`#touch`, z-index 5 in its own stacking context) sat over the HUD weapon cards, so taps never reached them. `game/touch.js` now hit-tests `#wslots .ws` in its touchstart and calls `touch.onSlot(i)`, which equips that slot. Desktop slots also switch on click (keys 1/2 and the wheel already worked).
