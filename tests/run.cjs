@@ -50,31 +50,18 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('operative preview animates in the lobby', await pg.evaluate(() => { const p = __game.preview; return !!p && p.mixer.time > 0; }));
     await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=tdm]');
     check('mode toggle switches the lobby to Deathmatch', await pg.evaluate(() => document.getElementById('mDm').classList.contains('on') && /DEATHMATCH/.test(document.getElementById('lMission').textContent)));
-    await pg.click('#lmsBtn'); await pg.click('#lmsList [data-m=story]');
     { const { ctx: dctx, pg: dpg } = await open(browser, { query: 'test=1' });
       const dm = await dpg.evaluate(() => { const g = __game; g.start(0, { mode: 'dm' }); const n0 = g.enemies.filter(e => e.alive).length; g.killAll(); g.step(4); const n1 = g.enemies.filter(e => e.alive).length;
         g.damage(500); g.step(0.2); const dead = !g.player.alive; g.step(3); return { n0, n1, dead, back: g.player.alive, hud: document.getElementById('obj').textContent, run: g.state.running }; });
       check('deathmatch: bots respawn, player respawns, HUD counts kills', dm.n0 >= 4 && dm.n1 >= 1 && dm.dead && dm.back && /DEATHMATCH/.test(dm.hud) && dm.run, JSON.stringify(dm));
       await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /RANK|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
       await dctx.close(); }
+    check('rebrand: SELECT MODE lists only arena modes (no story)', await pg.evaluate(() => [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',') === 'tdm,dm,gun,hill'));
     await pg.evaluate(() => __game.openBriefing());
-    check('briefing opens step 1 (mode) only', await pg.isVisible('#stepMode') && !(await pg.isVisible('#stepLoadout')));
-    await pg.click('#chapters button >> nth=0');
-    check('chapter pick advances to mission step', await pg.isVisible('#stepMission') && !(await pg.isVisible('#stepMode')));
-    await pg.keyboard.press('Escape'); check('Esc goes back a step', await pg.isVisible('#stepMode'));
-    await pg.click('#chapters button >> nth=0');
-    await pg.click('#briefNext');
-    check('loadout step has DEPLOY', await pg.isVisible('#stepLoadout') && await pg.isVisible('#start'));
-    await pg.click('#briefBack'); await pg.click('#briefBack');
-    check('Back x2 reaches mode step', await pg.isVisible('#stepMode'));
-    await pg.click('#briefBack'); check('Back from mode returns to lobby', await pg.isVisible('#lobby'));
-    await pg.evaluate(() => __game.openBriefing());
-    const n = await pg.locator('#missions button').count(), locked = await pg.locator('#missions button:disabled').count();
-    check('campaign lists 12 missions', n === 12, `n=${n}`);
-    check('new profile: only mission 1 open', locked === 11, `locked=${locked}`);
-    check('story-locked weapons are disabled', (await pg.locator('#primaries button:disabled').count()) === 5);
-    check('story-locked operatives are disabled', (await pg.locator('#operatives button:disabled').count()) === 4);
+    check('rebrand: LOADOUT opens on the loadout step (no mode/mission steps)', await pg.isVisible('#stepLoadout') && !(await pg.isVisible('#stepMode')) && !(await pg.isVisible('#stepMission')));
+    check('level-locked weapons are disabled and show their level', (await pg.locator('#primaries button:disabled').count()) === 5 && /LV \d/.test(await pg.textContent('#primaries')));
     await pg.click('#briefBack'); check('briefing BACK returns to lobby', await pg.isVisible('#lobby'));
+    check('rebrand: story entry points hidden', await pg.evaluate(() => ['mStory', 'lDaily', 'lSurv', 'pStory'].every(id => getComputedStyle(document.getElementById(id)).display === 'none')));
     check('no errors on boot', pg.errors.length === 0, pg.errors.join(' | '));
     await ctx.close();
   }
@@ -352,7 +339,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       }
       return { out, errs: g.errors.length };
     });
-    check('v27 DM arenas: all 4 load and play (nav, spawn pool, teams)', r.out.length === 4 && r.out.every(o => o.ok) && r.errs === 0, JSON.stringify(r));
+    check('DM arenas: all 6 load and play (nav, spawn pool, teams)', r.out.length === 6 && r.out.every(o => o.ok) && r.errs === 0, JSON.stringify(r));
     check('v30.1 TDM spawn looks down an open line (8 m+), not into a wall', r.out.every(o => o.free >= 8), JSON.stringify(r.out.map(o => o.free)));
     check('v27 DM arenas: under 400 draw calls (incl. shadow pass + outlines)', r.out.every(o => o.calls < 400), JSON.stringify(r.out.map(o => o.calls)));
     check('no page errors (v27)', pg.errors.length === 0, pg.errors.join('|'));
@@ -398,12 +385,50 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       g.timeout(); g.step(0.2); out.defeat = /DEFEAT/.test(document.getElementById('endTitle').textContent) && document.getElementById('upBox').style.display === 'none' && /RETRY LEVEL 2/.test(document.getElementById('again').textContent);
       return out;
     });
-    check('v25 DM level 1 = 15 kills; level 2 = 20', r.target1 === 15 && r.lvl1 === 1 && r.target2 === 20, JSON.stringify(r));
+    check('Blastline DM level 1 = 12 kills; level 2 = 16', r.target1 === 12 && r.lvl1 === 1 && r.target2 === 16, JSON.stringify(r));
     check('v17 DM victory: VICTORY, NEXT LEVEL, +1 upgrade point shown', r.victory && r.upPoint, JSON.stringify(r));
     check('v17 DM defeat: DEFEAT, retry same level, no upgrades', r.defeat, JSON.stringify(r));
     check('v17 bots: bigger, 100 HP', r.bigBots, JSON.stringify(r));
     check('v17 phone landscape: fire/reload/aim/jump do not overlap', r.overlap === 0, JSON.stringify(r));
     check('no page errors (v17)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // Blastline: Gun Run (every kill moves you up the weapon ladder; a kill with the last gun wins)
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game; localStorage.setItem('sz_teams', '0'); localStorage.setItem('sz_gun', '1');
+      g.start(0, { mode: 'dm' }); g.step(0.3); const L = g.GUN_LADDER, out = { w0: g.weapon === L[0], hud: /GUN RUN/.test(document.getElementById('obj').textContent) };
+      g.fragOne(); g.step(0.1); out.w1 = g.weapon === L[1] && g.gunI === 1;
+      for (let i = 1; i < L.length - 1; i++) { if (!g.enemies.some(e => e.alive)) g.step(3); g.fragOne(); g.step(0.05); }
+      out.last = g.weapon === L[L.length - 1] && !g.state.end;
+      if (!g.enemies.some(e => e.alive)) g.step(3); g.fragOne(); g.step(0.3); out.end = g.state.end || '';
+      out.modes = [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',');
+      return out;
+    });
+    check('Gun Run: starts on gun 1, each kill gives the next gun, HUD says GUN RUN', r.w0 && r.w1 && r.hud, JSON.stringify(r));
+    check('Gun Run: a kill with the last gun wins the match', r.last && /VICTORY/.test(r.end), JSON.stringify(r));
+    check('no page errors (gun run)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // Blastline: Hold the Hill (teams score while only they stand in the zone; kills do not score)
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game; localStorage.setItem('sz_teams', '1'); localStorage.setItem('sz_hill', '1'); localStorage.setItem('sz_gun', '0');
+      g.start(0, { mode: 'dm' }); g.step(0.3); const out = { hill: !!g.hill, hud: /HOLD THE HILL/.test(document.getElementById('obj').textContent) };
+      g.peace?.(); for (const e of [...g.enemies, ...(g.allies || [])]) e.damage(9999);
+      const h = g.hill.pos; g.teleport(h.x, h.y, h.z); g.step(0.2); out.inHill = g.hill.inHill; out.owner = g.hill.owner;
+      for (let i = 0; i < 20; i++) { for (const e of g.enemies) if (e.alive) e.damage(9999); g.step(0.5); }
+      out.A = g.hill.A; out.B = g.hill.B;
+      g.fragOne?.(); out.Aafter = g.hill.A;
+      return out;
+    });
+    check('Hold the Hill: zone exists, HUD says HOLD THE HILL', r.hill && r.hud, JSON.stringify(r));
+    check('Hold the Hill: standing alone in the zone scores for blue', r.inHill && r.owner === 'A' && r.A >= 8 && r.B === 0, JSON.stringify(r));
+    check('no page errors (hill)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 

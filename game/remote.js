@@ -4,9 +4,9 @@ const URL = 'https://raw.githubusercontent.com/Mevin-9710/strike-zone/main/remot
 export const RC = {
   quality: { desk: null, touch: null }, touchAutoFire: true, partTimer: { extra: 30, min: 90, max: 150 }, singleMaxTimer: 150, singleMaxCount: 7,
   holdSeconds: 20, contactAfter: 20, easyAfterFails: 2, easyCountMul: 0.65, easyExtraTime: 30, autoNextSeconds: 5, winCoins: 100, partCoins: 50, midgameGapSeconds: 180,
-  dmTime: 240, dmKills: 50, dmBots: 6, dmRespawn: 1.5, dmCoinsPerKill: 5, dmRematch: 8, dmInfiniteAmmo: true,
+  dmTime: 180, dmKills: 50, dmBots: 6, dmRespawn: 1, dmCoinsPerKill: 5, dmRematch: 5, dmInfiniteAmmo: true,
   minSpawnDist: 20, startGrace: 4, missions: { m2: { count: 5 } },
-  v14ui: true, quests: true, trials: true, deathCard: true, adaptive: true, hitTimer: true, dmSpawnScore: true, trialCost: 150, defaultMode: 'dm', dmBotScale: 1.1, dmArea: 0.82, dmStall: 20, dmLevelKills: 15, dmLevelStep: 5, dmMaxKills: 80, dmBaseThreat: 0.4, dmPower: 0.69, dmPowerStep: 0.017, dmMaps: 5, dmGraceMatches: 2, dmGracePower: 0.55, dmGraceStep: 0.05, dmEaseStep: 0.04, dmEaseMax: 0.12, dmEaseFloor: 0.45, dmGraceCalm: 20, dmNewMaps: true, dmTeams: true, tdmTeam: 5, tdmTeamTouch: 4, tdmLevelKills: 25, tdmLevelStep: 5, tdmRamp: 0.04, tdmRampMax: 0.16, tdmComeback: 0.08, tdmComebackGap: 5, tdmRedBoost: 0.06, tdmMaxKills: 100,
+  v14ui: true, quests: true, trials: true, deathCard: true, adaptive: true, hitTimer: true, dmSpawnScore: true, trialCost: 150, defaultMode: 'dm', dmBotScale: 1.1, dmArea: 0.82, dmStall: 20, dmLevelKills: 12, dmLevelStep: 4, dmMaxKills: 80, dmBaseThreat: 0.4, dmPower: 0.69, dmPowerStep: 0.017, dmMaps: 5, dmGraceMatches: 2, dmGracePower: 0.55, dmGraceStep: 0.05, dmEaseStep: 0.04, dmEaseMax: 0.12, dmEaseFloor: 0.45, dmGraceCalm: 20, dmNewMaps: true, dmTeams: true, tdmTeam: 5, tdmTeamTouch: 4, tdmLevelKills: 20, tdmLevelStep: 4, hillScore: 100, hillRate: 1, hillRadius: 5, hillBotBias: 0.6, tdmRamp: 0.04, tdmRampMax: 0.16, tdmComeback: 0.08, tdmComebackGap: 5, tdmRedBoost: 0.06, tdmMaxKills: 100,
   loaded: false,
 };
 export async function loadRemote(skip, ms = 2500) {

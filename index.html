@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <link rel="icon" href="data:,">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Strike Zone: Season 1</title>
+  <title>Blastline</title>
+  <link rel="icon" type="image/svg+xml" href="brand/blastline-mark.svg">
   <script>/* earliest telemetry: fires before any game code downloads, so we can see players who leave during loading */
   !function(){try{if(/[?&]test=1/.test(location.search))return;var s=Math.random().toString(36).slice(2,10),d=(matchMedia('(pointer:coarse)').matches?'touch':'desk')+(innerWidth<innerHeight?'-p':'-l'),U='https://tzpebjsikktsqlzqlemb.supabase.co/rest/v1/events',K='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR6cGVianNpa2t0c3FsenFsZW1iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0ODk2MTcsImV4cCI6MjExMDA2NTYxN30.tRAsW47PooyFklDqvLQCKEQ-jSof7htupS3BZLOe5Ws',T=window.__szT={sid:s,dev:d,stage:'html'};T.send=function(ev,data){try{fetch(U,{method:'POST',keepalive:true,body:JSON.stringify([{sid:s,dev:d,ev:ev,t:Math.round(performance.now()/100)/10,data:data||{}}]),headers:{apikey:K,Authorization:'Bearer '+K,'Content-Type':'application/json',Prefer:'return=minimal'}}).catch(function(){})}catch(e){}};var ua=navigator.userAgent,ne=0;T.send('page',{ref:(document.referrer||'').split('/')[2]||'',im:HTMLScriptElement.supports&&HTMLScriptElement.supports('importmap')?1:0,ua:((ua.match(/(iPhone OS|CPU OS|Android|Windows NT|Mac OS X|CrOS)[ \d_.]*/)||[''])[0]+' '+(ua.match(/(SamsungBrowser|CriOS|FxiOS|Firefox|Edg|OPR|Chrome|Version)\/\d+/)||[''])[0]).slice(0,60)});addEventListener('pagehide',function(){if(!T.js)T.send('quit0',{stage:T.stage})});addEventListener('error',function(e){if(T.js||ne++>2)return;var t=e.target||{};T.send('err0',{m:String(e.message||'').slice(0,120),f:String(e.filename||t.src||t.href||'').split('/').slice(-2).join('/'),l:e.lineno||0});if(t.tagName==='SCRIPT'||t.tagName==='LINK')setTimeout(R,1500)},true);setTimeout(function(){if(T.js)return;T.send('slow0',{});var l=document.getElementById('ltext');if(l)l.textContent='Slow connection, still loading…'},12000);function R(){if(T.js)return;var c=document.querySelector('#loading .card');if(!c||document.getElementById('lretry'))return;var b=document.createElement('button');b.id='lretry';b.textContent='TAP TO RETRY';b.onclick=function(){T.send('retry0',{});setTimeout(function(){location.reload()},150)};c.appendChild(b)}setTimeout(R,35000)}catch(e){}}()</script>
   <script src="https://sdk.crazygames.com/crazygames-sdk-v3.js" async onerror="window.__noSDK=true"></script>
@@ -265,11 +266,11 @@
     <div id="prompt" class="ov pnl"><span id="promptt">HOLD E</span></div>
   </div>
 
-  <div id="loading" class="panel show"><div class="card"><h1>STRIKE ZONE</h1><p id="ltext">Loading Halvane…</p><div id="lbar"><i></i></div></div></div>
+  <div id="loading" class="panel show"><div class="card"><h1><img class="blLogo" src="brand/blastline-wordmark.svg" alt="BLASTLINE"></h1><p id="ltext">Loading the arena…</p><div id="lbar"><i></i></div></div></div>
 
 
   <div id="lobby" class="panel v14">
-    <div id="lobbyTop"><span class="logo">STRIKE ZONE</span><span class="sp"></span><span class="chip" id="lvl">LV 1<span id="lvlbar"><i></i></span></span><span class="chip" id="coins">0</span><button id="lSettings" class="ico" aria-label="Settings"></button></div>
+    <div id="lobbyTop"><span class="logo"><img class="blLogo" src="brand/blastline-wordmark.svg" alt="BLASTLINE"></span><span class="sp"></span><span class="chip" id="lvl">LV 1<span id="lvlbar"><i></i></span></span><span class="chip" id="coins">0</span><button id="lSettings" class="ico" aria-label="Settings"></button></div>
     <div id="lRail">
       <button id="lShop" class="rail"></button><button id="lLoadout" class="rail"></button><button id="lPass" class="rail"></button><button id="lProfile" class="rail"></button>
     </div>
@@ -366,8 +367,8 @@
         </div>
       </section>
       <section class="step" id="stepAgent">
-        <h3>OPERATIVE</h3><div class="row" id="operatives"></div>
-        <p class="help">Your operative is shown behind this panel.</p>
+        <h3>AGENT</h3><div class="row" id="operatives"></div>
+        <p class="help">Your agent is shown behind this panel.</p>
       </section>
       <section class="step" id="stepLoadout">
         <div class="cols">

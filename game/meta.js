@@ -28,7 +28,7 @@ export const CHARMS = {
   charm_heart: { name: 'Heartbreaker', price: 250, shape: 'heart', color: 0xff3b47 },
   charm_ring: { name: 'Signal Ring', price: 250, shape: 'ring', color: 0x5fe6ff },
   charm_gem: { name: 'Covenant Gem', price: 350, shape: 'gem', color: 0xb44bff },
-  charm_coin: { name: 'Halvane Coin', price: 300, shape: 'coin', color: 0xe6a93b },
+  charm_coin: { name: 'Blast Coin', price: 300, shape: 'coin', color: 0xe6a93b },
   charm_skull: { name: 'Dead Air', price: 400, shape: 'skull', color: 0xeeeeee },
   charm_bolt: { name: 'Live Wire', price: 450, shape: 'bolt', color: 0x3ddc84 },
 };
@@ -58,13 +58,16 @@ export const UNLOCKS = [            // index = mission completed
 ];
 // v17: XP levels unlock weapons too (Deathmatch players progress without the campaign)
 export const LEVEL_WEAPONS = [[3, 'harrow_45'], [4, 'warden_br'], [6, 'bulldog_r6'], [8, 'grinder_lmg'], [10, 'longshot_bolt'], [12, 'hailstorm_mg'], [15, 'javelin_amr']];
+export const LEVEL_OPERATIVES = [[2, 'kade'], [5, 'yuna'], [7, 'tomas'], [9, 'amara']];   // rebrand: operatives unlock by level (no campaign)
 export function unlocked(progress) {
   const w = new Set(BASE_UNLOCKS.weapons), o = new Set(BASE_UNLOCKS.operatives);
   for (const [lv, id] of LEVEL_WEAPONS) if (level() >= lv) w.add(id);
+  for (const [lv, id] of LEVEL_OPERATIVES) if (level() >= lv) o.add(id);
   for (const id of store.get('sz_gifts', [])) w.add(id);                         // v31 return gifts
   for (let i = 0; i < progress && i < UNLOCKS.length; i++) { (UNLOCKS[i].weapons || []).forEach(x => w.add(x)); (UNLOCKS[i].operatives || []).forEach(x => o.add(x)); }
   return { weapons: w, operatives: o };
 }
+export const unlockLevel = id => ([...LEVEL_WEAPONS, ...LEVEL_OPERATIVES].find(([, w]) => w === id) || [])[0] || null;
 export function unlockSource(kind, id) { const i = UNLOCKS.findIndex(u => (u[kind] || []).includes(id)); return i < 0 ? null : i + 1; }
 
 // ---------- intel files (every 3 intel caches opens one) ----------

@@ -564,3 +564,28 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
     - Lobby: one-line logo, no weapon strip (it covered the daily reward; weapons are in LOADOUT), 3 quests max.
     - End screen: one-line rank badge. The one-time feedback row takes the upgrade box's place, so it's no longer cut off.
     - Quest toast moves off the end-screen buttons, and match call-outs are smaller.
+
+## Blastline rebrand, step 1: story campaign cut (28 Nov 2026)
+- Lobby, SELECT MODE, pause menu and first launch offer only Team Deathmatch and Free for All. Story, daily mission, survival, tutorial entry points hidden.
+- Briefing opens on the loadout step; DEPLOY starts an arena match. Kenney story kits no longer download at boot.
+- Operatives now unlock by level (Kade 2, Yuna 5, Tomas 7, Amara 9); locked gear shows its level instead of a mission number.
+- Story engine code is still in game.js (unreachable from the UI); removal comes in a later step. Tests: 111/114 (2 known charm/spray + outcome-dependent TDM boost).
+
+## Blastline step 2: pace, two new modes, two new arenas (28 Nov 2026)
+- Matches: 3:00 (was 4:00), Team DM first to 20 (+4/level), FFA first to 12 (+4/level), respawn 1 s, auto-rematch 5 s, run speed 5.8 (was 5.2).
+- Gun Run (FFA): 10-gun ladder (GUN_LADDER), each kill moves you to the next gun, a kill with the last one wins. Death-card loadouts off in this mode. Bots keep their own guns.
+- Hold the Hill (teams): one zone near the arena centre (RC.hillRadius 5), a team alone in it scores RC.hillRate/s, first to RC.hillScore (100). Kills don't score. Bots head for the hill 60% of the time they pick a new goal. Objective arrow points at the hill when you're outside it.
+- New arenas built in code (world/arena-maps.js, no download): Sunbreak Yard (container yard, raised centre deck), Skyline Courts (catwalks over a fountain court). Symmetric for both teams.
+- Mode choice: sz_teams + sz_gun + sz_hill (setModeKey). Tests 117/120 (the known 3).
+
+## Blastline rebrand step 3 (28 Nov 2026)
+- Covers: `media/covers-blastline/` (16x9, 2x3, 1x1) from `tools/keyart.html` with the BLASTLINE title and a cyan speed bar.
+- Preview videos: `media/preview-blastline/` (landscape 1920x1080 + portrait 1080x1620, 17 s): Sunbreak Yard (Hold the Hill), Skyline Courts (Gun Run), Neon Alley (TDM). `tools/capture_preview.cjs` now takes `map:mode` scenes and its bot only fires at foes in clear sight.
+- Fix: the objective arrow is hidden when there is no target (it stayed on screen with a stale HILL label, e.g. after leaving Hold the Hill or while standing in the hill).
+- Fix: spawn facing strongly prefers a 10 m+ open line (Neon Alley TDM could face a wall 6-8 m away; flaky v30.1 test).
+- Tests: 116/120 before the spawn fix; failures were charm, spray, v28 TDM boost (known) + v30.1 spawn view (fixed, rechecked 8/8 in isolation).
+
+## Blastline website rebrand (28 Nov 2026)
+- Vercel landing page (`site/`) rebranded: Blastline wordmark, night/yellow/cyan palette, arcade copy (Gun Run, Hold the Hill, TDM, six arenas), new icons from the Blastline mark, manifest name, og:image = 16x9 cover.
+- Site media now comes from `media/screenshots-blastline` + `media/preview-blastline` (old story clips dropped). `/play/` now ships the `brand/` folder so the in-game logo loads.
+- CrazyGames link blanked until Blastline is listed (old Strike Zone page is gone).

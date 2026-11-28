@@ -287,3 +287,35 @@ body.touch #mmlabel{display:none}
   body .sz-ann{font-size:calc(var(--u)*2.6)!important;top:27%!important;letter-spacing:.12em!important}   /* match calls no longer span the whole screen */
   body .sz-banner{bottom:24%!important}body .sz-banner .sz-bt{font-size:calc(var(--u)*1.7)!important}
 }
+
+/* rebrand: story campaign cut, story-only entry points hidden */
+#mStory, #lDaily, #lSurv, #pStory, #trySurv, #qMission, #next, #tpPlay, #profile h3, #profUnlocks + h3, #files { display: none !important; }
+
+/* Blastline mobile pass: weapon cards bottom-centre (tap to switch), health beside them, fixed stick ring in portrait too,
+   match call-outs that fit a phone, score strip clear of the pause button */
+body.touch #wslots{display:flex!important;flex-direction:row-reverse;left:50%;right:auto;transform:translateX(-50%);bottom:6px;gap:8px;z-index:6}
+body.touch #wslots .ws{background:rgba(14,20,30,.72);border:2px solid rgba(255,255,255,.16);opacity:.85;padding:3px 8px;transform:skewX(-8deg)}
+body.touch #wslots .ws>*{transform:skewX(8deg)}
+body.touch #wslots .ws.on{border-color:#36d6f0;opacity:1;box-shadow:0 0 0 2px rgba(54,214,240,.35)}
+body.touch #wslots .ws img{height:26px;width:60px}
+body.touch #wslots .ws .k{font-size:12px;padding-bottom:0}
+body.touch #wslots .ws.on .k::after{display:none}
+body.touch #vit{right:calc(50% + 98px)!important}
+@media (orientation:portrait){
+  body.touch #tstick.rest{display:block;left:calc(env(safe-area-inset-left) + 24px + 60px*var(--ts));top:calc(100% - 14vh - 60px*var(--ts))}
+  body.touch #touch #treload{right:calc(100px*var(--ts))!important;left:auto!important;bottom:calc(172px*var(--ts))!important}
+  body.touch #vit{right:auto!important;left:8px!important;bottom:auto!important;top:calc(var(--u)*14.5)!important;transform:scale(.62)!important;transform-origin:top left!important}
+  body.touch #sStrip{transform:translateX(-50%) scale(.78);transform-origin:top center}
+  body .sz-ann{font-size:6.4vw!important;letter-spacing:.04em!important;top:24%!important}
+}
+@media (orientation:landscape){body.touch #wep{bottom:52px!important}}
+
+/* Blastline brand: wordmark in the loading screen and lobby, night loading ground with a blast-yellow bar */
+#loading{background:#0e141e!important}
+#loading .card h1{margin:0}
+#loading .blLogo{display:block;width:min(560px,78vw);height:auto;margin:0 auto}
+#loading #ltext{color:#b8c2cc}
+#loading #lbar{background:#1a2232!important;border-color:#111!important}#loading #lbar>i{background:#ffd23b!important}
+#lobbyTop .logo .blLogo{display:block;height:calc(var(--u)*2.6);width:auto}
+#lobby.v14 #lobbyTop .logo{padding:0;overflow:visible}
+#lobbyTop .logo::after{display:none!important}

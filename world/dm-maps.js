@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { makeLoader } from './gltf.js';
 const dmLoader = makeLoader();
 import { Kit } from './kit.js';
+import { ARENAS, buildArena } from './arena-maps.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 export const DM_MAPS = [
@@ -12,9 +13,11 @@ export const DM_MAPS = [
   { id: 'lantern', title: 'Lantern Canal', time: 'clear', w: 70, d: 40, a: [4.5, 0.4, 20], b: [65.5, 0.4, 20] },
   { id: 'neon', title: 'Neon Alley', time: 'evening', w: 64, d: 48, a: [5, 0, 24], b: [59, 0, 24] },
   { id: 'sandkeep', title: 'Sandkeep', time: 'noon', w: 56, d: 56, a: [4.5, 0, 51.5], b: [51.5, 0, 4.5] },
+  ...ARENAS,                                                         // Blastline: arenas built in code (world/arena-maps.js)
 ];
 const P = {}, R = {};
 export function loadDmMap(id) {
+  if (ARENAS.some(a => a.id === id)) return Promise.resolve(R[id] = { code: true });
   if (!P[id]) P[id] = Promise.all([dmLoader.loadAsync(`models/dm/${id}.glb`), fetch(`models/dm/${id}.json`).then(r => r.json())])
     .then(([g, data]) => { const def = DM_MAPS.find(d => d.id === id), bb = new THREE.Box3();
       g.scene.updateMatrixWorld(true);
@@ -109,6 +112,7 @@ function floors(def, world, k, data) {
 }
 
 export function buildDmMap(def, world, scene) {
+  if (def.code) return buildArena(def, world, scene);
   const r = R[def.id]; if (!r) throw new Error('DM map not loaded: ' + def.id);
   const k = new Kit(world, scene), { w, d } = def;
   scene.add(r.scene.clone());                                        // shares geometry/materials with the cache (kit.dispose never sees them)
