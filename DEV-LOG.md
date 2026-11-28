@@ -605,3 +605,11 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Not in phase 1: line-of-sight hit checks on the server, bot abilities for non-hosts, binary messages, battle royale.
 - Tests: `tests/mp.cjs` (starts the server, desktop + phone clients): join/host/bot fill, puppets, real shot -> server damage, leave refill, host migration, shared hill + scoring, round end + next round. 15/15.
 - VPS: `server/setup-vps.sh` (Node 20 + Caddy, systemd, HTTPS on <ip>.sslip.io). Docs: `server/README.md`.
+
+## Battle royale map "Island Ring" (28 Nov 2026, branch claude/blastline-br-map, map only, no BR gameplay yet)
+- `world/br-map.js`: 232 x 232 m island. The 4 DM arenas are corner regions (NW Belltower, NE Sandkeep, SW Lantern, SE Neon), placed from their GLB + JSON colliders. Each arena's backdrop (sky hills, far ground) and scenery outside its wall are trimmed per triangle.
+- Gates: 2 per arena, cut through the outer wall (render meshes clipped per triangle, colliders split), with yellow posts and a dark beam. All 8 were checked walkable with the nav grid (`__game.brPath`, `__game.brReach`).
+- Centre: market on its own island inside a ring canal (wadeable, bed at -0.4), 4 bridges, beacon tower with a climbable platform. Roads link every gate to the bridges. Open ground has a farm, a container yard, 5 watchtowers, trees, rocks and crates, with a sand beach and sea around.
+- Phones: arenas more than 115 m from the camera are hidden every frame (`map.cull`). Ground views use 80 to 240 draw calls.
+- Test API: `brPreview()` loads the island in DM mode. `view(x,y,z,tx,ty,tz,all)` renders a fixed camera.
+- Screenshots: /mnt/project-files/art/blastline-br-map/.

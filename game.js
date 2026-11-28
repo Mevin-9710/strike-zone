@@ -9,6 +9,7 @@ import { loadArch } from './world/kenney-arch.js';
 import { crazy } from './game/crazy.js';
 import { buildM1, buildM2, buildM3, LIGHTING } from './world/maps.js';
 import { DM_MAPS, loadDmMap, dmMapReady, buildDmMap } from './world/dm-maps.js';
+import { buildBrIsland, BR_MAP_IDS } from './world/br-map.js';
 import { makeLoader } from './world/gltf.js';
 import { buildLobbyRoom } from './world/lobby-room.js';
 import { AbilityFX } from './fx/abilities.js';
@@ -288,6 +289,8 @@ function smokeBlocks(a, b) {
 
 // v27: Deathmatch arenas (own list; story MISSIONS untouched)
 const DM_MISSIONS = DM_MAPS.map(d => ({ id: 'dm_' + d.id, title: d.title, build: (w, sc) => buildDmMap(d, w, sc), objective: 'dm', roster: ['guard', 'guard', 'sniper', 'commander'], pool: ['smoke', 'dash'], radio: {}, dm: true }));
+const BR_IDX = DM_MISSIONS.push({ id: 'br_island', title: 'Island Ring', build: (w, sc) => buildBrIsland(w, sc), objective: 'dm', roster: ['guard', 'guard', 'sniper', 'commander'], pool: ['smoke', 'dash'], radio: {}, dm: true, br: true }) - 1;   // battle royale: the 4 arenas as regions of one island
+const brLoad = () => Promise.all(BR_MAP_IDS.map(id => loadDmMap(id)));
 // ---------- building a mission ----------
 function buildMission(idx, opts = {}) {
   missionIdx = idx; mission = opts.dmMap != null ? DM_MISSIONS[opts.dmMap] : MISSIONS[idx];
@@ -1464,6 +1467,7 @@ function render() {
     for (const e of enemies) { _sp.center.set(e.pos.x, e.pos.y + 1, e.pos.z); const d2 = e.pos.distanceToSquared(camera.position), lod = qLevel === 0 ? 3025 : 4900; e.root.visible = (e.alive || e.deadT < 7) && d2 < far2 && (d2 < lod || e.revealT > 0 || e.state === 'combat') && _fr.intersectsSphere(_sp);
       if (e.root.visible) { if (e._hand === undefined) e._hand = e.root.getObjectByName('handR') || null; if (e._hand) e._hand.visible = d2 < 900; } }   // guns are a few pixels past 30 m
     if (preview) preview.root.visible = true;
+    if (map?.cull && !render.noCull) map.cull(camera.position);                    // BR island: far arenas are not drawn
     renderer.render(scene, camera);
   }
   if (running || paused) { renderer.clearDepth(); renderer.render(vm.scene, vm.camera); }
@@ -2490,6 +2494,11 @@ async function netCount() {                                                     
 // ---------- test / debug API ----------
 window.__game = { RC, G, outro: t => outro(t, () => {}), get dmWalk() { return DM.walkLog || (DM.walk && DM.walk.e ? { walking: +DM.walk.t.toFixed(1), dist: +DM.walk.e.pos.distanceTo(DM.walk.spot).toFixed(1) } : { walk: DM.walk, grace: DM.grace }); }, get allies() { return allies; }, tdmScore, ui: { board: showBoard, pause: () => { if (!running) return; doPause(); } },
   errors, get ready() { return !!A.enemies; }, MISSIONS, WEAPONS, ABILITIES,
+  async brPreview() { await brLoad(); const t0 = performance.now(); startMission(0, { route: 'default', abilities: [], mode: 'dm', dmMap: BR_IDX }); return { ms: Math.round(performance.now() - t0), nav: world.nav?.nodes?.length || 0 }; },
+  view(x, y, z, tx, ty, tz, all = false) { manual = true; render.noCull = all; if (all) { for (const r of map.regions || []) for (const ob of r.objs) ob.visible = true; scene.fog.near = 2000; scene.fog.far = 3000; camera.far = 1200; camera.near = 1; camera.updateProjectionMatrix(); } camera.position.set(x, y, z); camera.lookAt(tx, ty, tz); camera.updateMatrixWorld(); if (!all && map?.cull) map.cull(camera.position); renderer.info.autoReset = false; renderer.info.reset(); renderer.clear(); renderer.render(scene, camera); return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
+  brPath(a, b) { const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), na = world.nearestNode(A), nb = world.nearestNode(B), p = world.findPath(A, B); return { na: na && na.pos.toArray().map(Math.round), nb: nb && nb.pos.toArray().map(Math.round), la: na?.links.length, n: p?.length ?? null }; },
+  brReach() { const T = new THREE.Vector3(116, 0.1, 128); return (map.regions || []).map(r => { const d = DM_MAPS.find(q => q.id === r.id), out = []; for (const [fx, fz] of [[0.5, 0.5], [0.3, 0.5], [0.7, 0.5]]) { const p = new THREE.Vector3(r.x0 + d.w * fx, 0.5, r.z0 + d.d * fz), path = world.findPath(p, T); let ex = null; if (path) for (const q of path) if (q.x < r.x0 || q.x > r.x0 + d.w || q.z < r.z0 || q.z > r.z0 + d.d) { ex = [Math.round(q.x), Math.round(q.z)]; break; } out.push(path ? { n: path.length, ex, end: [Math.round(path.at(-1).x), Math.round(path.at(-1).z)] } : null); } return [r.id, out]; }); },
+  get mapInfo() { return map && { br: !!map.br, pois: map.pois, regions: map.regions?.map(r => { let n = 0, g = 0; r.objs[0].traverse(o => { if (o.isMesh) { n++; if (o.geometry.attributes.position) g++; } }); return [r.id, r.x0, r.z0, r.objs[0].visible, r.objs[0].parent === scene, n, g, r.objs[0].position.toArray()]; }) }; },
   get net() { const pz = [...enemies, ...allies].filter(e => e.net); return { on: NET.on, ready: !!NET.ready, host: NET.host, team: NET.team, me: NET.me, room: NET.room, mode: NET.mode, map: NET.map, ents: NET.ents.size, puppets: pz.length, livePuppets: pz.filter(e => e.alive && e.netOk).length, stuck: pz.filter(e => e.alive && !e.netOk && NET.ents.get(e.nid)?.buf.length).length, stuckInfo: pz.filter(e => e.alive && !e.netOk && NET.ents.get(e.nid)?.buf.length).map(e => { const n = NET.ents.get(e.nid); return [e.nid, n.bot, n.alive, n.buf[n.buf.length - 1]?.slice(1, 4)]; }), roster: DM.roster?.length || 0, aiBots: DM.roster?.filter(r => r.e?.alive).length || 0, score: { ...NET.score }, clock: NET.clock, ping: NET.ping, hill: DM.hillPos?.toArray(), hillOwn: NET.hillOwn }; },
   netStart: (k = 'otdm') => { setModeKey(k); netStart(); }, netLeave: () => { netLeave(); openLobby(); }, netObj: id => { const e = netObj(id); return e && { pos: e.pos.toArray(), alive: e.alive, hp: e.hp, net: !!e.net, visible: e.root.visible }; }, NET,
   get state() { return { running, matchOver, clock, mission: mission?.id, hp: player.hp, shield: player.shield, pos: player.pos.toArray(), onGround: player.onGround, weapon: cur(), ammo: st() && { ...st() }, reloading: W.reloadT > 0, enemies: enemies.map(e => ({ type: e.type, alive: e.alive, hp: e.hp, state: e.state, pos: e.pos.toArray(), blind: e.blindT, revealed: e.revealT > 0 })), objective: { ...objective, charge: undefined }, zones: Object.fromEntries(Object.entries(zones).map(([k, v]) => [k, v.length])), picks, abilityCD: [...abilityCD], stats: { ...stats }, fps, end: $('end').classList.contains('show') ? $('endTitle').textContent : null }; },
