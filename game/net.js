@@ -10,6 +10,9 @@ export function serverUrl(Q, RC) {                      // ?mp=wss://host overri
   return RC.mpUrl || '';
 }
 
+const SNAP = { t: 'snap' }, SC = { A: 0, B: 0 }, BOT_BUF = new ArrayBuffer(3 + 14 * 128), BV = new DataView(BOT_BUF);
+const q16 = v => Math.max(-32768, Math.min(32767, Math.round(v)));
+let bn = 0;
 export function createNet() {
   const N = {
     ws: null, on: false, me: 0, team: 'A', host: false, room: '', mode: '', map: 0, round: 0, clock: 0, target: 0, score: { A: 0, B: 0 },
@@ -20,8 +23,10 @@ export function createNet() {
         let ws; try { ws = new WebSocket(url); } catch (e) { rej(e); return; }
         N.ws = ws; let done = false;
         const to = setTimeout(() => { if (!done) { done = true; rej(new Error('timeout')); try { ws.close(); } catch { /* closed */ } } }, 6000);
-        ws.onopen = () => ws.send(JSON.stringify({ t: 'join', v: NET_VERSION, mode: opts.mode, name: opts.name, room: opts.room || '' }));
+        ws.onopen = () => ws.send(JSON.stringify({ t: 'join', v: NET_VERSION, mode: opts.mode, name: opts.name, room: opts.room || '', dev: opts.dev || 'd' }));
+        ws.binaryType = 'arraybuffer';
         ws.onmessage = ev => {
+          if (typeof ev.data !== 'string') { if (snapBin(ev.data)) N.handler(SNAP); return; }
           let m; try { m = JSON.parse(ev.data); } catch { return; }
           if (m.t === 'welcome') { welcome(m); if (!done) { done = true; clearTimeout(to); res(m); } }
           else if (m.t === 'err') { if (!done) { done = true; clearTimeout(to); rej(new Error(m.why)); } return; }
@@ -42,7 +47,14 @@ export function createNet() {
       N.send({ t: 's', p: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], y: +yaw.toFixed(3), pi: +pitch.toFixed(2), sp: +speed.toFixed(1), w });
       if ((N.pingT = (N.pingT || 0) + 1) % 40 === 0) N.send({ t: 'ping', c: performance.now() });
     },
-    bots(t, list) { if (t - N.botT < 0.05) return false; N.botT = t; N.send({ t: 'b', l: list }); return true; },
+    // host: bot states, binary (see server onBin). Call botsBegin(t) -> false if not due; then bot(...) per bot; then botsSend()
+    botsBegin(t) { if (t - N.botT < 0.05 || !N.ws || N.ws.readyState !== 1) return false; N.botT = t; bn = 0; return true; },
+    bot(id, x, y, z, yaw, sp, fl) {
+      const o = 3 + bn * 14; if (o + 14 > BOT_BUF.byteLength) return;
+      BV.setUint32(o, id, true); BV.setInt16(o + 4, q16(x * 50), true); BV.setInt16(o + 6, q16(y * 50), true); BV.setInt16(o + 8, q16(z * 50), true);
+      BV.setInt16(o + 10, q16(Math.atan2(Math.sin(yaw), Math.cos(yaw)) * 10000), true); BV.setUint8(o + 12, Math.min(255, Math.max(0, Math.round(sp * 10)))); BV.setUint8(o + 13, fl & 255); bn++;
+    },
+    botsSend() { BV.setUint8(0, 2); BV.setUint16(1, bn, true); N.ws.send(new Uint8Array(BOT_BUF, 0, 3 + bn * 14)); },
     shot(s, a, b, w) { N.send({ t: 'f', s, a: [+a.x.toFixed(2), +a.y.toFixed(2), +a.z.toFixed(2)], b: [+b.x.toFixed(2), +b.y.toFixed(2), +b.z.toFixed(2)], w }); },
     hit(s, v, d, hd, w) { N.send({ t: 'h', s, v, d: Math.round(d * 10) / 10, hd: hd ? 1 : 0, w }); },
     // interpolated pose of entity `e` (from snapshots) into out {x,y,z,yaw,sp}; false if none yet
@@ -61,6 +73,26 @@ export function createNet() {
     Object.assign(N, { on: true, me: m.you, team: m.team, host: m.host, room: m.room, mode: m.mode, map: m.map, round: m.round, clock: m.clock, target: m.target, score: m.score, state: m.state, hill: m.hill, hillOwn: m.hillOwn || '', br: m.br || null, alive: m.br?.alive || 0, zone: null });
     N.ents.clear(); for (const e of m.ents) N.ents.set(e.id, { ...e, buf: [] });
   }
+  // binary snapshot from the server (layout in server/server.mjs, "binary snapshots"); fills SNAP + the interpolation buffers
+  function snapBin(ab) {
+    const d = new DataView(ab); if (d.byteLength < 10 || d.getUint8(0) !== 1) return false;
+    const br = d.getUint8(1) & 1; let o = 2;
+    N.clock = d.getUint16(o, true) / 10; SC.A = d.getUint16(o + 2, true); SC.B = d.getUint16(o + 4, true); o += 6; N.score = SC;
+    if (br) {
+      const z = N.zone || (N.zone = [0, 0, 0]); z[0] = d.getFloat32(o, true); z[1] = d.getFloat32(o + 4, true); z[2] = d.getFloat32(o + 8, true);
+      N.zoneNext = d.getUint16(o + 12, true) / 10; N.zoneShrink = d.getUint16(o + 14, true) / 10; N.alive = d.getUint8(o + 16); o += 17;
+    }
+    const n = d.getUint16(o, true), t = performance.now() / 1000; o += 2;
+    for (let i = 0; i < n && o + 15 <= d.byteLength; i++, o += 15) {
+      const e = N.ents.get(d.getUint32(o, true)); if (!e) continue;
+      const f = d.getUint8(o + 14); e.alive = !!(f & 1);
+      if (e.id === N.me) continue;
+      const b = e.buf, q = b.length >= 12 ? b.shift() : new Array(9);              // reuse the oldest sample's array
+      q[0] = t; q[1] = d.getInt16(o + 4, true) / 50; q[2] = d.getInt16(o + 6, true) / 50; q[3] = d.getInt16(o + 8, true) / 50;
+      q[4] = d.getInt16(o + 10, true) / 10000; q[5] = d.getInt8(o + 12) / 80; q[6] = d.getUint8(o + 13) / 10; q[7] = f & 1; q[8] = f >> 1; b.push(q);
+    }
+    return true;
+  }
   function snap(m) {
     N.clock = m.c; if (m.sc) N.score = m.sc;
     if (m.z) { N.zone = m.z; N.zoneNext = m.zn; N.zoneShrink = m.zs; N.alive = m.al; }
@@ -75,7 +107,7 @@ export function createNet() {
   function track(m) {                                   // keep the roster in sync for every message that changes it
     if (m.t === 'add') N.ents.set(m.e.id, { ...m.e, buf: [] });
     else if (m.t === 'del') N.ents.delete(m.id);
-    else if (m.t === 'host') N.host = true;
+    else if (m.t === 'host') N.host = m.on !== false;
     else if (m.t === 'dmg') { const v = N.ents.get(m.v); if (v) v.hp = m.hp; }
     else if (m.t === 'kill') { N.score = m.score; const s = N.ents.get(m.s), v = N.ents.get(m.v); if (s) s.k = m.sk; if (v) { v.d = m.vd; v.alive = false; v.hp = 0; } if (m.alive) N.alive = m.alive; }
     else if (m.t === 'zone') { if (N.br) Object.assign(N.br, { ph: m.ph, to: m.to, dps: m.dps }); }

@@ -870,7 +870,7 @@ function dmTick(dt) {
     if (enemies.length > RC.dmBots * 3) { const dead = enemies.filter(e => !e.alive).slice(0, enemies.length - RC.dmBots * 2); for (const e of dead) { scene.remove(e.root); if (e.tag) { e.tag.material.map.dispose(); e.tag.material.dispose(); } } enemies = enemies.filter(e => !dead.includes(e)); }
   }
   for (const e of allies) if (e.alive && !e.net && e.state !== 'combat' && Math.random() < dt * 0.35 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const f = ffaRival(e); if (f) { e.alert(f.pos, 0.5); e.goTo(spreadGoal(e, f.pos), G); } }   // allies push toward the nearest enemy
-  for (const e of enemies) if (e.alive && !e.net && e.state !== 'combat' && Math.random() < dt * 0.25 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.alert(DM.hillPos, 0.5); e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const calm = G.ignorePlayer, r = calm || NET.on || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(DM.tdm ? spreadGoal(e, to) : to, G); }   // bots hunt the player or a rival
+  for (const e of enemies) if (e.alive && !e.net && e.state !== 'combat' && !(e.loot && !e.loot.taken) && Math.random() < dt * 0.25 && !e.T.static) { if (DM.hill && Math.random() < RC.hillBotBias) { e.alert(DM.hillPos, 0.5); e.goTo(spreadGoal(e, DM.hillPos), G); continue; } const calm = G.ignorePlayer, r = calm || NET.on || Math.random() < 0.5 ? ffaRival(e) : null, to = r ? r.pos : player.pos; if (calm && !r) continue; e.alert(to, 0.5); e.goTo(DM.tdm ? spreadGoal(e, to) : to, G); }   // bots hunt the player or a rival
   return '';
 }
 function dmDeath() { DM.deathPos = player.pos.clone(); DM.deathT = elapsed; DM.d++; DM.streak = 0; DM.deadT = RC.deathCard ? Math.max(RC.dmRespawn, 1.5) : RC.dmRespawn; player.alive = false; if (RC.deathCard) deathCard(); else FX.announce('ELIMINATED', 'objective'); }
@@ -1315,13 +1315,14 @@ function update(dt) {
   updateWeapon(dt);
   for (let i = 0; i < 2; i++) abilityCD[i] = Math.max(0, abilityCD[i] - dt);
   swingCharm(dt);
-  lodTick = (lodTick + 1) % 3;
+  lodTick = (lodTick + 1) % 60;
+  const brLod = DM.br && NET.host; if (brLod) brHumans();
   for (const e of enemies) {
     if (e.net) { if (e.alive) netPuppetTick(e, dt); else e.update(dt, G); continue; }
     if (tutHold) { e.tickAnim(dt); e.sync(); continue; }
-    const far = e.alive && e.state === 'patrol' && e.pos.distanceToSquared(player.pos) > 1600;
-    if (!far) { if (e._lodAcc) { e.update(e._lodAcc, G); e._lodAcc = 0; } e.update(dt, G); continue; }
-    e._lodAcc = (e._lodAcc || 0) + dt; if ((e.id % 3) === lodTick) { e.update(Math.min(e._lodAcc, 0.15), G); e._lodAcc = 0; }
+    const per = !e.alive ? 1 : brLod ? brLodPer(e) : e.state === 'patrol' && e.pos.distanceToSquared(player.pos) > 1600 ? 3 : 1;   // AI level of detail: far bots think less often
+    if (per === 1) { if (e._lodAcc) { e.update(e._lodAcc, G); e._lodAcc = 0; } e.update(dt, G); continue; }
+    e._lodAcc = (e._lodAcc || 0) + dt; if ((e.id % per) === lodTick % per) { e.update(Math.min(e._lodAcc, 0.05 * per), G); e._lodAcc = 0; }
   }
   for (const e of allies) if (e.net && e.alive) netPuppetTick(e, dt); else e.update(dt, G);
   for (const k of Object.keys(zones)) zones[k] = zones[k].filter(z => (z.t -= dt) > 0);
@@ -2347,7 +2348,7 @@ async function netStart() {
   netMsgBox('FINDING PLAYERS…');
   try {
     const name = (await crazy.username()) || store.get('sz_name', '');
-    await NET.connect(mpUrl(), { mode: brOn() ? 'br' : hillOn() ? 'hill' : 'tdm', name, room: crazy.inviteRoom() });
+    await NET.connect(mpUrl(), { mode: brOn() ? 'br' : hillOn() ? 'hill' : 'tdm', name, room: crazy.inviteRoom(), dev: IS_TOUCH ? 'm' : 'd' });
     NET.handler = netOnMsg; netMsgBox(null);
     track('net', { k: 'join', m: NET.mode, n: [...NET.ents.values()].filter(e => !e.bot).length, host: NET.host ? 1 : 0 });
     crazy.room(NET.room, true);
@@ -2460,14 +2461,42 @@ function brTick(dt) {                                                           
       if (player.alive && Math.abs(player.pos.y - o.p.y) < 1.6 && (player.pos.x - o.p.x) ** 2 + (player.pos.z - o.p.z) ** 2 < 2.4 && o.kind !== W.slots[0] && !(o.kind === 'med' && player.hp >= 100) && !(o.kind === 'armor' && BR.ar >= 100)) {
         o.pend = elapsed; NET.send({ t: 'pick', i: o.i, k: WEAPONS[o.kind] ? 'gun' : o.kind }); continue;
       }
-      if (NET.host && !WEAPONS[o.kind]) for (const r of DM.roster) { const e = r.e; if (e?.alive && (e.pos.x - o.p.x) ** 2 + (e.pos.z - o.p.z) ** 2 < 2.4 && e.hp < 100) { o.pend = elapsed; NET.send({ t: 'pick', i: o.i, k: o.kind, s: r.nid }); break; } }
+      if (NET.host) for (const r of DM.roster) { const e = r.e; if (e?.alive && Math.abs(e.pos.y - o.p.y) < 1.6 && (e.pos.x - o.p.x) ** 2 + (e.pos.z - o.p.z) ** 2 < 2.4 && brBotWants(r, o)) { o.pend = elapsed; NET.send({ t: 'pick', i: o.i, k: WEAPONS[o.kind] ? 'gun' : o.kind, s: r.nid }); break; } }
     }
   }
   if (NET.host && (BR.botT -= dt) <= 0 && NET.br?.to) {                            // host bots: move into the next circle in time
     BR.botT = 1; const to = NET.br.to;
     for (const r of DM.roster) { const e = r.e; if (!e?.alive || e.T.static) continue; const dx = e.pos.x - to[0], dz = e.pos.z - to[1], lim = to[2] * 0.8;
-      if (dx * dx + dz * dz > lim * lim && (e.state !== 'combat' || Math.random() < 0.3)) { const a = Math.random() * 6.283, rr = Math.random() * to[2] * 0.6; e.goTo(V(to[0] + Math.cos(a) * rr, 0, to[1] + Math.sin(a) * rr), G); } }
+      if (dx * dx + dz * dz > lim * lim && (e.state !== 'combat' || Math.random() < 0.3)) { const a = Math.random() * 6.283, rr = Math.random() * to[2] * 0.6; e.goTo(V(to[0] + Math.cos(a) * rr, 0, to[1] + Math.sin(a) * rr), G); }
+      else if (e.state !== 'combat') brBotLoot(r, e, to); }
   }
+}
+function brBotWants(r, o) { return o.kind === 'med' ? r.e.hp < 100 : o.kind === 'armor' ? (r.ar || 0) < 100 : !r.gun; }
+function brBotLoot(r, e, to) {                                                    // a calm bot walks to the nearest loot it wants (within 30 m, inside the next circle)
+  let best = null, bd = 900;
+  for (const o of BR.loot) {
+    if (o.taken || o === e.lootBan || Math.abs(e.pos.y - o.p.y) > 4 || !brBotWants(r, o)) continue;
+    const d = (e.pos.x - o.p.x) ** 2 + (e.pos.z - o.p.z) ** 2; if (d >= bd) continue;
+    if ((o.p.x - to[0]) ** 2 + (o.p.z - to[1]) ** 2 > to[2] * to[2]) continue;
+    bd = d; best = o;
+  }
+  if (best && e.loot === best) {
+    if (elapsed - e.lootT > 12) { e.lootBan = best; e.loot = null; return; }          // could not get there: try another one next time
+    if (!e.path) { e.repathT = 0; e.goTo(best.p, G); } return;
+  }
+  e.loot = best; e.lootT = elapsed; if (!best) return;
+  e.state = 'patrol'; e.lastKnown = null; e.post.copy(best.p); e.wanderT = 4; e.repathT = 0; e.goTo(best.p, G);   // the patrol "post" moves to the loot: the bot walks there, then hangs about
+}
+// host AI level of detail in BR: a bot near a human thinks every frame, further out every 3rd/6th frame (combat: every 2nd/3rd)
+const _brHum = []; let _brHumN = 0;
+function brHumans() {
+  _brHumN = 0; if (player.alive) _brHum[_brHumN++] = player.pos;
+  for (const e of enemies) if (e.net && e.human && e.alive && e.netOk) _brHum[_brHumN++] = e.pos;
+}
+function brLodPer(e) {
+  let d = 1e9; for (let i = 0; i < _brHumN; i++) { const p = _brHum[i], q = (p.x - e.pos.x) ** 2 + (p.z - e.pos.z) ** 2; if (q < d) d = q; }
+  const c = e.state === 'combat';
+  return d < 3600 ? 1 : d < 16900 ? (c ? 2 : 3) : (c ? 3 : 6);
 }
 function brTook(m) {
   const o = BR.loot[m.i]; if (o) { o.taken = true; brLootSet(o); }
@@ -2476,7 +2505,10 @@ function brTook(m) {
     else if (o.kind === 'med') { player.hp = m.hp; FX.announce('+50 HEALTH', 'start'); }
     else { BR.ar = m.ar; FX.announce(`ARMOR ${m.ar}`, 'start'); }
     sfx.coin?.(); DM.boardDirty = true;
-  } else if (o && NET.host && !WEAPONS[o.kind]) { const r = DM.roster.find(q => q.nid === m.by); if (r?.e) r.e.hp = m.hp; }
+  } else if (o && NET.host) {                                                     // one of my bots took it
+    const r = DM.roster.find(q => q.nid === m.by); if (!r) return;
+    r.ar = m.ar; if (r.e) r.e.hp = m.hp; if (WEAPONS[o.kind]) r.gun = o.kind;
+  }
 }
 function brBoard(el) {
   const zs = NET.zoneShrink > 0, t = Math.max(0, Math.ceil(zs ? NET.zoneShrink : NET.zoneNext)), mm = `${(t / 60) | 0}:${String(t % 60).padStart(2, '0')}`;
@@ -2520,9 +2552,9 @@ function netPump() {                                                            
   if (!NET.ready || mode !== 'dm') return;
   const t = performance.now() / 1000, sp = Math.hypot(player.vel.x, player.vel.z);
   NET.sendState(t, player.alive ? player.pos : _netDead, player.yaw + Math.PI, player.pitch, sp, cur());
-  if (NET.host && t - NET.botT >= 0.05) {
-    const l = []; for (const r of DM.roster) { const e = r.e; if (!e || !e.alive) continue; l.push([r.nid, +e.pos.x.toFixed(2), +e.pos.y.toFixed(2), +e.pos.z.toFixed(2), +e.yaw.toFixed(2), +Math.hypot(e.vel.x, e.vel.z).toFixed(1), e.state === 'combat' ? 1 : 0]); }
-    NET.bots(t, l);
+  if (NET.host && NET.botsBegin(t)) {
+    for (const r of DM.roster) { const e = r.e; if (!e || !e.alive) continue; NET.bot(r.nid, e.pos.x, e.pos.y, e.pos.z, e.yaw, Math.hypot(e.vel.x, e.vel.z), e.state === 'combat' ? 1 : 0); }
+    NET.botsSend();
   }
 }
 const _netDead = V(0, -50, 0);
@@ -2539,7 +2571,7 @@ function netMyKill(v, head) {                                                   
 function netOnMsg(m) {
   if (m.t === 'closed') { if (running || paused || matchOver) netQuit('CONNECTION LOST'); return; }
   if (m.t === 'round') { if (matchOver && $('end').classList.contains('show')) { clearInterval(autoNextT); netRound(); } return; }
-  if (m.t === 'host') { if (NET.ready) netBecomeHost(); return; }
+  if (m.t === 'host') { if (NET.ready) m.on === false ? netLoseHost() : netBecomeHost(); return; }
   if (!NET.ready || mode !== 'dm') return;
   const my = NET.team;
   switch (m.t) {
@@ -2592,8 +2624,12 @@ function netOnMsg(m) {
   }
 }
 const _netA = V(), _netB = V();
+function netLoseHost() {                                                           // a desktop took over the bots: they become puppets here
+  for (const r of DM.roster) { if (r.e) netDrop(r.e); const ne = NET.ents.get(r.nid); if (ne?.alive) netPuppet(ne); }
+  DM.roster.length = 0;
+}
 function netBecomeHost() {                                                         // the old host left: run the bots from here on
-  NET.host = true; track('net', { k: 'host' });
+  if (NET.host && DM.roster.length) return; NET.host = true; track('net', { k: 'host' });
   for (const ne of NET.ents.values()) {
     if (!ne.bot) continue;
     const pe = netObj(ne.id); if (pe) netDrop(pe);
@@ -2712,7 +2748,7 @@ function killCam(dt) {                                                          
   const ex = e.pos.x - player.pos.x, ez = e.pos.z - player.pos.z, ty = Math.atan2(-ex, -ez), tp = Math.atan2(e.pos.y + 1.2 - player.pos.y - CFG.eye, Math.hypot(ex, ez));
   let d = ty - player.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); player.yaw += d * Math.min(1, dt * 4); player.pitch += (tp - player.pitch) * Math.min(1, dt * 4);
 }
-const pzModes = () => mpUrl() ? [['obr', 'BATTLE ROYALE', 'skull', 'ISLAND RING · 24 PLAYERS · LAST ONE STANDING'], ['otdm', 'ONLINE TEAM DM', 'squad', 'REAL PLAYERS + BOTS · 4 V 4'], ['ohill', 'ONLINE HOLD THE HILL', 'flag', 'REAL PLAYERS + BOTS · 4 V 4'], ...PZ_MODES] : PZ_MODES;
+const pzModes = () => mpUrl() ? [['obr', 'BATTLE ROYALE', 'skull', 'ISLAND RING · 50 PLAYERS · LAST ONE STANDING'], ['otdm', 'ONLINE TEAM DM', 'squad', 'REAL PLAYERS + BOTS · 4 V 4'], ['ohill', 'ONLINE HOLD THE HILL', 'flag', 'REAL PLAYERS + BOTS · 4 V 4'], ...PZ_MODES] : PZ_MODES;
 const PZ_MODES = [['tdm', 'TEAM DEATHMATCH', 'squad', '5 V 5 · BOTS'], ['dm', 'FREE FOR ALL', 'skull', 'EVERY BOT FOR ITSELF'], ['gun', 'GUN RUN', 'assault-rifle', 'EVERY KILL, A NEW GUN'], ['hill', 'HOLD THE HILL', 'flag', 'STAND IN THE ZONE']];   // rebrand: story campaign cut
 function pauseFill() {
   const dm = mode === 'dm';

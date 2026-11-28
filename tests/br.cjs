@@ -48,6 +48,9 @@ const until = (pg, fn, arg, ms = 30000) => pg.waitForFunction(fn, arg, { timeout
     ok = await until(A.pg, w => __game.br.slots[0] === w, gun[1], 6000);
     const tk = await B.pg.evaluate(i => __game.brLoot()[i][5], gun[0]);
     check('walking over a gun crate picks it up (server confirms, gone for others)', ok && tk, JSON.stringify({ gun: gun[1], slots: (await A.pg.evaluate(() => __game.br.slots)), seenTaken: tk }));
+    // host bots go for loot they want (meds, armor, one gun each)
+    ok = await until(A.pg, () => __game.brLoot().filter(x => x[5]).length >= 4, null, 30000);
+    check('bots pick up loot', ok, `taken=${await A.pg.evaluate(() => __game.brLoot().filter(x => x[5]).length)}`);
     // zone: shrinks (fast zone) and hurts players outside
     ok = await until(A.pg, () => __game.br.zone && __game.br.zone[2] < 120, null, 40000);
     const zz = await A.pg.evaluate(() => __game.br.zone);
@@ -66,8 +69,24 @@ const until = (pg, fn, arg, ms = 30000) => pg.waitForFunction(fn, arg, { timeout
     // round ends (last one standing) for the desktop too
     ok = await until(A.pg, () => document.getElementById('end').classList.contains('show'), null, 150000);
     check('round ends with a last one standing', ok, ok ? await A.pg.textContent('#rankBadge') : 'timeout');
+    // server: line-of-sight checks on hits pass real fights (few "through a wall" refusals) + slim binary snapshots
+    const st = await (await fetch(`http://localhost:${PORT}/stats`)).json(), wall = st.rej_wall || 0;
+    check('line-of-sight check refuses few real hits (< 25%)', st.hits > 5 && wall / (st.hits + wall) < 0.25, JSON.stringify({ hits: st.hits, wall }));
+    check('snapshots are binary and small (< 260 B avg for 12 players)', st.snaps > 100 && st.snapBytes / st.snaps < 260, `avg=${(st.snapBytes / st.snaps).toFixed(0)} B`);
     for (const [n, c] of [['desktop', A], ['phone', B]]) { const e = c.pg.errors.filter(x => !/favicon|404/.test(x)); check(`${n}: no page errors`, !e.length, e.slice(0, 3).join(' | ')); }
-    await A.ctx.close(); await B.ctx.close();
+    await A.ctx.close(); await B.ctx.close(); await sleep(500);
+    // a desktop joining a room a phone hosts takes the bots over
+    const P = await client(browser, { phone: true, name: 'PhoneHost' });
+    await P.pg.evaluate(() => __game.netStart('obr'));
+    ok = await until(P.pg, () => __game.net.ready && __game.br.on && __game.net.host, null, 90000);
+    const D = await client(browser, { name: 'DeskJoin' });
+    await D.pg.evaluate(() => __game.netStart('obr'));
+    ok = ok && await until(D.pg, () => __game.net.ready && __game.br.on && __game.net.host && __game.net.aiBots >= 9, null, 90000);
+    ok = ok && await until(P.pg, () => !__game.net.host && __game.net.roster === 0 && __game.net.puppets >= 10, null, 10000);
+    const ph = await P.pg.evaluate(() => __game.net), dk = await D.pg.evaluate(() => __game.net);
+    check('a desktop joining a phone-hosted room takes over the bots', ok && ph.room === dk.room, JSON.stringify({ p: [ph.host, ph.roster, ph.puppets], d: [dk.host, dk.aiBots], rooms: [ph.room, dk.room] }));
+    for (const [n, c] of [['host phone', P], ['desktop joiner', D]]) { const e = c.pg.errors.filter(x => !/favicon|404/.test(x)); check(`${n}: no page errors`, !e.length, e.slice(0, 3).join(' | ')); }
+    await P.ctx.close(); await D.ctx.close();
   } catch (e) { check('test run', false, String(e).slice(0, 300)); }
   await browser.close(); srv.kill();
   console.log('--- server log ---\n' + log.split('\n').slice(-20).join('\n'));

@@ -36,6 +36,8 @@ id blastline >/dev/null 2>&1 || useradd --system --home "$DIR" --shell /usr/sbin
 mkdir -p "$DIR"
 curl -fsSL "$RAW/server.mjs" -o "$DIR/server.mjs"
 curl -fsSL "$RAW/package.json" -o "$DIR/package.json"
+curl -fsSL "$RAW/los.mjs" -o "$DIR/los.mjs"
+curl -fsSL "$RAW/maps.json" -o "$DIR/maps.json"
 (cd "$DIR" && npm install --omit=dev --silent)
 chown -R blastline:blastline "$DIR"
 

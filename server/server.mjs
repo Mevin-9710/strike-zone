@@ -8,6 +8,7 @@
 //             when it leaves, the next player takes the bots over
 import { WebSocketServer } from 'ws';
 import http from 'node:http';
+import { losOk as losMap } from './los.mjs';
 
 const PORT = Number(process.env.PORT || 8787);
 const VERSION = 1;                                     // protocol version: clients with another version are refused
@@ -15,7 +16,7 @@ const TICK = 20;                                       // snapshots per second
 const MODES = {
   tdm: { size: 8, time: 300, target: 40 },             // 4 v 4, first team to 40 kills or most kills after 5 min
   hill: { size: 8, time: 300, target: 100 },           // 4 v 4, first team to 100 hill points
-  br: { size: Number(process.env.BR_SIZE || 24), time: 600, target: 0, br: true },   // battle royale on Island Ring: everyone for themselves, no respawns, last one standing
+  br: { size: Number(process.env.BR_SIZE || 50), time: 600, target: 0, br: true },   // battle royale on Island Ring: everyone for themselves, no respawns, last one standing
 };
 // battle royale zone: starts over the whole island, each phase waits, then shrinks to a smaller circle inside the last one
 const BR_C = 116, BR_R0 = 175, BR_DROP = Number(process.env.BR_DROP || 40);   // island centre/radius; humans can still join for BR_DROP s
@@ -120,9 +121,13 @@ function pickRoom(mode, roomId) {
   return best || makeRoom(mode);
 }
 function joinable(r) { return humans(r).length < r.cfg.size && !(r.state === 'play' && r.clock < JOIN_CUTOFF) && (!isBr(r) || brOpen(r)); }
-function setHost(r) {
-  const h = humans(r).sort((a, b) => a.joinT - b.joinT)[0]; r.host = h ? h.id : 0;
+function setHost(r) {                                                                   // desktops first (they run the bot AI better), then the longest-connected
+  const h = humans(r).sort((a, b) => (b.desk - a.desk) || (a.joinT - b.joinT))[0]; r.host = h ? h.id : 0;
   if (h) send(h.ws, { t: 'host', on: true });
+}
+function handHost(r, to) {                                                              // a desktop joined a room hosted by a phone: the desktop takes the bots
+  const old = r.ents.get(r.host); if (old && !old.bot) send(old.ws, { t: 'host', on: false });
+  r.host = to.id; send(to.ws, { t: 'host', on: true }); log(`host -> ${to.name} (desktop)`);
 }
 
 // ---------- joining / leaving ----------
@@ -133,13 +138,14 @@ function join(ws, m) {
   const a = teamOf(r, 'A').filter(e => !e.bot).length, b = teamOf(r, 'B').filter(e => !e.bot).length;
   const id = nextId++, team = isBr(r) ? 'p' + id : a <= b ? 'A' : 'B';
   const e = { id, bot: false, ws, team, name: clean(m.name) || 'Player' + ((Math.random() * 9000 + 1000) | 0), alive: false, hp: 100, ar: 0, k: 0, d: 0, spawned: false,
-    p: [0, -50, 0], yaw: 0, sp: 0, pi: 0, w: 'ar7_lance', spawnT: 0, hitLog: [], lastHit: 0, joinT: now(), lastMsg: now() };
+    p: [0, -50, 0], yaw: 0, sp: 0, pi: 0, w: 'ar7_lance', spawnT: 0, hitLog: [], lastHit: 0, joinT: now(), lastMsg: now(), desk: m.dev === 'm' ? 0 : 1 };
   ws.ent = e; ws.room = r;
   r.ents.set(e.id, e); fill(r);                                                       // a bot on the new player's team steps out
   if (!r.host) r.host = e.id;
   send(ws, { t: 'welcome', you: e.id, team, room: r.id, mode, map: r.map, round: r.round, host: r.host === e.id, clock: r.clock, state: r.state,
     target: r.cfg.target, score: r.score, hill: r.hill, hillOwn: r.hillOwn, ents: [...r.ents.values()].map(pub), joinable: joinable(r), ...brInfo(r) });
   broadcast(r, { t: 'add', e: pub(e) }, e.id);
+  const h = r.ents.get(r.host); if (e.desk && h && h !== e && !h.desk) handHost(r, e);
   log(`join ${e.name} -> room ${r.id} (${mode}) team ${team}, ${humans(r).length} players`);
 }
 function brInfo(r) {
@@ -157,13 +163,15 @@ function leave(ws) {
   log(`leave ${e.name} <- room ${r.id}, ${humans(r).length} left`);
 }
 
+// ---------- line of sight ----------
+// (code in server/los.mjs)
+
 // ---------- hits ----------
 function dist(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
 function hit(r, from, m) {
   if (r.state !== 'play') return;
   const s = r.ents.get(m.s), v = r.ents.get(m.v); let d = Number(m.d);
   if (!s || !v || !s.alive || !v.alive || s.team === v.team || !(d > 0)) return;
-  if (isBr(r) && v.ar > 0) { const soak = Math.min(v.ar, d * 0.6); v.ar -= soak; d -= soak; }   // armor takes 60% of each hit until it is gone
   if (s.bot ? from.id !== r.host : s.id !== from.id) return;                         // you may only shoot as yourself; only the host shoots for bots
   const t = now();
   if (t - v.spawnT < SPAWN_PROTECT) return;
@@ -176,13 +184,15 @@ function hit(r, from, m) {
     s.hitLog = s.hitLog.filter(x => t - x < 1); s.hitLog.push(t);                  // fire rate: hits in the last second vs the gun's rpm
     if (s.hitLog.length > rpm / 60 * 1.5 + 2) return reject(s, 'rate');
   }
-  s.lastHit = t;
+  if (m.w !== 'blast' && !losMap(r.map, s.p, v.p)) return reject(s, 'wall');                  // splash damage (airstrike, barrels) goes round corners
+  s.lastHit = t; stats.hits++;
+  if (isBr(r) && v.ar > 0) { const soak = Math.min(v.ar, d * 0.6); v.ar -= soak; d -= soak; }   // armor takes 60% of each hit until it is gone
   v.hp = Math.max(0, v.hp - d);
   const head = !!m.hd;
   broadcast(r, { t: 'dmg', s: s.id, v: v.id, d: Math.round(d), hp: Math.round(v.hp), hd: head, ar: Math.round(v.ar || 0) });
   if (v.hp <= 0) kill(r, s, v, head);
 }
-function reject(s, why) { s.bad = (s.bad || 0) + 1; if (s.bad % 20 === 1) log(`reject ${why} from ${s.name} (${s.bad})`); }
+function reject(s, why) { stats['rej_' + why] = (stats['rej_' + why] || 0) + 1; s.bad = (s.bad || 0) + 1; if (s.bad % 20 === 1) log(`reject ${why} from ${s.name} (${s.bad})`); }
 function kill(r, s, v, head) {                                                     // s = null: the zone
   v.alive = false; v.d++; if (s) s.k++;
   if (r.mode === 'tdm' && s) r.score[s.team]++;
@@ -225,7 +235,19 @@ function hillTick(r, dt) {
 }
 
 // ---------- messages ----------
-function onMsg(ws, raw) {
+// host -> server bot states, binary: u8 2, u16 n, n x 14 bytes: u32 id, i16 x*50, i16 y*50, i16 z*50, i16 yaw*10000, u8 speed*10, u8 flags
+function onBin(ws, b) {
+  const e = ws.ent, r = ws.room; if (!e || !r || b.length < 3) return;
+  e.lastMsg = now();
+  if (b[0] !== 2 || e.id !== r.host) return;
+  const n = Math.min(b.readUInt16LE(1), ((b.length - 3) / 14) | 0);
+  for (let i = 0, o = 3; i < n; i++, o += 14) {
+    const bot = r.ents.get(b.readUInt32LE(o)); if (!bot || !bot.bot) continue;
+    bot.p = [b.readInt16LE(o + 4) / 50, b.readInt16LE(o + 6) / 50, b.readInt16LE(o + 8) / 50]; bot.yaw = b.readInt16LE(o + 10) / 10000; bot.sp = b[o + 12] / 10; bot.fl = b[o + 13];
+  }
+}
+function onMsg(ws, raw, bin) {
+  if (bin) { onBin(ws, raw); return; }
   let m; try { m = JSON.parse(raw); } catch { return; }
   if (!m || typeof m.t !== 'string') return;
   if (m.t === 'join') { if (!ws.ent) join(ws, m); return; }
@@ -242,7 +264,10 @@ function onMsg(ws, raw) {
       break;
     case 'f':                                                                          // a shot to draw (tracer + sound) on everyone else
       if (m.s !== e.id && !(e.id === r.host && r.ents.get(m.s)?.bot)) break;
-      broadcast(r, { t: 'f', s: m.s, a: m.a, b: m.b, w: m.w }, e.id);
+      if (isBr(r) && Array.isArray(m.a)) {                                              // BR: only players within earshot get the shot
+        const s = JSON.stringify({ t: 'f', s: m.s, a: m.a, b: m.b, w: m.w }), ax = +m.a[0] || 0, az = +m.a[2] || 0;
+        for (const o of r.ents.values()) if (!o.bot && o.id !== e.id && (!o.alive || (o.p[0] - ax) ** 2 + (o.p[2] - az) ** 2 < SHOT_HEAR * SHOT_HEAR)) send(o.ws, s);
+      } else broadcast(r, { t: 'f', s: m.s, a: m.a, b: m.b, w: m.w }, e.id);
       break;
     case 'h': hit(r, e, m); break;
     case 'r':                                                                          // I respawned at p
@@ -277,6 +302,9 @@ function onMsg(ws, raw) {
 let lastT = now();
 setInterval(() => {
   const t = now(), dt = t - lastT; lastT = t;
+  try { tick(t, dt); } finally { stats.tickMs += (now() - t) * 1000; stats.ticks++; }
+}, 1000 / TICK);
+function tick(t, dt) {
   for (const r of rooms.values()) {
     for (const e of humans(r)) if (t - e.lastMsg > 20) { log(`timeout ${e.name}`); e.ws.terminate(); }
     if (r.state === 'play') {
@@ -286,11 +314,52 @@ setInterval(() => {
       if (r.clock <= 0) endRound(r);
     } else if (t - r.endT >= END_PAUSE) newRound(r);
     if (r.state !== 'play') continue;
-    const l = []; for (const e of r.ents.values()) l.push([e.id, +e.p[0].toFixed(2), +e.p[1].toFixed(2), +e.p[2].toFixed(2), +e.yaw.toFixed(2), +e.pi.toFixed(2), +e.sp.toFixed(1), e.alive ? 1 : 0, e.fl | 0]);
-    const zs = isBr(r) ? { z: [+r.zone.c[0].toFixed(1), +r.zone.c[1].toFixed(1), +r.zone.r.toFixed(1)], zn: +Math.max(0, r.zone.next - t).toFixed(1), zs: +Math.max(0, r.zone.t1 - t).toFixed(1), al: aliveN(r) } : {};
-    broadcast(r, { t: 'snap', c: +r.clock.toFixed(1), e: l, sc: r.score, ...zs });
+    snapRoom(r, t);
   }
-}, 1000 / TICK);
+}
+
+// ---------- binary snapshots with interest management ----------
+// Every receiver gets its own snapshot: everyone within NEAR metres at the full 20 Hz, everyone further away at 4 Hz
+// (spread over the ticks by id). The host also needs every human at full rate, because it runs the bot AI.
+// Layout (little endian): u8 1, u8 flags(1=br), u16 clock*10, u16 scoreA, u16 scoreB,
+//   [br: f32 zoneX, f32 zoneZ, f32 zoneR, u16 next*10, u16 shrink*10, u8 alive], u16 n, n x ENT_B bytes:
+//   u32 id, i16 x*50, i16 y*50, i16 z*50, i16 yaw*10000, i8 pitch*80, u8 speed*10, u8 (alive | flags<<1)
+const SHOT_HEAR = 160, NEAR = 120, FAR_EVERY = 5, ENT_B = 15, HEAD_B = 8, BR_B = 17;
+let ents = Buffer.alloc(ENT_B * 64), out = Buffer.alloc(HEAD_B + BR_B + 2 + ENT_B * 64), tickN = 0;
+const stats = { snapBytes: 0, snaps: 0, tickMs: 0, ticks: 0, hits: 0, inBytes: 0 };
+const q16 = v => Math.max(-32768, Math.min(32767, Math.round(v)));
+const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+function snapRoom(r, t) {
+  const list = [...r.ents.values()], n = list.length;
+  if (ents.length < n * ENT_B) { ents = Buffer.alloc(n * ENT_B * 2); out = Buffer.alloc(HEAD_B + BR_B + 2 + n * ENT_B * 2); }
+  for (let i = 0; i < n; i++) {                                                          // each entity's record once per tick
+    const e = list[i], o = i * ENT_B;
+    ents.writeUInt32LE(e.id, o); ents.writeInt16LE(q16(e.p[0] * 50), o + 4); ents.writeInt16LE(q16(e.p[1] * 50), o + 6); ents.writeInt16LE(q16(e.p[2] * 50), o + 8);
+    ents.writeInt16LE(q16(wrap(e.yaw) * 10000), o + 10); ents.writeInt8(Math.max(-127, Math.min(127, Math.round(e.pi * 80))), o + 12);
+    ents[o + 13] = Math.min(255, Math.max(0, Math.round(e.sp * 10))); ents[o + 14] = (e.alive ? 1 : 0) | ((e.fl & 127) << 1);
+  }
+  const br = isBr(r); let h = 0;
+  out[h++] = 1; out[h++] = br ? 1 : 0; out.writeUInt16LE(Math.round(r.clock * 10), h); h += 2; out.writeUInt16LE(r.score.A, h); h += 2; out.writeUInt16LE(r.score.B, h); h += 2;
+  if (br) {
+    const z = r.zone; out.writeFloatLE(z.c[0], h); out.writeFloatLE(z.c[1], h + 4); out.writeFloatLE(z.r, h + 8);
+    out.writeUInt16LE(Math.min(65535, Math.round(Math.max(0, z.next - t) * 10)), h + 12); out.writeUInt16LE(Math.min(65535, Math.round(Math.max(0, z.t1 - t) * 10)), h + 14); out[h + 16] = Math.min(255, aliveN(r)); h += BR_B;
+  }
+  tickN++;
+  for (const rc of list) {
+    if (rc.bot || rc.ws.readyState !== 1) continue;
+    const host = rc.id === r.host, px = rc.p[0], pz = rc.p[2], dead = !rc.alive;
+    let k = h + 2, c = 0;
+    for (let i = 0; i < n; i++) {
+      const e = list[i];
+      const full = e === rc || dead || (host && !e.bot) || ((e.p[0] - px) ** 2 + (e.p[2] - pz) ** 2 < NEAR * NEAR);   // dead receivers spectate anywhere: send all
+      if (!full && (tickN + e.id) % FAR_EVERY) continue;
+      ents.copy(out, k, i * ENT_B, i * ENT_B + ENT_B); k += ENT_B; c++;
+    }
+    out.writeUInt16LE(c, h);
+    rc.ws.send(Buffer.from(out.subarray(0, k)));
+    stats.snapBytes += k; stats.snaps++;
+  }
+}
 
 function log(s) { if (!process.env.QUIET) console.log(new Date().toISOString().slice(11, 19), s); }
 
@@ -298,11 +367,13 @@ function log(s) { if (!process.env.QUIET) console.log(new Date().toISOString().s
 const srv = http.createServer((req, res) => {
   const n = [...rooms.values()].reduce((a, r) => a + humans(r).length, 0);
   res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
-  res.end(JSON.stringify({ ok: true, v: VERSION, players: n, rooms: rooms.size }));
+  const body = { ok: true, v: VERSION, players: n, rooms: rooms.size };
+  if (req.url === '/stats') Object.assign(body, { ents: [...rooms.values()].reduce((a, r) => a + r.ents.size, 0), ...stats, mem: Math.round(process.memoryUsage().rss / 1e6) });
+  res.end(JSON.stringify(body));
 });
 const wss = new WebSocketServer({ server: srv, maxPayload: 16 * 1024 });
 wss.on('connection', ws => {
-  ws.on('message', d => onMsg(ws, d));
+  ws.on('message', (d, bin) => { stats.inBytes += d.length; onMsg(ws, d, bin); });
   ws.on('close', () => leave(ws));
   ws.on('error', () => {});
 });

@@ -635,3 +635,12 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
   - HUD strip: KILLS, zone timer (ZONE MOVES IN / ZONE CLOSING), ALIVE.
   - Dying: the placement screen comes 2 s later, with PLAY AGAIN · NEW MATCH, which queues a fresh room. The winner gets VICTORY · LAST ONE STANDING.
 - Tests: `tests/br.cjs` (12/12 pass; desktop + phone, fast zone), `tests/mp.cjs` 15/15. Main suite `run.cjs` 118/121. The same 3 failures (charm, spray, TDM boost) also fail on the commit before this work.
+
+## Battle royale scaled to 50 (28 Nov 2026, branch claude/project-thread-vvbk6z)
+- Binary snapshots with interest management (`server/server.mjs`, "binary snapshots"): 15 bytes per player instead of ~50 bytes of JSON. Each player gets their own snapshot: everyone within 120 m at 20 Hz, everyone further away at 4 Hz. The host gets every human at full rate (it runs the bot AI). In BR, shot tracers only go to players within 160 m. Host bot states go up as binary too (`NET.botsBegin/bot/botsSend`).
+- Host load: in BR the host's bots think every frame only within 60 m of a human; further out, every 2nd to 6th frame (`brLodPer`). Clients send `dev: 'd'|'m'` on join; a desktop that joins a room a phone hosts takes over the bots (`host {on:false}` demotes the phone, `netLoseHost`).
+- Bots loot: when calm, a host bot runs to the nearest loot it wants within 30 m (inside the next circle): meds when hurt, armor under 100, one gun. It gives up after 12 s if it can't get there.
+- Line of sight on hits: `server/los.mjs` + `server/maps.json` (colliders of the 4 arenas + Island Ring, made by `tools/export_server_maps.cjs`; re-run it after any map change). Lenient: 4 lines (head, chest, both shoulders), boxes shrunk 0.35 m, cover under 1 m ignored. About 3 µs per check. Blast damage skips it.
+- `GET /stats`: snapshot bytes, tick time, hits, refusals by reason, memory.
+- Load test `server/loadtest.mjs` (server pinned to 1 core). Result: 4 full BR rooms (200 slots, 160 simulated humans) used 14% of one core, 1.7 ms per tick, 88 MB RAM. About 31 KB/s down per player in BR, 5 KB/s in TDM. Bandwidth is the limit, not CPU.
+- Tests: `tests/br.cjs` 18/18 (new: bots loot, LOS refusals under 25%, binary snapshot size, desktop takes over from a phone host), `tests/mp.cjs` 15/15.
