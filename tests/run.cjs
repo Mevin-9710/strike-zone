@@ -56,7 +56,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       check('deathmatch: bots respawn, player respawns, HUD counts kills', dm.n0 >= 4 && dm.n1 >= 1 && dm.dead && dm.back && /DEATHMATCH/.test(dm.hud) && dm.run, JSON.stringify(dm));
       await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /RANK|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
       await dctx.close(); }
-    check('rebrand: SELECT MODE lists only arena modes (no story)', await pg.evaluate(() => [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',') === 'tdm,dm,gun'));
+    check('rebrand: SELECT MODE lists only arena modes (no story)', await pg.evaluate(() => [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',') === 'tdm,dm,gun,hill'));
     await pg.evaluate(() => __game.openBriefing());
     check('rebrand: LOADOUT opens on the loadout step (no mode/mission steps)', await pg.isVisible('#stepLoadout') && !(await pg.isVisible('#stepMode')) && !(await pg.isVisible('#stepMission')));
     check('level-locked weapons are disabled and show their level', (await pg.locator('#primaries button:disabled').count()) === 5 && /LV \d/.test(await pg.textContent('#primaries')));
@@ -410,6 +410,25 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
     check('Gun Run: starts on gun 1, each kill gives the next gun, HUD says GUN RUN', r.w0 && r.w1 && r.hud, JSON.stringify(r));
     check('Gun Run: a kill with the last gun wins the match', r.last && /VICTORY/.test(r.end), JSON.stringify(r));
     check('no page errors (gun run)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // Blastline: Hold the Hill (teams score while only they stand in the zone; kills do not score)
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game; localStorage.setItem('sz_teams', '1'); localStorage.setItem('sz_hill', '1'); localStorage.setItem('sz_gun', '0');
+      g.start(0, { mode: 'dm' }); g.step(0.3); const out = { hill: !!g.hill, hud: /HOLD THE HILL/.test(document.getElementById('obj').textContent) };
+      g.peace?.(); for (const e of [...g.enemies, ...(g.allies || [])]) e.damage(9999);
+      const h = g.hill.pos; g.teleport(h.x, h.y, h.z); g.step(0.2); out.inHill = g.hill.inHill; out.owner = g.hill.owner;
+      for (let i = 0; i < 20; i++) { for (const e of g.enemies) if (e.alive) e.damage(9999); g.step(0.5); }
+      out.A = g.hill.A; out.B = g.hill.B;
+      g.fragOne?.(); out.Aafter = g.hill.A;
+      return out;
+    });
+    check('Hold the Hill: zone exists, HUD says HOLD THE HILL', r.hill && r.hud, JSON.stringify(r));
+    check('Hold the Hill: standing alone in the zone scores for blue', r.inHill && r.owner === 'A' && r.A >= 8 && r.B === 0, JSON.stringify(r));
+    check('no page errors (hill)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 
