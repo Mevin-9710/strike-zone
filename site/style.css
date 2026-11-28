@@ -1,5 +1,5 @@
 @font-face{font-family:Oswald;src:url(/play/fonts/Oswald.ttf) format("truetype");font-display:swap;font-weight:200 700}
-:root{--bg:#0b0d10;--bg2:#12161b;--line:#232a32;--fg:#e8e4da;--mut:#8b939c;--acc:#ff4d2e;--acc2:#ffb020;--disp:Oswald,"Arial Narrow",Impact,sans-serif}
+:root{--bg:#0e141e;--bg2:#152030;--line:#24324a;--fg:#f7f7f2;--mut:#93a0b4;--acc:#ffd23b;--acc2:#36d6f0;--disp:Oswald,"Arial Narrow",Impact,sans-serif}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -7,7 +7,7 @@ a{color:var(--acc2)}
 h1,h2,h3,.brand,.btn,.kicker{font-family:var(--disp);letter-spacing:.04em;text-transform:uppercase}
 h2{font-size:clamp(1.8rem,4vw,2.6rem);margin:0 0 1rem;border-left:4px solid var(--acc);padding-left:.6rem}
 .muted{color:var(--mut)}
-.nav{position:fixed;inset:0 0 auto;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:.7rem clamp(1rem,4vw,2.5rem);background:linear-gradient(#0b0d10e6,#0b0d1000);backdrop-filter:blur(6px)}
+.nav{position:fixed;inset:0 0 auto;z-index:10;display:flex;justify-content:space-between;align-items:center;padding:.7rem clamp(1rem,4vw,2.5rem);background:linear-gradient(#0e141ee6,#0e141e00);backdrop-filter:blur(6px)}
 .brand{display:flex;gap:.5rem;align-items:center;color:var(--fg);text-decoration:none;font-size:1.2rem;font-weight:700}
 .nav nav{display:flex;gap:1.1rem;align-items:center}
 .nav nav a{color:var(--fg);text-decoration:none;font-size:.9rem;opacity:.8}
@@ -15,17 +15,17 @@ h2{font-size:clamp(1.8rem,4vw,2.6rem);margin:0 0 1rem;border-left:4px solid var(
 @media (max-width:640px){.nav nav a{display:none}}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;border:1px solid var(--acc);background:none;color:var(--fg);padding:.6rem 1.1rem;font-size:1rem;cursor:pointer;text-decoration:none;clip-path:polygon(10px 0,100% 0,calc(100% - 10px) 100%,0 100%);transition:background .15s,transform .15s}
 .btn:hover{transform:translateY(-1px)}
-.btn.primary{background:var(--acc);color:#120604;font-weight:700}
-.btn.primary:hover{background:#ff6a4f}
+.btn.primary{background:var(--acc);color:#111;font-weight:700}
+.btn.primary:hover{background:#ffe06b}
 .btn.ghost{border-color:#ffffff40}
 .btn.ghost:hover{border-color:var(--acc2);color:var(--acc2)}
 .btn.lg{font-size:1.25rem;padding:.9rem 1.8rem}
 .btn.sm{font-size:.85rem;padding:.35rem .8rem}
 .btn.link{border:0;color:var(--mut);clip-path:none}
 .hero{position:relative;min-height:100svh;display:flex;align-items:center;overflow:hidden;padding:6rem clamp(1rem,6vw,5rem) 4rem}
-.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 70% 40%,#ff4d2e33,transparent 55%),radial-gradient(ellipse at 20% 90%,#ffb02018,transparent 50%),linear-gradient(160deg,#151a20,#07080a 70%)}
+.hero-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 70% 40%,#2a5cf055,transparent 55%),radial-gradient(ellipse at 20% 90%,#dc2a3433,transparent 50%),linear-gradient(160deg,#18243a,#0a0f18 70%)}
 .hero-bg.has-shot{background-size:cover;background-position:center}
-.hero-bg.has-shot::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0b0d10f2 25%,#0b0d1066 70%,#0b0d10cc),linear-gradient(0deg,var(--bg),transparent 30%)}
+.hero-bg.has-shot::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0e141ef2 25%,#0e141e66 70%,#0e141ecc),linear-gradient(0deg,var(--bg),transparent 30%)}
 .grid{position:absolute;inset:0;background-image:linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px);background-size:48px 48px;mask-image:radial-gradient(ellipse at 60% 50%,#000,transparent 75%)}
 .scan{position:absolute;inset:0;background:repeating-linear-gradient(0deg,#0000 0 3px,#0000001f 3px 4px);z-index:1;pointer-events:none}
 .hero-in{position:relative;z-index:2;max-width:46rem}
@@ -82,3 +82,7 @@ dialog::backdrop{background:#000b}
 #toast{position:fixed;left:50%;bottom:1.5rem;transform:translate(-50%,200%);background:var(--fg);color:var(--bg);padding:.7rem 1.2rem;font-weight:600;transition:transform .25s;z-index:20;max-width:90vw}
 #toast.show{transform:translate(-50%,0)}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Blastline wordmark */
+h1 .wordmark{display:block;width:min(100%,34rem);height:auto;filter:drop-shadow(0 10px 30px #0008)}
+.brand img{display:block}

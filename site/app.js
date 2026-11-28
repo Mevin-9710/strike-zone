@@ -1,4 +1,4 @@
-// Strike Zone site: install flow, media gallery, devlog, and Supabase-backed ideas/auth/subscriptions.
+// Blastline site: install flow, media gallery, devlog, and Supabase-backed ideas/auth/subscriptions.
 const $ = (s) => document.querySelector(s);
 const SITE = window.SZ_SITE || {};
 const ENV = window.SZ_ENV || {};
@@ -28,7 +28,7 @@ const standalone = matchMedia('(display-mode: standalone), (display-mode: fullsc
 const installBtn = $('#installBtn');
 if (standalone) installBtn.hidden = true;
 addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; installBtn.textContent = '⤓ Install app'; });
-addEventListener('appinstalled', () => { installBtn.hidden = true; toast('Installed. Strike Zone now works offline.'); });
+addEventListener('appinstalled', () => { installBtn.hidden = true; toast('Installed. Blastline now works offline.'); });
 installBtn.addEventListener('click', async () => {
   if (deferred) {
     deferred.prompt();
@@ -50,7 +50,7 @@ fetch('/media/media.json').then((r) => r.json()).catch(() => ({})).then((m) => {
     ? `<video src="${trailer[0].src}" controls preload="none" playsinline ${shots[0] ? `poster="${shots[0].src}"` : ''}></video>`
     : ph('TRAILER INCOMING');
   $('#gallery').innerHTML = shots.length
-    ? shots.map((s) => `<a href="${s.src}" target="_blank" rel="noopener"><img src="${s.src}" alt="Strike Zone screenshot" loading="lazy" decoding="async"></a>`).join('')
+    ? shots.map((s) => `<a href="${s.src}" target="_blank" rel="noopener"><img src="${s.src}" alt="Blastline screenshot" loading="lazy" decoding="async"></a>`).join('')
     : [1, 2, 3].map((i) => ph(`SCREENSHOT ${i} · CLASSIFIED`)).join('');
   $('#clips').innerHTML = clips.length
     ? clips.map((c) => `<video class="${c.vertical ? 'tall' : 'wide'}" src="${c.src}" muted loop playsinline controls preload="none"></video>`).join('')

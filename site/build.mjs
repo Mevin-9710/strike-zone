@@ -27,10 +27,12 @@ const cp = (src, dst) => {
 for (const f of ['index.html', 'style.css', 'app.js', 'site.config.js', 'manifest.webmanifest', 'icons']) {
   cp(path.join(SITE, f), path.join(OUT, f));
 }
+cp(path.join(ROOT, 'brand'), path.join(OUT, 'brand'));                                  // Blastline logo for the landing page
+cp(path.join(ROOT, 'media', 'covers-blastline', 'cover_16x9.png'), path.join(OUT, 'og.png'));   // link preview image
 
 // 2. game -> /play/
 const PLAY = path.join(OUT, 'play');
-for (const f of ['index.html', 'game.js', 'menu.css', 'v14.css', 'ui26.css', 'game', 'world', 'fx', 'fonts', 'sfx']) cp(path.join(ROOT, f), path.join(PLAY, f));
+for (const f of ['index.html', 'game.js', 'menu.css', 'v14.css', 'ui26.css', 'game', 'world', 'fx', 'fonts', 'sfx', 'brand']) cp(path.join(ROOT, f), path.join(PLAY, f));
 for (const f of ['three.module.js', 'three.core.js', 'addons/loaders/GLTFLoader.js',
   'addons/utils/BufferGeometryUtils.js', 'addons/utils/SkeletonUtils.js']) cp(path.join(ROOT, 'lib', f), path.join(PLAY, 'lib', f));
 for (const d of ['kenney', 'props', 'rigged', 'weapons', 'dm']) {
@@ -42,17 +44,19 @@ for (const d of ['kenney', 'props', 'rigged', 'weapons', 'dm']) {
 const playIndex = path.join(PLAY, 'index.html');
 if (fs.existsSync(playIndex)) {
   let html = fs.readFileSync(playIndex, 'utf8');
-  html = html.replace('</head>', `<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0b0d10"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'))</script></head>`);
+  html = html.replace('</head>', `<link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0e141e"><link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><script>if('serviceWorker' in navigator)addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'))</script></head>`);
   fs.writeFileSync(playIndex, html);
 }
 
 // 3. media
 const media = { screenshots: [], clips: [], trailer: [] };
+// Blastline: gameplay shots + the preview videos (the older media/{screenshots,clips,trailer} show the cut story mode)
+const SRC = { screenshots: ['screenshots-blastline', /./], clips: ['preview-blastline', /portrait/], trailer: ['preview-blastline', /landscape/] };
 for (const kind of Object.keys(media)) {
-  const src = path.join(ROOT, 'media', kind);
+  const src = path.join(ROOT, 'media', SRC[kind][0]);
   if (!fs.existsSync(src)) continue;
   for (const f of fs.readdirSync(src).sort()) {
-    if (!/\.(png|jpe?g|webp|mp4|webm)$/i.test(f)) continue;
+    if (!/\.(png|jpe?g|webp|mp4|webm)$/i.test(f) || !SRC[kind][1].test(f)) continue;
     cp(path.join(src, f), path.join(OUT, 'media', kind, f));
     media[kind].push({ src: `/media/${kind}/${f}`, vertical: /(9x16|9-16|vertical|portrait|short)/i.test(f) });
   }

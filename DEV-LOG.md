@@ -584,3 +584,8 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Fix: the objective arrow is hidden when there is no target (it stayed on screen with a stale HILL label, e.g. after leaving Hold the Hill or while standing in the hill).
 - Fix: spawn facing strongly prefers a 10 m+ open line (Neon Alley TDM could face a wall 6-8 m away; flaky v30.1 test).
 - Tests: 116/120 before the spawn fix; failures were charm, spray, v28 TDM boost (known) + v30.1 spawn view (fixed, rechecked 8/8 in isolation).
+
+## Blastline website rebrand (28 Nov 2026)
+- Vercel landing page (`site/`) rebranded: Blastline wordmark, night/yellow/cyan palette, arcade copy (Gun Run, Hold the Hill, TDM, six arenas), new icons from the Blastline mark, manifest name, og:image = 16x9 cover.
+- Site media now comes from `media/screenshots-blastline` + `media/preview-blastline` (old story clips dropped). `/play/` now ships the `brand/` folder so the in-game logo loads.
+- CrazyGames link blanked until Blastline is listed (old Strike Zone page is gone).
