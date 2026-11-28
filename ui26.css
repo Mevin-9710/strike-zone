@@ -269,3 +269,21 @@ body.touch #mmlabel{display:none}
 #lCrate .d.now{background:var(--ky);border-color:var(--ky)}#lCrate .d.now b,#lCrate .d.now em{color:#111}
 #lCrate .d.nx{border-color:#36d6f0;background:rgba(54,214,240,.15)}#lCrate .d.nx b{color:#36d6f0}
 #lCrate .d.big:not(.got):not(.now){background:linear-gradient(180deg,rgba(255,154,60,.35),rgba(227,20,27,.25));border-color:#ff9a3c}
+/* v46 phone declutter (Mevin 28 Nov: lobby panels overlapped, end-screen feedback cut off). Short landscape screens only. */
+@media (orientation:landscape) and (max-height:430px){
+  #lobby.v14 #lobbyTop .logo{white-space:nowrap;font-size:calc(var(--u)*1.7)!important;letter-spacing:.08em}
+  #lWeps{display:none!important}                      /* weapons live in LOADOUT; the strip covered the daily reward */
+  #lSide{top:calc(var(--u)*4.2)!important;bottom:calc(var(--u)*1);gap:calc(var(--u)*.5)!important;justify-content:flex-start}
+  #lQuests{padding:calc(var(--u)*.45) calc(var(--u)*.7)!important}
+  #lQuests .q{margin-top:calc(var(--u)*.3);font-size:calc(var(--u)*.85);line-height:1.15}
+  #lQuests .q.claimed,#lQuests .q:nth-of-type(n+5){display:none}   /* 3 rows max on phones, claimed ones hidden */
+  #lCrate .d b{font-size:calc(var(--u)*.5)}
+  #end[data-pg] #dmEnd{gap:6px;margin-bottom:2px}
+  #end[data-pg] #rankBadge{font-size:calc(var(--u)*2.3);padding:4px 22px;white-space:nowrap;border-width:3px;box-shadow:4px 4px 0 #111}
+  #end[data-pg="2"]:has(#fbEnd) #upBox{display:none!important}   /* one-time feedback row gets the space; upgrades are in LOADOUT */
+  #end[data-pg="2"] #endPlay{margin-top:2px}
+  #fbEnd{margin:4px 0}.fbChips{margin:2px 0 4px}.fbChips button{padding:4px 9px!important}
+  body:has(#end.show) .questToast{top:6px;padding:5px 12px}   /* keep the toast off the end-screen buttons */
+  body .sz-ann{font-size:calc(var(--u)*2.6)!important;top:27%!important;letter-spacing:.12em!important}   /* match calls no longer span the whole screen */
+  body .sz-banner{bottom:24%!important}body .sz-banner .sz-bt{font-size:calc(var(--u)*1.7)!important}
+}

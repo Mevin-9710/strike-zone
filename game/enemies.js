@@ -222,8 +222,9 @@ export class Enemy {
     if (this.shieldHP > 0) { const a = Math.min(this.shieldHP, amount * 0.75); this.shieldHP -= a; amount -= a; }
     this.hp -= amount; this.lastHurtT = 0;
     this.lastHitPart = part === 'head' || part === 'legs' ? part : 'body';
-    if (part === 'head') { releaseToken(this); this.flinch = 1.6; this.staggerT = STAGGER; this.aimT = 0; this.burstLeft = 0; this.shotT = Math.max(this.shotT, STAGGER); }
-    else this.flinch = Math.max(this.flinch, part === 'legs' ? 0.7 : 1);
+    if (this.flinch < 0.3) this.flinchSide = Math.random() < 0.5 ? -1 : 1;   // v46: small eased twitch, re-armed only once the last one settled (no limbo lean under sustained fire)
+    if (part === 'head') { releaseToken(this); this.flinch = 1; this.staggerT = STAGGER; this.aimT = 0; this.burstLeft = 0; this.shotT = Math.max(this.shotT, STAGGER); }
+    else if (this.flinch < 0.3) this.flinch = part === 'legs' ? 0.6 : 1;
     this.alert(from, 1);
     if (this.hp <= 0) { this.die(); return true; }
     return false;
@@ -261,7 +262,7 @@ export class Enemy {
     this.staggerT = Math.max(0, this.staggerT - dt);
     UPD++; if (this.token) this.tokT = UPD;
     this.blindT = Math.max(0, this.blindT - dt); this.revealT = Math.max(0, this.revealT - dt);
-    this.alertT = Math.max(0, this.alertT - dt); this.flinch = Math.max(0, this.flinch - dt * 5);
+    this.alertT = Math.max(0, this.alertT - dt); this.flinch = Math.max(0, this.flinch - dt * 6);
     this.lockSlow = G.inLockdown(this.pos) ? 0.3 : 1;
 
     // choose target: the player, or a decoy hologram that is closer/visible
@@ -329,8 +330,8 @@ export class Enemy {
     const aimK = this.aimT > 0 ? Math.sin(clamp(1 - this.aimT / AIM_TELL, 0, 1) * Math.PI * 0.5) : 0;
     if (ch) {
       if (aimK > 0) ch.rotation.x -= aimK * 0.16;
-      if (this.flinch > 0) { ch.rotation.x -= this.flinch * 0.35; if (hd) hd.rotation.x -= this.flinch * 0.25; }
-      if (this.staggerT > 0) { const k = this.staggerT / STAGGER; ch.rotation.z += Math.sin(this.staggerT * 38) * 0.12 * k; if (hd) hd.rotation.x -= 0.35 * k; }
+      if (this.flinch > 0) { const k = this.flinch * this.flinch; ch.rotation.x -= k * 0.12; ch.rotation.y += k * 0.08 * (this.flinchSide || 1); if (hd) hd.rotation.x -= k * 0.1; }
+      if (this.staggerT > 0) { const k = this.staggerT / STAGGER; if (hd) hd.rotation.x -= 0.22 * k * k; }   // v46: headshot = quick head snap, no shaking
     }
     if (aimK > 0) {
       this.glow.visible = true;
@@ -546,6 +547,8 @@ export class Enemy {
   }
   fire(G) {
     const from = this.muzzle(_from), tgt = this.target, diff = diffOf(G);
+    // v46: the bullet needs a clear line from the muzzle too. Eye LOS alone let a gun poking past a corner, or a tall bot over a wall, land hits through brick.
+    if (!G.world.lineClear(from, tgt)) { this.burstLeft = 0; return; }
     const dist = from.distanceTo(tgt);
     let acc = this.S.acc * clamp(1.25 - dist / (this.S.range * 1.1), 0.15, 1.2);
     acc *= 1 / (1 + Math.max(0, dist - 15) / 30);       // extra long-range falloff
