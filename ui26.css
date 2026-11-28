@@ -329,7 +329,7 @@ body.touch #vit{right:calc(50% + 98px)!important}
 #lobby.v14 #lobbyTop{background:var(--bl-night)!important;border-bottom:3px solid var(--bl-ink);box-shadow:0 3px 0 var(--bl-blast)}
 #lobby.v14 #lNav{gap:6px!important}
 #lobby.v14 #lNav button{font-family:Oswald,'Arial Narrow',Impact,sans-serif!important;font-style:italic;font-weight:700;letter-spacing:.06em;color:var(--bl-text)!important;background:transparent!important;
-  border:3px solid transparent!important;border-radius:0!important;transform:skewX(-8deg);padding:2px 12px!important;box-shadow:none!important;text-shadow:2px 2px 0 var(--bl-ink)}
+  border:3px solid transparent!important;border-radius:0!important;transform:skewX(-8deg);padding:2px 8px!important;box-shadow:none!important;text-shadow:2px 2px 0 var(--bl-ink)}
 #lobby.v14 #lNav button:hover{color:var(--bl-cyan)!important}
 #lobby.v14 #lNav button.on{background:var(--bl-blast)!important;color:var(--bl-ink)!important;border-color:var(--bl-ink)!important;box-shadow:var(--bl-sm)!important;text-shadow:none}
 #lobby.v14 #lvl,#lobby.v14 #coins{background:var(--bl-panel)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;transform:skewX(-8deg);
@@ -367,11 +367,10 @@ body.touch #vit{right:calc(50% + 98px)!important}
 #lobby.v14 #lmsList button{border-radius:0!important}
 #lobby.v14 #lmsList button.on{background:var(--bl-blast)!important;color:var(--bl-ink)!important}
 #lobby.v14 #lPlay{background:var(--bl-blast)!important;color:var(--bl-ink)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-lg)!important;
-  clip-path:none!important;transform:skewX(-12deg)!important;animation:blLobbyPulse 1.1s ease-in-out infinite}
+  clip-path:none!important;transform:skewX(-12deg)!important}
 #lobby.v14 #lPlay:hover{background:var(--bl-blast-hot)!important}
-#lobby.v14 #lPlay::after{display:none!important}
-@keyframes blLobbyPulse{50%{transform:skewX(-12deg) scale(1.04)}}
-@media (prefers-reduced-motion:reduce){#lobby.v14 #lPlay{animation:none}}
+/* pulse on a ring, not the button itself: a moving button never settles for taps (and Playwright waits for it to be stable) */
+#lobby.v14 #lPlay::after{border-color:var(--bl-blast)!important}
 #lobby.v14 #lExtra .kmini{background:var(--bl-raised)!important;border:3px solid var(--bl-ink)!important;border-radius:0!important;box-shadow:var(--bl-sm)!important;color:var(--bl-text)!important;transform:skewX(-8deg)}
 /* weapon cards */
 #lobby.v14 #lWeps{gap:10px!important}
@@ -382,7 +381,7 @@ body.touch #vit{right:calc(50% + 98px)!important}
 #lobby.v14 #lWeps .wcard.lock{background:var(--bl-raised)!important;color:var(--bl-muted)!important}
 #lobby.v14 #lWeps .wcard.lock u{color:var(--bl-loot)!important}
 #lobby.v14 #lWeps .wcard:hover{outline:2px solid var(--bl-cyan);outline-offset:2px}
-@media (max-height:500px),(max-width:700px){
+@media (max-height:560px),(max-width:1000px){
   #lobby.v14 #lNav{gap:2px!important}
   #lobby.v14 #lNav button{padding:1px 7px!important;border-width:2px!important}
   #lobby.v14 #lvl,#lobby.v14 #coins,#lobby.v14 #lobbyTop .ico{border-width:2px!important;box-shadow:2px 2px 0 #111!important}
