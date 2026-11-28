@@ -570,3 +570,10 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Briefing opens on the loadout step; DEPLOY starts an arena match. Kenney story kits no longer download at boot.
 - Operatives now unlock by level (Kade 2, Yuna 5, Tomas 7, Amara 9); locked gear shows its level instead of a mission number.
 - Story engine code is still in game.js (unreachable from the UI); removal comes in a later step. Tests: 111/114 (2 known charm/spray + outcome-dependent TDM boost).
+
+## Blastline step 2: pace, two new modes, two new arenas (28 Nov 2026)
+- Matches: 3:00 (was 4:00), Team DM first to 20 (+4/level), FFA first to 12 (+4/level), respawn 1 s, auto-rematch 5 s, run speed 5.8 (was 5.2).
+- Gun Run (FFA): 10-gun ladder (GUN_LADDER), each kill moves you to the next gun, a kill with the last one wins. Death-card loadouts off in this mode. Bots keep their own guns.
+- Hold the Hill (teams): one zone near the arena centre (RC.hillRadius 5), a team alone in it scores RC.hillRate/s, first to RC.hillScore (100). Kills don't score. Bots head for the hill 60% of the time they pick a new goal. Objective arrow points at the hill when you're outside it.
+- New arenas built in code (world/arena-maps.js, no download): Sunbreak Yard (container yard, raised centre deck), Skyline Courts (catwalks over a fountain court). Symmetric for both teams.
+- Mode choice: sz_teams + sz_gun + sz_hill (setModeKey). Tests 117/120 (the known 3).

@@ -339,7 +339,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       }
       return { out, errs: g.errors.length };
     });
-    check('v27 DM arenas: all 4 load and play (nav, spawn pool, teams)', r.out.length === 4 && r.out.every(o => o.ok) && r.errs === 0, JSON.stringify(r));
+    check('DM arenas: all 6 load and play (nav, spawn pool, teams)', r.out.length === 6 && r.out.every(o => o.ok) && r.errs === 0, JSON.stringify(r));
     check('v30.1 TDM spawn looks down an open line (8 m+), not into a wall', r.out.every(o => o.free >= 8), JSON.stringify(r.out.map(o => o.free)));
     check('v27 DM arenas: under 400 draw calls (incl. shadow pass + outlines)', r.out.every(o => o.calls < 400), JSON.stringify(r.out.map(o => o.calls)));
     check('no page errors (v27)', pg.errors.length === 0, pg.errors.join('|'));
