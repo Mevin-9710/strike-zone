@@ -577,3 +577,10 @@ From telemetry (v17-v20): 7 errors "Cannot read properties of null" at the Death
 - Hold the Hill (teams): one zone near the arena centre (RC.hillRadius 5), a team alone in it scores RC.hillRate/s, first to RC.hillScore (100). Kills don't score. Bots head for the hill 60% of the time they pick a new goal. Objective arrow points at the hill when you're outside it.
 - New arenas built in code (world/arena-maps.js, no download): Sunbreak Yard (container yard, raised centre deck), Skyline Courts (catwalks over a fountain court). Symmetric for both teams.
 - Mode choice: sz_teams + sz_gun + sz_hill (setModeKey). Tests 117/120 (the known 3).
+
+## Blastline rebrand step 3 (28 Nov 2026)
+- Covers: `media/covers-blastline/` (16x9, 2x3, 1x1) from `tools/keyart.html` with the BLASTLINE title and a cyan speed bar.
+- Preview videos: `media/preview-blastline/` (landscape 1920x1080 + portrait 1080x1620, 17 s): Sunbreak Yard (Hold the Hill), Skyline Courts (Gun Run), Neon Alley (TDM). `tools/capture_preview.cjs` now takes `map:mode` scenes and its bot only fires at foes in clear sight.
+- Fix: the objective arrow is hidden when there is no target (it stayed on screen with a stale HILL label, e.g. after leaving Hold the Hill or while standing in the hill).
+- Fix: spawn facing strongly prefers a 10 m+ open line (Neon Alley TDM could face a wall 6-8 m away; flaky v30.1 test).
+- Tests: 116/120 before the spawn fix; failures were charm, spray, v28 TDM boost (known) + v30.1 spawn view (fixed, rechecked 8/8 in isolation).

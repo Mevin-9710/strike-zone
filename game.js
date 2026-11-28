@@ -1323,7 +1323,7 @@ function update(dt) {
       guideTo(tgt, dt); const w = GUIDE.wp || tgt;
       _arrowP.copy(w).y += 1.2; const sp = toScreen(_arrowP); if (sp.behind) { sp.x = innerWidth - sp.x; sp.y = innerHeight; }
       FX.objectiveArrow(sp.x, sp.y, sp.on, label, Math.round(GUIDE.len || tgt.distanceTo(player.pos)));
-    } else GUIDE.path = null;
+    } else { GUIDE.path = null; FX.objectiveArrow(null); }   // hide it (inside the hill, or a mode with no objective)
   }
   if (mentor) { mentor.update(dt, MCTX); mfx?.update(dt); }
   if (tutorial?.active) tutorialTick(dt);

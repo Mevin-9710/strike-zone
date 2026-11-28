@@ -16,16 +16,18 @@ const HELPERS = () => {
   window.__botTick = (dt) => {
     const b = window.__bot, g = window.__game; if (!b.on) return;
     b.t += dt; const P = g.player; P.hp = Math.max(P.hp, 85);
-    let best = null, bd = 1e9;
-    for (const e of g.enemies) if (e.alive) { const d = e.pos.distanceTo(P.pos); if (d < bd) { bd = d; best = e; } }
+    let best = null, bd = 1e9, seen = false;                                  // prefer the nearest foe in clear sight, so the clip shows fights, not walls
+    for (const e of g.enemies) if (e.alive) { const v = window.__sees(e), d = e.pos.distanceTo(P.pos) - (v ? 1000 : 0); if (d < bd) { bd = d; best = e; seen = v; } }
+    if (best) bd = best.pos.distanceTo(P.pos);
     if (!best) { g.mouse('l', false); g.key('KeyW', true); return; }
     const tx = best.pos.x, ty = best.pos.y + 1.45, tz = best.pos.z, ey = P.pos.y + 1.6;
     const wy = Math.atan2(-(tx - P.pos.x), -(tz - P.pos.z)), wp = Math.atan2(ty - ey, Math.hypot(tx - P.pos.x, tz - P.pos.z));
     let dy = wy - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const k = 1 - Math.exp(-dt * 9);
     P.yaw += dy * k; P.pitch += (wp - P.pitch) * k;
-    g.mouse('l', Math.abs(dy) < 0.06 && bd < 45);
+    g.mouse('l', seen && Math.abs(dy) < 0.06 && bd < 45);
     g.key('KeyW', bd > 14); g.key('KeyA', Math.sin(b.t * 1.1) > 0.8); g.key('KeyD', Math.sin(b.t * 1.1) < -0.8);
   };
+  window.__sees = (e) => { const g = window.__game, P = g.player, a = P.pos.clone(), b = e.pos.clone(); a.y += 1.6; b.y += 1.3; return g.world.lineClear(a, b); };
   window.__frame = (fps, q) => { window.__botTick(1 / fps); window.__game.step(1 / fps, fps); return document.querySelector('canvas').toDataURL('image/jpeg', q); };
 };
 
@@ -48,7 +50,7 @@ const HELPERS = () => {
       // pre-roll with the bot driving until a red is close and in front, so the clip opens on a fight
       Object.assign(window.__bot, { on: true, t: 0 });
       for (let i = 0; i < 90; i++) { window.__botTick(0.2); g.step(0.2, 30);
-        const P = g.player; const near = g.enemies.some((e) => e.alive && e.pos.distanceTo(P.pos) < 15); if (near && i > 40) break; }
+        const P = g.player; const near = g.enemies.some((e) => e.alive && e.pos.distanceTo(P.pos) < 20 && window.__sees(e)); if (near && i > 30) break; }
       Object.assign(window.__bot, { on: true, t: 0 }); g.step(0.1, 30); }, [MAPS[sc], PRIMARY[sc]]);
     const dir = path.join(out, 'f_' + sc); fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(dir, { recursive: true });
     const n = Math.round(secs * fps);
