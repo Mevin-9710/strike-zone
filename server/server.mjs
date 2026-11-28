@@ -269,7 +269,7 @@ function hillTick(r, dt) {
 // ---------- binary uploads ----------
 // 4 my state:  u8 4, u32 clientMs, i16 x,y,z (2 cm), u16 yaw, i8 pitch (1/80), u8 speed (0.1), u8 weapon (WPN_IDS)
 // 5 a shot:    u8 5, u8 shooter slot, i16 ax,ay,az, i16 bx,by,bz (2 cm)
-// 6 host bots: u8 6, u32 clientMs, u8 n, n x (u8 slot, i16 x,y,z, u16 yaw, u8 speed, u8 flags)
+// 6 host bots: u8 6, u32 clientMs, u8 n, n x (u8 slot, i16 x,y,z, u16 yaw, u8 speed, u8 flags), [u8 m, m x u8 slot: bots unchanged since the last upload]
 // clientMs is the sender's clock; each connection learns its offset to ours, so every position carries the moment it was
 // really captured (upload jitter does not turn into stutter on other screens).
 const WPN_IDS = Object.keys(WPN);
@@ -305,6 +305,8 @@ function onBin(ws, b) {
       setPos(bot, b.readInt16LE(o + 1) / 50, b.readInt16LE(o + 3) / 50, b.readInt16LE(o + 5) / 50, ct);
       bot.yaw = b.readUInt16LE(o + 7) / 65536 * 2 * Math.PI - Math.PI; bot.sp = b[o + 9] / 10; bot.fl = b[o + 10];
     }
+    const so = 6 + n * 11, m = b.length > so ? Math.min(b[so], b.length - so - 1) : 0;   // unchanged bots: still where they were at this moment
+    for (let i = 0; i < m; i++) { const bot = bySlot(r, b[so + 1 + i]); if (bot && bot.bot && bot.cq) bot.confT = ct; }
   }
 }
 function onMsg(ws, raw, bin) {

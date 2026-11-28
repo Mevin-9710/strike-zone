@@ -12,7 +12,7 @@ export function serverUrl(Q, RC) {                      // ?mp=wss://host overri
   return RC.mpUrl || '';
 }
 
-const SNAP = { t: 'snap' }, SC = { A: 0, B: 0 }, ZC = [0, 0, 0], BOT_BUF = new ArrayBuffer(6 + 11 * 255), BV = new DataView(BOT_BUF);
+const SNAP = { t: 'snap' }, SC = { A: 0, B: 0 }, ZC = [0, 0, 0], BOT_BUF = new ArrayBuffer(7 + 12 * 255), STILL = new Uint8Array(255), BV = new DataView(BOT_BUF);
 const UP = new ArrayBuffer(16), UV = new DataView(UP), SH = new ArrayBuffer(14), SV = new DataView(SH), HB = new ArrayBuffer(7), HV = new DataView(HB);
 const DEC = new TextDecoder();
 const DM = { t: 'dmg', s: 0, v: 0, d: 0, hp: 0, ar: 0, hd: false, z: 0 };            // reused for every binary damage message
@@ -20,7 +20,7 @@ const DM = { t: 'dmg', s: 0, v: 0, d: 0, hp: 0, ar: 0, hd: false, z: 0 };       
 const WPN_IDS = ['vex_p9', 'harrow_45', 'bulldog_r6', 'ar7_lance', 'kestrel_bp', 'warden_br', 'grinder_lmg', 'hailstorm_mg', 'longshot_bolt', 'javelin_amr', 'blast'];
 const yawU = a => Math.round((Math.atan2(Math.sin(a), Math.cos(a)) + Math.PI) / (2 * Math.PI) * 65536) & 65535;
 const q16 = v => Math.max(-32768, Math.min(32767, Math.round(v)));
-let bn = 0;
+let bn = 0, sn = 0;
 export function createNet() {
   const N = {
     ws: null, on: false, me: 0, team: 'A', host: false, room: '', mode: '', map: 0, round: 0, target: 0, score: { A: 0, B: 0 },
@@ -78,13 +78,20 @@ export function createNet() {
       if ((N.pingT = (N.pingT || 0) + 1) % 40 === 0) N.send({ t: 'ping', c: performance.now() });
     },
     // host: bot states. botsBegin(t) -> false if not due; then bot(...) per bot; then botsSend()
-    botsBegin(t) { if (t - N.botT < TICK * 0.95 || !N.ws || N.ws.readyState !== 1) return false; N.botT = t; bn = 0; return true; },
+    botsBegin(t) { if (t - N.botT < TICK * 0.95 || !N.ws || N.ws.readyState !== 1) return false; N.botT = t; bn = sn = 0; return true; },
     bot(id, x, y, z, yaw, sp, fl) {
       const e = N.ents.get(id), o = 6 + bn * 11; if (!e || o + 11 > BOT_BUF.byteLength) return;
-      BV.setUint8(o, e.sl); BV.setInt16(o + 1, q16(x * 50), true); BV.setInt16(o + 3, q16(y * 50), true); BV.setInt16(o + 5, q16(z * 50), true);
-      BV.setUint16(o + 7, yawU(yaw), true); BV.setUint8(o + 9, Math.min(255, Math.max(0, Math.round(sp * 10)))); BV.setUint8(o + 10, fl & 255); bn++;
+      const qx = q16(x * 50), qy = q16(y * 50), qz = q16(z * 50), qy2 = yawU(yaw), qs = Math.min(255, Math.max(0, Math.round(sp * 10))), u = e.up || (e.up = new Int32Array(6).fill(-1e9));
+      if (u[0] === qx && u[1] === qy && u[2] === qz && Math.abs(((qy2 - u[3] + 98304) % 65536) - 32768) < 64 && u[4] === qs && u[5] === (fl & 255)) { if (sn < 255) STILL[sn++] = e.sl; return; }   // unchanged: just its slot
+      u[0] = qx; u[1] = qy; u[2] = qz; u[3] = qy2; u[4] = qs; u[5] = fl & 255;
+      BV.setUint8(o, e.sl); BV.setInt16(o + 1, qx, true); BV.setInt16(o + 3, qy, true); BV.setInt16(o + 5, qz, true);
+      BV.setUint16(o + 7, qy2, true); BV.setUint8(o + 9, qs); BV.setUint8(o + 10, fl & 255); bn++;
     },
-    botsSend() { BV.setUint8(0, 6); BV.setUint32(1, (performance.now() | 0) >>> 0, true); BV.setUint8(5, bn); N.ws.send(new Uint8Array(BOT_BUF, 0, 6 + bn * 11)); },
+    botsSend() {
+      BV.setUint8(0, 6); BV.setUint32(1, (performance.now() | 0) >>> 0, true); BV.setUint8(5, bn); let o = 6 + bn * 11;
+      if (sn) { BV.setUint8(o++, sn); new Uint8Array(BOT_BUF, o, sn).set(STILL.subarray(0, sn)); o += sn; }
+      N.ws.send(new Uint8Array(BOT_BUF, 0, o));
+    },
     shot(s, a, b) {
       const e = N.ents.get(s); if (!e || !N.ws || N.ws.readyState !== 1) return;
       SV.setUint8(0, 5); SV.setUint8(1, e.sl); SV.setInt16(2, q16(a.x * 50), true); SV.setInt16(4, q16(a.y * 50), true); SV.setInt16(6, q16(a.z * 50), true);
