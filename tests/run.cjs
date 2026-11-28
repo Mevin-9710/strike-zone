@@ -56,7 +56,7 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       check('deathmatch: bots respawn, player respawns, HUD counts kills', dm.n0 >= 4 && dm.n1 >= 1 && dm.dead && dm.back && /DEATHMATCH/.test(dm.hud) && dm.run, JSON.stringify(dm));
       await dpg.evaluate(() => { __game.timeout(); __game.step(0.2); }); check('deathmatch ends with REMATCH', /RANK|VICTORY/.test(await dpg.textContent('#endTitle')) && /REMATCH/.test(await dpg.textContent('#again')));
       await dctx.close(); }
-    check('rebrand: SELECT MODE lists only arena modes (no story)', await pg.evaluate(() => [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',') === 'tdm,dm'));
+    check('rebrand: SELECT MODE lists only arena modes (no story)', await pg.evaluate(() => [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',') === 'tdm,dm,gun'));
     await pg.evaluate(() => __game.openBriefing());
     check('rebrand: LOADOUT opens on the loadout step (no mode/mission steps)', await pg.isVisible('#stepLoadout') && !(await pg.isVisible('#stepMode')) && !(await pg.isVisible('#stepMission')));
     check('level-locked weapons are disabled and show their level', (await pg.locator('#primaries button:disabled').count()) === 5 && /LV \d/.test(await pg.textContent('#primaries')));
@@ -385,12 +385,31 @@ const WIN = async (pg, i) => pg.evaluate((i) => {
       g.timeout(); g.step(0.2); out.defeat = /DEFEAT/.test(document.getElementById('endTitle').textContent) && document.getElementById('upBox').style.display === 'none' && /RETRY LEVEL 2/.test(document.getElementById('again').textContent);
       return out;
     });
-    check('v25 DM level 1 = 15 kills; level 2 = 20', r.target1 === 15 && r.lvl1 === 1 && r.target2 === 20, JSON.stringify(r));
+    check('Blastline DM level 1 = 12 kills; level 2 = 16', r.target1 === 12 && r.lvl1 === 1 && r.target2 === 16, JSON.stringify(r));
     check('v17 DM victory: VICTORY, NEXT LEVEL, +1 upgrade point shown', r.victory && r.upPoint, JSON.stringify(r));
     check('v17 DM defeat: DEFEAT, retry same level, no upgrades', r.defeat, JSON.stringify(r));
     check('v17 bots: bigger, 100 HP', r.bigBots, JSON.stringify(r));
     check('v17 phone landscape: fire/reload/aim/jump do not overlap', r.overlap === 0, JSON.stringify(r));
     check('no page errors (v17)', pg.errors.length === 0, pg.errors.join('|'));
+    await ctx.close();
+  }
+
+  // Blastline: Gun Run (every kill moves you up the weapon ladder; a kill with the last gun wins)
+  {
+    const { ctx, pg } = await open(browser, { query: 'test=1' });
+    const r = await pg.evaluate(() => {
+      const g = __game; localStorage.setItem('sz_teams', '0'); localStorage.setItem('sz_gun', '1');
+      g.start(0, { mode: 'dm' }); g.step(0.3); const L = g.GUN_LADDER, out = { w0: g.weapon === L[0], hud: /GUN RUN/.test(document.getElementById('obj').textContent) };
+      g.fragOne(); g.step(0.1); out.w1 = g.weapon === L[1] && g.gunI === 1;
+      for (let i = 1; i < L.length - 1; i++) { if (!g.enemies.some(e => e.alive)) g.step(3); g.fragOne(); g.step(0.05); }
+      out.last = g.weapon === L[L.length - 1] && !g.state.end;
+      if (!g.enemies.some(e => e.alive)) g.step(3); g.fragOne(); g.step(0.3); out.end = g.state.end || '';
+      out.modes = [...document.querySelectorAll('#lmsList [data-m]')].map(b => b.dataset.m).join(',');
+      return out;
+    });
+    check('Gun Run: starts on gun 1, each kill gives the next gun, HUD says GUN RUN', r.w0 && r.w1 && r.hud, JSON.stringify(r));
+    check('Gun Run: a kill with the last gun wins the match', r.last && /VICTORY/.test(r.end), JSON.stringify(r));
+    check('no page errors (gun run)', pg.errors.length === 0, pg.errors.join('|'));
     await ctx.close();
   }
 
