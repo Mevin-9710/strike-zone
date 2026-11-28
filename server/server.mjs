@@ -395,8 +395,8 @@ function tickRooms(t, dt) {
 //     [any of 1|2 and not 16: u8 position age, 2 ms steps]   4 yaw: i8 change (2pi/4096), or -128 + u16 absolute
 //     8 pitch i8 (1/80 rad)   16 (with 1|2) the position age byte is left out: same as the last one in this snapshot   32 flags u8 (alive | fl<<1)
 //     64 shot: u8 count, yaw (i8 change from the record's yaw in 2pi/4096, or -128 + u16 2pi/65536), i8 pitch (1/120 rad), u8 range m   128 hold: u8, the previous position held until this long ago (4 ms steps)
-// Past NEAR_A, small turns are left out (YAW_DB, PITCH_DB): a few degrees can't be seen at that range and the error never grows past it.
-const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = TICK, POS_STEP = 50, YAW_DB = 23, PITCH_DB = 3;
+// Small turns are left out: under 0.5 deg (yaw) / 1.4 deg (pitch) close up, 2 deg past NEAR_A (YAW_DB, PITCH_DB); that can't be seen and the error never grows past it.
+const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = TICK, POS_STEP = 50, YAW_DB = 23, PITCH_DB = 3, YAW_DB_NEAR = 6, PITCH_DB_NEAR = 2;
 let tickN = 0, out = Buffer.alloc(8192), out2 = Buffer.alloc(8192), recAt = new Int32Array(256);
 const bySl = (a, b) => a.sl - b.sl;
 const stats = { snapBytes: 0, snaps: 0, tickMs: 0, ticks: 0, hits: 0, inBytes: 0, packets: 0 };
@@ -424,7 +424,7 @@ function snapRoom(r, t) {
     if (rc.bot || rc.ws.readyState !== 1) continue;
     if (out.length < 64 + n * 24) { out = Buffer.alloc(64 + n * 48); out2 = Buffer.alloc(64 + n * 48); }
     const host = rc.id === r.host, px = rc.p[0], pz = rc.p[2], all = !rc.alive, seen = rc.seen;
-    let k = 0; out[k++] = 5; const info = (tickN - (rc.info | 0)) >= INFO_EVERY; out[k++] = info ? 1 : 0; out.writeUInt32LE(Math.round(t * 1000) >>> 0, k); k += 4;
+    let k = 0; out[k++] = 5; const info = (tickN - (rc.info | 0)) >= INFO_EVERY && !(tickN & 1); out[k++] = info ? 1 : 0; out.writeUInt32LE(Math.round(t * 1000) >>> 0, k); k += 4;
     if (info) {
       rc.info = tickN;
       out.writeUInt16LE(Math.round(r.clock * 10), k); out.writeUInt16LE(r.score.A, k + 2); out.writeUInt16LE(r.score.B, k + 4); k += 6;
@@ -436,7 +436,7 @@ function snapRoom(r, t) {
       if (e === rc || cnt >= 255) continue;
       const d2 = (e.p[0] - px) ** 2 + (e.p[2] - pz) ** 2;
       const iv = all || (host && !e.bot) || d2 < NEAR_A * NEAR_A ? 1 : d2 < NEAR_B * NEAR_B ? 2 : FAR_IV;   // dead receivers spectate anywhere: everyone at full rate
-      if (iv > 1 && (tickN + e.sl) % iv) continue;
+      if (iv > 1 && tickN % iv) continue;                                             // all on the same ticks: a player with nobody close gets no packet at all in between
       const q = e.q; let s = seen.get(e.id);
       if (!s) { s = new Float64Array(11); s[9] = -1; seen.set(e.id, s); }
       let mask = 0, dx = 0, dy = 0, dz = 0;
@@ -445,7 +445,7 @@ function snapRoom(r, t) {
         dx = q[0] - s[0]; dy = q[1] - s[1]; dz = q[2] - s[2];
         if (dx || dy || dz) mask |= (dx >= -127 && dx <= 127 && dy >= -127 && dy <= 127 && dz >= -127 && dz <= 127) ? (dy ? 1 : 3) : 2;
         const dyw = Math.abs(((q[3] - s[3] + 6144) % 4096) - 2048), dpi = Math.abs(q[4] - s[4]), near = all || d2 < NEAR_A * NEAR_A;
-        if (dyw && (near || dyw >= YAW_DB)) mask |= 4; if (dpi && (near || dpi >= PITCH_DB)) mask |= 8; if (q[6] !== s[6]) mask |= 32;
+        if (dyw >= (near ? YAW_DB_NEAR : YAW_DB)) mask |= 4; if (dpi >= (near ? PITCH_DB_NEAR : PITCH_DB)) mask |= 8; if (q[6] !== s[6]) mask |= 32;
         if (q[7] !== s[7]) mask |= 64;
       }
       if (!mask) continue;                                                                   // nothing new: costs nothing
