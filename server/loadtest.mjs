@@ -59,11 +59,13 @@ function drive(clients, all) {                                         // 20 Hz 
     const ms = Math.round(performance.now() - t0) >>> 0;
     for (const c of clients) {
       if (c.ws.readyState !== 1) continue;
-      walk(c.m || (c.m = {}), c.p, 0.05); c.yaw = c.m.yaw;
+      walk(c.m || (c.m = {}), c.p, 0.05);
+      const fire = Math.random() < 0.15, tg = fire ? all[(Math.random() * all.length) | 0] : null;   // ~3 shots a second, every 3rd one hits someone
+      if (tg && tg !== c) c.m.yaw = Math.atan2(tg.p[0] - c.p[0], tg.p[2] - c.p[2]) + Math.PI;   // face what you shoot (the upload's yaw is offset by pi, like the game's)
+      c.yaw = c.m.yaw;
       st[0] = 4; st.writeUInt32LE(ms, 1); st.writeInt16LE(Math.round(c.p[0] * 50), 5); st.writeInt16LE(Math.round(c.p[1] * 50), 7); st.writeInt16LE(Math.round(c.p[2] * 50), 9);
       st.writeUInt16LE(Math.round((c.yaw % 6.283 + 6.283) % 6.283 / 6.283 * 65535), 11); st.writeInt8(Math.round(c.m.pi * 80), 13); st[14] = 32; st[15] = 3; c.ws.send(Buffer.from(st));
-      if (Math.random() < 0.15) {                                                     // ~3 shots a second, every 3rd one hits someone
-        const tg = all[(Math.random() * all.length) | 0];
+      if (fire) {
         shot(c, c.sl, c.p, tg.p);
         if (tg !== c && tg.room === c.room && Math.random() < 0.33) c.ws.send(JSON.stringify({ t: 'h', s: c.id, v: tg.id, d: 1, hd: 0, w: 'ar7_lance' }));
       }

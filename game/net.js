@@ -164,7 +164,7 @@ export function createNet() {
       if (mask & 8) q[4] = d.getInt8(o++);
       if (mask & 32) q[6] = d.getUint8(o++);
       let sh = 0, sy = 0, sp = 0, sd = 0;
-      if (mask & 64) { sh = d.getUint8(o); sy = d.getUint16(o + 1, true); sp = d.getInt8(o + 3); sd = d.getUint8(o + 4); o += 5; }
+      if (mask & 64) { sh = d.getUint8(o); const so = d.getInt8(o + 1); o += 2; if (so === -128) { sy = d.getUint16(o, true); o += 2; } else sy = ((q[3] + so) & 4095) << 4; sp = d.getInt8(o); sd = d.getUint8(o + 1); o += 2; }
       if (!e) continue;
       if (pm === 2) e.has = true; if (!e.has) continue;                                // a delta without a base (should not happen): wait for a full record
       e.alive = !!(q[6] & 1);

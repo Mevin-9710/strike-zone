@@ -394,7 +394,7 @@ function tickRooms(t, dt) {
 //     1 pos delta i8 x3 (2 cm)   2 pos i16 x3 (2 cm)   1|2 both: pos delta i8 x, i8 z (height unchanged)
 //     [any of 1|2 and not 16: u8 position age, 2 ms steps]   4 yaw: i8 change (2pi/4096), or -128 + u16 absolute
 //     8 pitch i8 (1/80 rad)   16 (with 1|2) the position age byte is left out: same as the last one in this snapshot   32 flags u8 (alive | fl<<1)
-//     64 shot: u8 count, u16 yaw, i8 pitch (1/120 rad), u8 range m   128 hold: u8, the previous position held until this long ago (4 ms steps)
+//     64 shot: u8 count, yaw (i8 change from the record's yaw in 2pi/4096, or -128 + u16 2pi/65536), i8 pitch (1/120 rad), u8 range m   128 hold: u8, the previous position held until this long ago (4 ms steps)
 // Past NEAR_A, small turns are left out (YAW_DB, PITCH_DB): a few degrees can't be seen at that range and the error never grows past it.
 const SHOT_HEAR = 160, NEAR_A = 50, NEAR_B = 120, FAR_IV = 4, INFO_EVERY = TICK, POS_STEP = 50, YAW_DB = 23, PITCH_DB = 3;
 let tickN = 0, out = Buffer.alloc(8192), out2 = Buffer.alloc(8192), recAt = new Int32Array(256);
@@ -467,7 +467,11 @@ function snapRoom(r, t) {
       }
       if (mask & 8) out.writeInt8(q[4], k++);
       if (mask & 32) out[k++] = q[6];
-      if (mask & 64) { out[k++] = Math.min(255, q[7] - s[7]); out.writeUInt16LE(e.shotYaw | 0, k); out.writeInt8(e.shotPi | 0, k + 2); out[k + 3] = e.shotD | 0; k += 4; }
+      if (mask & 64) {                                                                       // shot: aim as a change from the facing the client now has (players shoot where they look)
+        out[k++] = Math.min(255, q[7] - s[7]); const so = (((e.shotYaw >> 4) - ((mask & 4) ? q[3] : s[3]) + 6144) % 4096) - 2048;
+        if (so >= -127 && so <= 127) out.writeInt8(so, k++); else { out.writeInt8(-128, k); out.writeUInt16LE(e.shotYaw | 0, k + 1); k += 3; }
+        out.writeInt8(e.shotPi | 0, k); out[k + 1] = e.shotD | 0; k += 2;
+      }
       for (let j = 0; j < 8; j++) if (j !== 3 && j !== 4) s[j] = q[j]; if (mask & 4) s[3] = q[3]; if (mask & 8) s[4] = q[4];   // left-out turns stay as the client has them
       s[8] = tickN; s[9] = 1; if (mask & 3) s[10] = e.posT; cnt++;
     }
